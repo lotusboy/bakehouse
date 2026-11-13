@@ -3,7 +3,8 @@
 Used by team-preflight.py (check 5) and the agent-roles hook. Standard library only.
 
 A dispatch names `<job>:<role>` or `<role>`. Resolution checks three levels in order: the repo
-binding's `roles`, the owner's `_personal/agent-roles.json`, the shipped `runtime/agent-roles.json`.
+binding's `roles`, the owner's personal `agent-roles.json` in the machine folder (locator.machine_dir()), the
+shipped `agent-roles.json` beside this file.
 At each level the key `<job>:<role>` is tried first, then `<role>`. A level matches when it names an
 agent installed for the working directory; a level that names only agents not installed is skipped,
 and the skip is reported. The first match wins. When nothing matches, a review role resolves to the
@@ -13,7 +14,13 @@ import json
 import os
 import signal
 import subprocess
+import sys
 from pathlib import Path
+
+import locator
+
+HERE = Path(__file__).resolve().parent
+LOCATOR = HERE / "locator.py"
 
 BUILT_IN = {"general-purpose", "Explore", "Plan", "claude-code-guide", "statusline-setup", "claude", "fork"}
 REVIEW_ROLES = {"reviewer", "code-review"}
@@ -47,21 +54,8 @@ def enabled_plugins(cwd):
     return [k for k, v in enabled.items() if v]
 
 
-ANTIGRAVITY_AGENTS = (".gemini", "config", "agents")
-
-
 def installed_agents(cwd):
-    """Every agent name this session could dispatch: built-ins, user, project, enabled plugins.
-
-    On Antigravity (PERMA_HARNESS=antigravity, set by that binding's hook and named in its skills)
-    the agents are folders under ~/.gemini/config/agents/, each holding an agent.md. The name
-    general-purpose stays in the set: the binding maps it to Antigravity's own default agent."""
-    if os.environ.get("PERMA_HARNESS") == "antigravity":
-        names = {"general-purpose"}
-        for f in Path.home().joinpath(*ANTIGRAVITY_AGENTS).glob("*/agent.md"):
-            n = frontmatter_name(f)
-            names.add(n if n and n != "agent" else f.parent.name)
-        return names
+    """Every agent name this session could dispatch: built-ins, user, project, enabled plugins."""
     names = set(BUILT_IN)
     for d in (Path.home() / ".claude" / "agents", Path(cwd) / ".claude" / "agents"):
         for f in d.glob("*.md"):
@@ -107,107 +101,68 @@ def providers(entry):
     return [p for p in entry if isinstance(p, str)] if isinstance(entry, list) else []
 
 
-def stream_of(perma, path, log=None):
-    """The stream registered for path in _meta/REGISTRY.md, or None (perma-meta counts as none).
-
-    A resolver that is missing, not executable, slow or broken gives None, so the binding level is
-    skipped and the other levels still resolve; the reason goes to log when one is given."""
-    return resolve_stream(perma, path, log)[0]
-
-
-def resolve_stream(perma, path, log=None, timeout=RESOLVE_TIMEOUT):
-    """(stream or None, problem or None). problem says why the stream cannot be known: the resolver cannot
-    be run (missing, not executable), did not answer within timeout, or timeout left it no time at all; the
-    reason also goes to log. stream_of reads every problem as no stream."""
-    resolver = Path(perma) / "runtime" / "resolve-stream.sh"
+def locate(field, path, log=None, timeout=RESOLVE_TIMEOUT, env=os.environ):
+    """(the locator's `field` for the project of the repo at path, or None when it has no team; problem or
+    None). The locator runs as its own process, so a slow git is cut at timeout. problem says why the project
+    cannot be known: the locator cannot be run, did not answer within timeout, or timeout left it no time at
+    all, or the project needs setup (the locator's own message); the reason also goes to log. env: a lookup
+    for a path a brief names passes one without CLAUDE_PROJECT_DIR, so that path's own repo answers."""
+    p = Path(path).expanduser()
+    if not p.is_absolute():
+        return None, None
+    # git needs a folder that exists: a record folder named before it is made is in its nearest parent's repo
+    while not p.is_dir() and p != p.parent:
+        p = p.parent
+    cmd = f"{LOCATOR} {field} {p}"
     if timeout <= 0:
-        why = f"the stream resolver `{resolver} {path}` was not run: no time was left before the deadline"
+        why = f"the project locator `{cmd}` was not run: no time was left before the deadline"
         if log:
             log(f"SKIP binding level: {why}")
         return None, why
     try:
-        p = subprocess.Popen([str(resolver), str(path)],
-                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
-                             start_new_session=True)
+        proc = subprocess.Popen([sys.executable, str(LOCATOR), field, str(p)],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=dict(env),
+                                start_new_session=True)
         try:
-            out, _ = p.communicate(timeout=timeout)
+            out, err = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired as e:
             # kill the whole group: a child left holding the pipe would block the read
-            os.killpg(p.pid, signal.SIGKILL)
-            p.communicate()
+            os.killpg(proc.pid, signal.SIGKILL)
+            proc.communicate()
             if log:
-                log(f"SKIP binding level: cannot resolve the stream for {path} ({e!r})")
-            return None, f"the stream resolver `{resolver} {path}` did not answer within {timeout:.1f} s"
+                log(f"SKIP binding level: cannot locate the project for {path} ({e!r})")
+            return None, f"the project locator `{cmd}` did not answer within {timeout:.1f} s"
     except (OSError, subprocess.SubprocessError, ValueError) as e:
         if log:
-            log(f"SKIP binding level: cannot resolve the stream for {path} ({e!r})")
-        return None, (f"the stream resolver `{resolver}` cannot be run ({e}): restore it with runtime/install.sh, "
-                      "or make it executable")
-    stream = out.strip()
-    return (None if not stream or stream == "perma-meta" else stream), None
-
-
-def registered_streams(perma):
-    """The stream names _meta/REGISTRY.md registers, perma-meta left out. A row is read by
-    resolve-stream.sh's rules: it starts with "|", and its workspace column starts with "/"."""
-    try:
-        lines = (Path(perma) / "_meta" / "REGISTRY.md").read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return set()
-    out = set()
-    for line in lines:
-        if not line.lstrip().startswith("|"):
-            continue
-        cols = [c.strip() for c in line.split("|")]
-        if len(cols) < 3 or not cols[1].startswith("/"):
-            continue
-        s = cols[2].strip("/")
-        if s and s != "perma-meta" and ".." not in s.split("/"):
-            out.add(s)
-    return out
-
-
-def stream_holding(perma, path):
-    """(stream, its folder) for the registered stream whose folder <perma>/<stream> holds path (the
-    longest one), or (None, None). A stream record folder is found here, never from a fixed path."""
-    try:
-        p = Path(path).expanduser().resolve()
-        root = Path(perma).expanduser().resolve()
-    except (OSError, RuntimeError):
+            log(f"SKIP binding level: cannot locate the project for {path} ({e!r})")
+        return None, f"the project locator `{LOCATOR}` cannot be run ({e})"
+    if proc.returncode == locator.NO_TEAM:
         return None, None
-    best = (None, None)
-    for s in registered_streams(perma):
-        d = root / s
-        if (p == d or d in p.parents) and d.is_dir() and (best[1] is None or len(d.parts) > len(best[1].parts)):
-            best = (s, d)
-    return best
+    if proc.returncode == locator.SETUP_NEEDED:
+        return None, err.strip()
+    if proc.returncode or not out.strip():
+        why = f"the project locator `{cmd}` cannot be run (exit {proc.returncode}: {err.strip()[-300:]})"
+        if log:
+            log(f"SKIP binding level: {why}")
+        return None, why
+    return out.strip(), None
 
 
-def binding_path(perma, path, log=None):
-    stream = stream_of(perma, path, log)
-    return (Path(perma) / stream / "repo" / "binding.json") if stream else None, stream
-
-
-def load_binding(perma, path, log=None):
+def load_binding(path, log=None):
     """The binding for the repo at path, or {} when there is none or it cannot be read (read_binding
     tells the two apart)."""
-    return read_binding(perma, path, log)[0]
+    return read_binding(path, log)[0]
 
 
-def read_binding(perma, path, log=None, timeout=RESOLVE_TIMEOUT):
-    """(binding, problem) for the repo at path. ({}, None): there is no binding (no stream is registered
-    for path, or its stream has no repo/binding.json). ({}, problem): there may be one, and it cannot be
-    read; problem names the cause and what to fix: the resolver did not answer in time, the registry row
-    names a stream whose folder does not exist, or binding.json does not parse, is not a JSON object,
-    cannot be read or is a dangling symlink."""
-    stream, why = resolve_stream(perma, path, log, timeout)
-    if why or not stream:
+def read_binding(path, log=None, timeout=RESOLVE_TIMEOUT, env=os.environ):
+    """(binding, problem) for the repo at path. ({}, None): there is no binding (the locator finds no team
+    there). ({}, problem): there may be one, and it cannot be read; problem names the cause and what to fix:
+    the locator cannot be run or did not answer in time, the project needs setup, or binding.json does not
+    parse, is not a JSON object, cannot be read or is a dangling symlink."""
+    where, why = locate("binding", path, log, timeout, env)
+    if why or not where:
         return {}, why
-    sdir = Path(perma) / stream
-    if not sdir.is_dir():
-        return {}, (f"_meta/REGISTRY.md registers {path} as stream {stream}, whose folder {sdir} does not exist: "
-                    f"fix that row in {Path(perma) / '_meta' / 'REGISTRY.md'}, or restore the folder")
-    bpath = sdir / "repo" / "binding.json"
+    bpath = Path(where)
     try:
         b = json.loads(bpath.read_text())
     except FileNotFoundError:
@@ -221,23 +176,23 @@ def read_binding(perma, path, log=None, timeout=RESOLVE_TIMEOUT):
     return b, None
 
 
-def shipped_table(perma):
+def shipped_table():
     """The shipped table. Before the move-2 swap the new one waits beside the live one as
     agent-roles.next.json; preflight reads it so it agrees with the hook after the swap."""
-    nxt = Path(perma) / "runtime" / "agent-roles.next.json"
-    return nxt if nxt.is_file() else Path(perma) / "runtime" / "agent-roles.json"
+    nxt = HERE / "agent-roles.next.json"
+    return nxt if nxt.is_file() else HERE / "agent-roles.json"
 
 
-def personal_table(perma):
-    return Path(perma) / "_personal" / "agent-roles.json"
+def personal_table():
+    return locator.machine_dir() / "agent-roles.json"
 
 
-def levels(perma, binding):
+def levels(binding):
     """The three resolution levels, in order, as (label, table)."""
     roles = binding.get("roles") if isinstance(binding, dict) else None
-    shipped = shipped_table(perma)
+    shipped = shipped_table()
     return [("binding roles", roles if isinstance(roles, dict) else {}),
-            ("_personal/agent-roles.json", table_roles(personal_table(perma))),
+            ("personal agent-roles.json", table_roles(personal_table())),
             (f"runtime/{shipped.name}", table_roles(shipped))]
 
 

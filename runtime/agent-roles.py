@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Agent roles — enforce the role tables on every agent dispatch.
 
-Three entry points, all wired by bindings/claude-code/wire:
+Three entry points, all wired by the plugin's hooks:
 
   PreToolUse (matcher Agent)  stdin = hook JSON
       - subagent_type 'role:<job>:<role>' or 'role:<role>' is resolved by team_roles (design
-        docs/PROJECT-TEAM.md, "Roles"): the repo binding's roles, then _personal/agent-roles.json,
-        then runtime/agent-roles.json. A review role nothing fills goes to general-purpose; any
+        docs/PROJECT-TEAM.md, "Roles"): the repo binding's roles, then the personal agent-roles.json in
+        the machine folder, then the shipped agent-roles.json. A review role nothing fills goes to general-purpose; any
         other unfilled role is denied, and the session does the work itself.
       - a dispatch of a role's provider gets the role's model and prompt_append.
       - an agent spawned BY a role's provider is held to that role's nested_model.
@@ -19,15 +19,12 @@ Three entry points, all wired by bindings/claude-code/wire:
         mutations.json, findings-fix1.md owes mutations-fix1.json), in the mutation-record format, every
         survivor with a disposition; each findings file not empty. A contract (a .md whose name holds
         "contract": contract.md, a round's contract-fix1.md) sits beside each findings file written or in
-        a folder above it, inside the folder checked (this check is the stop's own). A record folder inside a registered stream (_meta/REGISTRY.md) is
-        checked the same way with no binding: the one the brief's `Record folder:` line names, whatever
-        the cwd, and then also the bound repo's own `reviews` when the cwd has one; else, with no binding,
-        every folder the run wrote in the stream holding the cwd. The folder is decided at dispatch
-        (PreToolUse, for a change job and a run_record role; a plain-name reviewer only where the cwd has
-        a binding or is inside the Permanence root, or a line names a folder there): every line labelled
+        a folder above it, inside the folder checked (this check is the stop's own). The folder is decided
+        at dispatch (PreToolUse, for a change job and a run_record role; a plain-name reviewer only where
+        the cwd has a binding, or a line names a folder under a bound repo's `reviews`): every line labelled
         as a record folder is read; a line record_line's reader does not read, a path that is not full
-        (`/` or `~`), a full path inside no registered stream's folder and under no bound repo's `reviews`
-        (that repo found from the path, not the cwd), and two lines naming different folders are refused,
+        (`/` or `~`), a full path under no bound repo's `reviews` (that repo found from the path, not the
+        cwd), and two lines naming different folders are refused,
         naming the line and where it resolves. The decided folder is logged with the dispatch, and the
         stop checks it (a repo record with its own repo's binding), never re-reading the line from its cwd.
         The line holds one path and nothing else: backticks or straight quotes may wrap it (a space is
@@ -46,7 +43,7 @@ Three entry points, all wired by bindings/claude-code/wire:
         the hard gate). The marker is the prompt's own final line. At SubagentStop, only for the agent
         type change:engineer resolves to: PreToolUse logs every role: dispatch of that agent type, with or
         without a binding, and every plain-name one in a repo with a binding, with
-        whether it is a change job, to runtime/logs/prediction-dispatch.jsonl (sha256 of the prompt
+        whether it is a change job, to logs/prediction-dispatch.jsonl in the machine folder (sha256 of the prompt
         before and after the rewrite). A stop whose transcript line 1 is a logged prompt follows the
         log, so a refactor job is never checked. Otherwise it is checked when line 1 ends with the
         marker, or holds a `Work order <id>:` line and the agent is not a built-in one (a built-in
@@ -64,19 +61,17 @@ re-entry.
 
 Fail-open, with one exception. A dispatch whose decision needs a binding that cannot be read is
 refused, and the reason names the cause and what to fix (gate dispatch:binding-unreadable): binding.json
-does not parse, is not a JSON object, cannot be read or is a dangling symlink; the registry row names a
-stream whose folder does not exist; the stream resolver cannot be run (missing, not executable) or does
-not answer in time. The hook cannot tell whether that dispatch is in its care, so it does not guess. Its
-event goes to the stream a `Record folder:` line names, else it is kept in agent-roles.log with its cause:
-the working folder's ledger is found through the input that cannot be read. Every other error lets the
+does not parse, is not a JSON object, cannot be read or is a dangling symlink; the project needs setup (the
+locator's message); the project locator cannot be run or does not answer in time. The hook cannot tell
+whether that dispatch is in its care, so it does not guess. Its event is kept in agent-roles.log with its
+cause: the working folder's ledger is found through the input that cannot be read. Every other error lets the
 dispatch through unchanged: a broken role table, a crash anywhere in the hook. A stop always fails open:
 an unreadable binding there is read as none. A `Record folder:` line with any text after its path is
-refused at dispatch, showing the line, and reported at a stop, never read; a refused full path in
-Permanence's care (inside its root, in a registered stream, under a bound repo's reviews) puts the
-dispatch in care. The whole run has one deadline, RUN_BUDGET_S, counted from hook start (STARTUP_S allowed for the
-interpreter), well below the harness's 10 s: the resolver and git get what is left of it less EVENT_S, the
-refusal event the rest less EXIT_S; each path's binding is read once per run. Every change it makes is logged to
-runtime/logs/agent-roles.log.
+refused at dispatch, showing the line, and reported at a stop, never read; a refused full path under a
+bound repo's reviews puts the dispatch in care. The whole run has one deadline, RUN_BUDGET_S, counted from hook
+start (STARTUP_S allowed for the interpreter), well below the harness's 10 s: the locator and git get what is
+left of it less EVENT_S, the refusal event the rest less EXIT_S; each path's binding is read once per run. Every
+change it makes is logged to logs/agent-roles.log in the machine folder (locator.machine_dir()).
 """
 import time
 
@@ -91,10 +86,15 @@ import sys
 import unicodedata
 from pathlib import Path
 
-PERMA = Path(os.environ.get("PERMA_DIR", Path.home() / "permanence"))
-SEEN = PERMA / "runtime" / ".agent-roles-seen"
-LOG = PERMA / "runtime" / "logs" / "agent-roles.log"
-DISPATCHES = PERMA / "runtime" / "logs" / "prediction-dispatch.jsonl"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import locator  # noqa: E402 - the plugin's own module, beside this file
+
+MACHINE = locator.machine_dir()
+SEEN = MACHINE / "seen-agents"
+LOG = MACHINE / "logs" / "agent-roles.log"
+DISPATCHES = MACHINE / "logs" / "prediction-dispatch.jsonl"
+# a lookup for a path a brief names asks that path's own repo, not $CLAUDE_PROJECT_DIR's
+NAMED_ENV = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"}
 MARKER = "[perma:agent-roles]"
 PREDICTION_MARKER = "[perma:prediction-record]"
 APPROVED = "[model-approved]"
@@ -119,7 +119,6 @@ def log(msg):
 
 
 try:
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
     import team_roles
 except Exception as e:  # fail open: without the module every dispatch passes unchanged
     log(f"ERROR import team_roles: {e!r}")
@@ -138,54 +137,49 @@ class Unreadable(Exception):
 _BINDINGS = {}
 
 
-def binding_at(path):
-    """(binding, problem) for the repo at path (team_roles.read_binding), read once per run, the resolver
-    given what is left of the run's deadline."""
+def binding_at(path, named=False):
+    """(binding, problem) for the repo at path (team_roles.read_binding), read once per run, the locator
+    given what is left of the run's deadline. named: a path a brief names, not the cwd."""
     k = str(path)
-    if k not in _BINDINGS:
+    if (k, named) not in _BINDINGS:
         t = min(team_roles.RESOLVE_TIMEOUT, left())
-        b, why = team_roles.read_binding(PERMA, k, log, timeout=t)
+        b, why = team_roles.read_binding(k, log, timeout=t, env=NAMED_ENV if named else os.environ)
         if why and t < team_roles.RESOLVE_TIMEOUT and ("did not answer" in why or "was not run" in why):
-            why = (f"the hook's {RUN_BUDGET_S} s run deadline ran out: earlier calls in this run (a slow resolver or "
+            why = (f"the hook's {RUN_BUDGET_S} s run deadline ran out: earlier calls in this run (a slow locator or "
                    f"git) used {time.monotonic() - START:.1f} s of it, so {why}")
-        _BINDINGS[k] = b, why
-        if _BINDINGS[k][1]:
-            log(f"UNREADABLE binding for {k}: {_BINDINGS[k][1]}")
-    return _BINDINGS[k]
+        _BINDINGS[k, named] = b, why
+        if why:
+            log(f"UNREADABLE binding for {k}: {why}")
+    return _BINDINGS[k, named]
 
 
-def bound(path):
+def bound(path, named=False):
     """The binding a dispatch decision reads: raises Unreadable when it cannot be read."""
-    b, why = binding_at(path)
+    b, why = binding_at(path, named)
     if why:
         raise Unreadable(why)
     return b
 
 
-def refusal_event(gate, reason, prompt, where, stream=None, keep=False):
+def refusal_event(gate, reason, prompt, where, keep=False):
     """One gate-refused event for a deny or a block (docs/PROJECT-TEAM.md, "Gate refusals"), in the ledger of
-    the stream or repository `where` belongs to (stream: that stream's). keep: kept in agent-roles.log with
-    the reason instead, when no ledger can be found without the input that failed. Fail-open like the rest of
-    this hook: it never changes what the hook returns."""
+    the project `where` belongs to. keep: kept in agent-roles.log with the reason instead, when no ledger can be
+    found without the input that failed. Fail-open like the rest of this hook: it never changes what the hook
+    returns."""
     if keep:
-        log(f"GATE-EVENT {gate} kept in this log, not written to a ledger: the brief names no stream, and the "
-            f"working folder's ledger is found through the input that cannot be read. {reason}")
+        log(f"GATE-EVENT {gate} kept in this log, not written to a ledger: the working folder's ledger is found "
+            f"through the input that cannot be read. {reason}")
         return
-    err = None
     try:
         import gate_event
         m = WORK_ORDER.search(prompt or "")
         purpose = "agent dispatch refused" if gate.startswith("dispatch:") else "agent stop refused"
-        err = gate_event.refused(gate, purpose, reason, task=m.group(1) if m else None, path=None if stream else str(where),
-                                 stream=stream, perma=PERMA, wait=left(EXIT_S))
+        err = gate_event.refused(gate, purpose, reason, task=m.group(1) if m else None, path=str(where),
+                                 wait=left(EXIT_S))
         if err:
             log(f"GATE-EVENT {gate} not written: {err}")
     except Exception as e:  # noqa: BLE001 - fail open
         log(f"ERROR gate event {gate}: {e!r}")
-    if err and stream:
-        # the write to the named stream failed (no ledger, a cut write, any error): the refusal is still kept, here
-        log(f"GATE-EVENT {gate} kept in this log, not written to a ledger: the write to stream {stream} failed "
-            f"({err}). {reason}")
 
 
 def predict_gate():
@@ -200,7 +194,7 @@ def prediction_jobs():
     """The `<job>:<role>` dispatches that must leave a machine prediction. Read from the shipped
     table only: neither a binding nor the owner's table can take the rule away."""
     try:
-        v = json.loads(team_roles.shipped_table(PERMA).read_text()).get("prediction_record")
+        v = json.loads(team_roles.shipped_table().read_text()).get("prediction_record")
     except (OSError, ValueError, AttributeError):
         return set()
     return {x for x in v if isinstance(x, str)} if isinstance(v, list) else set()
@@ -208,7 +202,7 @@ def prediction_jobs():
 
 def change_engineers(binding, cwd):
     """The agent(s) the prediction_record jobs resolve to in this repo."""
-    lvls, have = team_roles.levels(PERMA, binding), team_roles.installed_agents(cwd)
+    lvls, have = team_roles.levels(binding), team_roles.installed_agents(cwd)
     return {a for spec in prediction_jobs() if (a := team_roles.resolve(spec, lvls, have)["agent"])}
 
 
@@ -266,7 +260,7 @@ def dispatch_record(prompt):
     rec = None
     for e in logged(prompt):
         r = e.get("record")
-        if isinstance(r, dict) and r.get("kind") in ("stream", "repo") and all(
+        if isinstance(r, dict) and r.get("kind") == "repo" and all(
                 isinstance(r.get(k), str) for k in ("root", "folder", "line", "path")):
             rec = (r["kind"], Path(r["root"]), r["folder"], r["line"], r["path"])
     return rec
@@ -341,17 +335,12 @@ def shown(path):
 
 
 def place(v):
-    """A full path's record folder: (kind, root, folder, v, path) for a folder inside a registered
-    stream's folder, or under the `reviews` folder of the bound repo the path itself is in (not the
-    cwd's); None when it is neither. path is the line expanded, unresolved: the registry is read on it."""
+    """A full path's record folder: (kind, root, folder, v, path) for a folder under the `reviews` folder
+    of the bound repo the path itself is in (not the cwd's); None when it is not. path is the line
+    expanded, unresolved."""
     path = Path(os.path.normpath(Path(v).expanduser()))
     p = path.resolve()
-    stream, sdir = team_roles.stream_holding(PERMA, p)
-    if stream:
-        root = repo_root(str(sdir)).resolve()
-        if root == p or root in p.parents:
-            return "stream", root, p.relative_to(root).as_posix(), v, str(path)
-    b = bound(path)
+    b = bound(path, named=True)
     reviews = reviews_folder(b)[0] if b else None
     if reviews:
         q = path
@@ -365,23 +354,21 @@ def place(v):
 
 def dispatch_decision(prompt, cwd, in_care):
     """The record folder a brief names, decided once, at dispatch: ("record", line) / ("refuse", why) /
-    None (no line, or not this hook's: no line's full path is in Permanence's care and in_care is
-    False). Every line labelled as a record folder is read; a line round 1's reader cannot read, a
+    None (no line, or not this hook's: no line's full path is under a bound repository's reviews folder
+    and in_care is False). Every line labelled as a record folder is read; a line round 1's reader cannot read, a
     path that is not full, a full path no check reads and two lines naming different folders are
     refused, each naming the line and where it resolves from the dispatch's cwd."""
     texts = [m.group(0) + prompt[m.end():].split("\n", 1)[0] for m in RECORD_LABEL.finditer(prompt or "")]
     if not texts:
         return None
-    perma = PERMA.expanduser().resolve()
     top = repo_root(cwd).resolve()
-    # in Permanence's care, decided once, for every labelled line, before it is read: through its path,
-    # inside the Permanence root, in a registered stream, or under a bound repository's reviews folder
+    # in this hook's care, decided once, for every labelled line, before it is read: through its path,
+    # under a bound repository's reviews folder
     for t in texts:
         c = care_path(t)
         if in_care or c is None:
             continue
-        p = Path(os.path.normpath(Path(c).expanduser())).resolve()
-        in_care = p == perma or perma in p.parents or bool(place(c))
+        in_care = bool(place(c))
     places, refusals = [], []
     for t in texts:
         r = RECORD_FOLDER.match(t)
@@ -399,8 +386,8 @@ def dispatch_decision(prompt, cwd, in_care):
             if got:
                 places.append(got)
             else:
-                refusals.append(f"`{t.strip()}` resolves to {shown(p)}, which is neither inside a registered "
-                                "stream's folder (_meta/REGISTRY.md) nor under a bound repository's reviews folder")
+                refusals.append(f"`{t.strip()}` resolves to {shown(p)}, which is not under a bound repository's "
+                                "reviews folder")
     if not in_care:
         return None
     if not refusals and len({(k, str(root), f) for k, root, f, _, _ in places}) > 1:
@@ -413,13 +400,10 @@ def dispatch_decision(prompt, cwd, in_care):
 
 def record_line(prompt, cwd, binding):
     """The brief's `Record folder:` line, placed. None when there is no line, or when the line is not
-    this hook's to check (no binding, the cwd in no stream, the path outside the Permanence root: the
-    opt-in rule). Else (kind, root, folder, shown), shown being the path as written:
-      "stream"   inside a registered stream's folder; root is the git repository holding it (the
-                 Permanence root), folder is relative to it
+    this hook's to check (no binding: the opt-in rule). Else (kind, root, folder, shown), shown being the
+    path as written:
       "repo"     under the binding's `reviews`; root is the cwd's repository, folder is relative to it
-      "refused"  neither; root is True when the path or the cwd is in Permanence's care (inside its root,
-                 or the cwd in a stream), folder is why
+      "refused"  not; root is the cwd's repository, folder is why
     A relative path is read from the cwd's repository root; `~`, `..` and symlinks are resolved. A
     "refused" line carries the path it resolved to last. Only a stop with no dispatch decision reads here."""
     v, problem = line_reading(prompt)
@@ -428,27 +412,14 @@ def record_line(prompt, cwd, binding):
     top = repo_root(cwd)
     p = Path(v).expanduser()
     p = (p if p.is_absolute() else top / p).resolve()
+    if not binding:
+        return None
     if problem:
-        perma = PERMA.expanduser().resolve()
-        ours = p == perma or perma in p.parents or bool(team_roles.stream_holding(PERMA, cwd)[0])
-        if not (binding or ours):
-            return None
-        return "refused", ours, f"which {problem}", v, p
-    stream, sdir = team_roles.stream_holding(PERMA, p)
-    if stream:
-        root = repo_root(str(sdir)).resolve()
-        if root == p or root in p.parents:
-            return "stream", root, p.relative_to(root).as_posix(), v
-    reviews = reviews_folder(binding)[0] if binding else None
+        return "refused", top, f"which {problem}", v, p
+    reviews = reviews_folder(binding)[0]
     if reviews and (top.resolve() / reviews).resolve() in p.parents:
         return "repo", top, p.relative_to(top.resolve()).as_posix(), v
-    perma = PERMA.expanduser().resolve()
-    ours = p == perma or perma in p.parents or bool(team_roles.stream_holding(PERMA, cwd)[0])
-    if not (binding or ours):
-        return None
-    why = (f"which is neither inside a registered stream's folder nor under this repository's {reviews}" if reviews
-           else "which is not inside a registered stream's folder (_meta/REGISTRY.md)")
-    return "refused", ours, why, v, p
+    return "refused", top, f"which is not under this repository's {reviews or 'reviews folder'}", v, p
 
 
 def refusal(line):
@@ -483,8 +454,8 @@ def with_note(out, note):
 
 def tables():
     """Role entries in lookup order: the owner's overrides, then the shipped table."""
-    return [team_roles.table_roles(team_roles.personal_table(PERMA)),
-            team_roles.table_roles(team_roles.shipped_table(PERMA))]
+    return [team_roles.table_roles(team_roles.personal_table()),
+            team_roles.table_roles(team_roles.shipped_table())]
 
 
 def reviews_folder(binding):
@@ -524,7 +495,7 @@ def pre_tool_use(d):
     if by_role:
         spec = st[5:]
         binding = bound(cwd)
-        lvls = team_roles.levels(PERMA, binding)
+        lvls = team_roles.levels(binding)
         res = team_roles.resolve(spec, lvls, team_roles.installed_agents(cwd))
         for where, key, provs in res["skipped"]:
             log(f"SKIP role:{spec}: {where} key '{key}' names {provs}, not installed")
@@ -560,13 +531,12 @@ def pre_tool_use(d):
     decided = None
     if mark or (team_roles.role_of(st, tabs)[1] or {}).get("run_record"):
         bcwd = binding if binding is not None else bound(cwd)
-        perma, here = PERMA.expanduser().resolve(), Path(cwd).resolve()
-        dec = dispatch_decision(before, cwd, mark or by_role or bool(bcwd) or here == perma or perma in here.parents)
+        dec = dispatch_decision(before, cwd, mark or by_role or bool(bcwd))
         if dec and dec[0] == "refuse":
             reason = (f"Permanence agent-roles: the stop check reads this agent's record folder from its brief's "
                       f"`Record folder:` line, decided now, at dispatch: {dec[1]}. Write one line, the full path "
-                      "of a folder inside a registered stream's folder or under a bound repository's reviews "
-                      "folder (`Record folder: ~/<path>/`), and dispatch again.")
+                      "of a folder under a bound repository's reviews folder (`Record folder: ~/<path>/`), and "
+                      "dispatch again.")
             log(f"DENY {reason}")
             refusal_event("dispatch:record-folder", reason, before, cwd)
             return {"hookSpecificOutput": {"hookEventName": "PreToolUse",
@@ -576,7 +546,7 @@ def pre_tool_use(d):
 
     # Without a `role:` dispatch, the SHIPPED table touches a plain agent name only in a repository
     # that has opted in with a binding: anywhere else a same-named agent may be the user's own
-    # (review 2026-10-11, H2). The owner's own table (_personal/) is their explicit choice and
+    # (review 2026-10-11, H2). The owner's own table (the personal one) is their explicit choice and
     # applies everywhere.
     if binding is None and (team_roles.role_of(st, tabs)[1] or team_roles.role_of(d.get("agent_type"), tabs)[1]):
         binding = bound(cwd)
@@ -644,13 +614,9 @@ def on_pre_tool_use(d):
                   f"input: {e}. Nothing in the brief is the cause; fix that and dispatch again.")
         log(f"DENY {reason}")
         prompt = (d.get("tool_input") or {}).get("prompt") or ""
-        # the event goes to the stream a Record folder line names (the registry alone, no resolver), never
-        # through the working folder's ledger, which is found through the input that failed
-        named = [s for m in RECORD_LABEL.finditer(prompt)
-                 if (v := line_value(m.group(0) + prompt[m.end():].split("\n", 1)[0])) and v.startswith(("/", "~"))
-                 for s in [team_roles.stream_holding(PERMA, Path(os.path.normpath(Path(v).expanduser())))[0]] if s]
-        refusal_event("dispatch:binding-unreadable", reason, prompt, d.get("cwd") or os.getcwd(),
-                      stream=named[0] if named else None, keep=not named)
+        # the event is kept in the log, never sent through the working folder's ledger, which is found through
+        # the input that failed
+        refusal_event("dispatch:binding-unreadable", reason, prompt, d.get("cwd") or os.getcwd(), keep=True)
         return {"hookSpecificOutput": {"hookEventName": "PreToolUse",
                                        "permissionDecision": "deny",
                                        "permissionDecisionReason": reason}}
@@ -698,23 +664,19 @@ def first_prompt(path):
     return c if isinstance(c, str) else ""
 
 
-def unsealed_moves(folders, where, kind):
-    """The top-level moves files of the record folders whose bytes no seal in their stream's ops ledger names:
-    the stream holding a stream-held record, else the stream registered for `where`, the path the
-    hook's binding lookup used (the cwd as given, or the record line's repository). Not git's resolved
-    toplevel: the registry matches paths by their text, so a path through a symlink must be read as given.
-    Fail-open, like the rest of this hook: an error reads as sealed, and says so."""
+def unsealed_moves(folders, where, named):
+    """The top-level moves files of the record folders whose bytes no seal in their project's ops ledger names:
+    the project of `where`, the path the hook's binding lookup used (the cwd, or the record line's path:
+    named). Fail-open, like the rest of this hook: an error reads as sealed, and says so."""
     try:
         gate = predict_gate()
-        if kind == "stream" and folders:
-            stream = team_roles.stream_holding(PERMA, str(folders[0]))[0]
-        else:
-            stream = team_roles.stream_of(PERMA, str(where), log) if where else None
-        if not stream:
-            log(f"SEAL check skipped: no stream for {folders[0] if kind == 'stream' and folders else where}")
+        led, why = (team_roles.locate("ops_ledger", str(where), log, env=NAMED_ENV if named else os.environ)
+                    if where else (None, None))
+        if not led:
+            log(f"SEAL check skipped: no project for {where}" + (f" ({why})" if why else ""))
             return []
         ol = gate.ledger_module()
-        led = PERMA / stream / "repo" / "ops" / "events.jsonl"
+        led = Path(led)
         sealed = {e.get("sha256") for e in map(ol.parse, ol.lines_of(led.read_bytes() if led.is_file() else b""))
                   if isinstance(e, dict) and e.get("kind") in ("sealed", "revised")}
         return [p for f in folders for p in (sorted(f.iterdir()) if f.is_dir() else [])
@@ -737,8 +699,8 @@ def prediction_stop(d):
     kind = line[0] if line else None
     if kind == "repo" and line[4]:
         # decided at dispatch: the bound repo the line names, not the stop's cwd
-        binding = binding_at(line[4])[0]
-    if not binding and kind != "stream":
+        binding = binding_at(line[4], named=True)[0]
+    if not binding:
         if marked:
             log(f"PREDICTION check skipped for {agent}: no binding for {cwd}")
         # a line the fallback cannot place, in a change job's brief, is reported
@@ -763,10 +725,7 @@ def prediction_stop(d):
         return with_note(None, note)
     repo = repo_root(cwd)
     gate = predict_gate()
-    if kind == "stream":
-        # a record folder in a registered stream: the brief's line names it, whatever the cwd
-        folders, named = [line[1] / line[2]], line[3]
-    elif kind == "repo":
+    if kind == "repo":
         folders, named = [line[1] / line[2]], line[2]
     elif wo:
         folders, named = gate.record_folders(repo, binding, wo)[1], f"the {reviews} folder of work order {wo}"
@@ -784,13 +743,13 @@ def prediction_stop(d):
                 except gate.BadInput as e:
                     bad.append(str(e))
     if good and not bad:
-        unsealed = unsealed_moves(folders, line[4] if kind == "repo" and line[4] else cwd, kind)
+        decided = kind == "repo" and bool(line[4])
+        unsealed = unsealed_moves(folders, line[4] if decided else cwd, decided)
         if not unsealed:
             log(f"PREDICTION ok for {agent}: {', '.join(p.parent.name + '/' + p.name for p in good)}")
             return with_note(None, note)
         what = (f"moves file(s) with no seal in the ops ledger: {', '.join(p.parent.name + '/' + p.name for p in unsealed)}"
-                f". Seal each one as you write it: predict-gate.sh seal {wo or '<work order>'} <round> <file> (in a "
-                "lane clone, with OPS_STREAM=<stream>)")
+                f". Seal each one as you write it: predict-gate.sh seal {wo or '<work order>'} <round> <file>")
         if not d.get("stop_hook_active"):
             log(f"SEAL missing for {agent} — sent back: {what}")
             out = with_note({"decision": "block", "reason": f"Permanence agent-roles: this change job has {what}, "
@@ -923,33 +882,19 @@ def subagent_stop(d):
     started = run_started(d)
     cwd = d.get("cwd") or os.getcwd()
     binding = binding_at(cwd)[0]
-    # A record folder in a registered stream is checked by the same contract, with no binding: the one
-    # the brief's `Record folder:` line names, else (no binding) the stream holding the cwd. A registered
-    # stream is the owner's own, so it counts as opted in. The stream check ADDS to a bound repo's own.
     # The line's folder is the one decided at dispatch; a repo record decided there is checked in that
     # folder alone, with the binding of the repo it names, whatever the stop's cwd.
     prompt = first_prompt(d.get("agent_transcript_path"))
     line, note = stop_line(prompt, cwd, binding)
     kind = line[0] if line else None
-    rroot, rbind = ((line[1], binding_at(line[4])[0]) if kind == "repo" and line[4]
+    rroot, rbind = ((line[1], binding_at(line[4], named=True)[0]) if kind == "repo" and line[4]
                     else (repo_root(cwd), binding))
     # checks: (root, folder, binding); fresh None = no run record demanded; want: the marks a decided folder lacks
     checks, named, fresh, want = [], None, None, None
-    if kind == "stream":
-        named = line[3]
-        checks.append((line[1], line[2], {}))
-        fresh, want = marked(rname, line[1] / line[2], started, {})
-    elif kind != "repo" and not binding:
-        # from the cwd there is no named folder to demand a record in: only what the run wrote is checked
-        stream, sdir = team_roles.stream_holding(PERMA, cwd)
-        if stream:
-            root = repo_root(str(sdir)).resolve()
-            checks.append((root, sdir.resolve().relative_to(root).as_posix(), {}))
     # The shipped table demands a record only in a repository that has opted in with a binding and
     # that the owner owns (or whose binding names a reviews folder). A rule in the owner's own table
-    # is their explicit choice and applies everywhere (review 2026-10-11, H1). With no binding, a
-    # stream check stands in for the default folder.
-    if (personal or (rbind and (rbind.get("owned") is True or "reviews" in rbind))) and (rbind or not checks):
+    # is their explicit choice and applies everywhere (review 2026-10-11, H1).
+    if personal or (rbind and (rbind.get("owned") is True or "reviews" in rbind)):
         folder, why = reviews_folder(rbind)
         if not folder:
             log(f"RUN-RECORD check skipped for {d.get('agent_type')}: binding {why}")
@@ -957,7 +902,7 @@ def subagent_stop(d):
             # decided at dispatch: that folder alone, never another work order's under the same reviews
             named, rf = line[3], rroot / line[2]
             checks.append((rroot, line[2], rbind))
-            # written when a new file at any depth matches the job's marks, as a stream record
+            # written when a new file at any depth matches the job's marks
             fresh, want = marked(rname, rf, started, rbind)
         else:
             checks.append((rroot, folder, rbind))
@@ -978,7 +923,7 @@ def subagent_stop(d):
         log(f"RUN-RECORD ok for {d.get('agent_type')}: {fresh[0].name}")
         return with_note(None, note)
     # where the record is: the folder decided at dispatch, else the working directory
-    where = (line[1] / line[2]) if kind == "stream" or (kind == "repo" and line[4]) else cwd
+    where = (line[1] / line[2]) if kind == "repo" and line[4] else cwd
     if fresh or fresh is None:
         if not d.get("stop_hook_active"):
             log(f"RECORD-ARTEFACTS missing or bad for {d.get('agent_type')} — sent back: {'; '.join(bad)}")
@@ -1021,20 +966,21 @@ def check_new(cwd):
     # A missing shipped agent is said only in a repository with a binding: someone who does not use
     # the team may have removed the agents on purpose.
     plugins = {n.split(":")[0] for n in have if ":" in n}
-    bound = bool(team_roles.load_binding(PERMA, cwd, log))
+    bound = bool(team_roles.load_binding(cwd, log))
     gone = [(rn, p) for rn, r in entries for p in team_roles.providers(r)
             if p not in have and (p.split(":")[0] in plugins if ":" in p else bound)]
     for rn, p in gone:
         print(f"[perma] Agent role '{rn}': provider '{p}' is not installed"
               + (f", but the {p.split(':')[0]} plugin is — it was probably renamed or removed. "
-                 if ":" in p else " — re-run ~/permanence/runtime/install.sh. ")
+                 if ":" in p else " — reinstall the plugin. ")
               + "Tell the owner, and offer to update the role table that names it "
-                "(runtime/agent-roles.json or _personal/agent-roles.json).")
+                f"(runtime/agent-roles.json or {team_roles.personal_table()}).")
     new = sorted(have - seen - known - team_roles.BUILT_IN)
     if new and not first:
         print("[perma] New agent(s) installed since the last check: " + ", ".join(new) + ". "
               "If one does the same job as a Permanence role (runtime/agent-roles.json), tell the owner and "
-              "offer to add it to that role's providers. PM: record this in WIP.md — it is shown only once.")
+              "offer to add it to that role's providers. It is shown only once.")
+    SEEN.parent.mkdir(parents=True, exist_ok=True)
     SEEN.write_text("\n".join(sorted(seen | have)) + "\n")
 
 

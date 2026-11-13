@@ -642,13 +642,18 @@ class TestRefusalsWriteOneEvent(SpendScratch):
                 )
         return h
 
-    def pre(self, st, prompt):
+    def pre(self, st, prompt, cwd=None):
         return {
             "hook_event_name": "PreToolUse",
             "tool_name": "Agent",
-            "cwd": str(self.work),
+            "cwd": str(cwd or self.work),
             "tool_input": {"subagent_type": st, "description": "x", "prompt": prompt},
         }
+
+    def sent(self, st, prompt, cwd=None):
+        """The prompt a dispatch the hook allows hands the agent; the hook decides its record folder here."""
+        out = json.loads(self.hook(self.pre(st, prompt, cwd)).stdout)
+        return out["hookSpecificOutput"]["updatedInput"]["prompt"]
 
     def stop(self, agent, prompt, name, **extra):
         t = self.root / f"{name}.jsonl"
@@ -670,7 +675,7 @@ class TestRefusalsWriteOneEvent(SpendScratch):
         )
 
     def test_hook_deny_and_block_write_one_event_each(self):
-        rec, rv = self.work / "design" / "t7", self.work / "design" / "rv"
+        rec, rv = self.work / "runs" / "t7", self.work / "runs" / "rv"
         rec.mkdir(parents=True)
         calls = [
             self.pre("role:no-such-role", "p"),
@@ -686,8 +691,9 @@ class TestRefusalsWriteOneEvent(SpendScratch):
             self.stop("refactor-reviewer", "Review W1.\n", "r"),
         ]
         verdicts = [self.verdict(self.hook(d)) for d in calls]
+        # the reviewer's record folder is decided at its dispatch, which is allowed and writes no event
         artefacts = self.stop(
-            "refactor-reviewer", f"Review W1.\nRecord folder: {rv}/\n", "a"
+            "refactor-reviewer", self.sent("role:reviewer", f"Review W1.\nRecord folder: {rv}/\n"), "a"
         )
         (rv / "review").mkdir(parents=True)
         (rv / "review" / "findings.md").write_text("F1\n")
@@ -710,12 +716,14 @@ class TestRefusalsWriteOneEvent(SpendScratch):
         self.assertEqual(len(self.events()), 5)
 
     def test_stop_routes_by_the_record_folder_not_the_working_folder(self):
-        """The record folder is in the project `work`; the agent's working folder is a repository with no team.
-        The stop's event goes to `work`: routed by the record, not by the working folder (review F10)."""
+        """The record folder is in the project `work`, decided at dispatch; the agent's working folder is a
+        repository with no team. The stop's event goes to `work`: routed by the record, not by the working
+        folder (review F10)."""
         elsewhere = self.root / "elsewhere"
         subprocess.run(["git", "init", "-q", str(elsewhere)], check=True)
-        rv = self.work / "design" / "rv"
-        d = self.stop("refactor-reviewer", f"Review W1.\nRecord folder: {rv}/\n", "a")
+        rv = self.work / "runs" / "rv"
+        sent = self.sent("role:reviewer", f"Review W1.\nRecord folder: {rv}/\n", cwd=elsewhere)
+        d = self.stop("refactor-reviewer", sent, "a")
         d["cwd"] = str(elsewhere)
         (rv / "review").mkdir(parents=True)
         (rv / "review" / "findings.md").write_text("F1\n")
