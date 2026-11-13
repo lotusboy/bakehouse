@@ -2,12 +2,14 @@
 """Records against the process: each work order's record must hold what its job type declares, and a
 work order that changed code must be closed. Deterministic, no AI, standard library only.
 
-    python3 ~/permanence/runtime/records-check.py --binding <stream>/repo/binding.json [--repo .]
+    python3 runtime/records-check.py [--repo .] [--binding FILE]
         [--ref REF] [--as-of YYYY-MM-DD] [--since YYYY-MM-DD] [--code-roots DIR ...]
         [--ledger FILE] [--register FILE] [--no-write]
 
-It reads the repository with read-only git commands at one ref and writes one file: the register,
-`records.json` beside the binding unless --register names another. docs/PROJECT-TEAM.md, "Records
+The project is the repository at --repo (runtime/locator.py): its binding, its ops ledger and its
+records folder. --binding and --ledger replace the project's own. It reads the repository with
+read-only git commands at one ref and writes one file: the register, `registers/records.json` in the
+records folder unless --register names another. docs/PROJECT-TEAM.md, "Records
 against the process", is the full reference.
 
 THE CONTRACTS. runtime/record-contracts.json declares, per job type, the files that mark a record
@@ -77,16 +79,9 @@ mutation files (records) and the work orders it came from. A file is counted onc
 named by several work orders is read for each. It is reported, never a target: a target invites easy
 mutants.
 
-THE STREAM'S OWN RECORDS. `records-check.py --stream <stream> [--ref REF] [--since YYYY-MM-DD]` reads a
-stream _meta/REGISTRY.md registers, through git in the repository that holds it, and checks every folder at
-any depth against each job it marks, with the shipped contracts and no binding (no gate ids; the shipped
-test roots). A job's record is history when every file marking it was added before since (default the
-reviewer contract's rounds.from, which --since also replaces). No close rule. It writes
-`<stream>/repo/records-stream.json`.
-
-THE STREAM. For an owned repository, one `stream.currency` flag (work order `(stream)`, owner pm) when
-PROJECT.md's first "Last updated YYYY-MM-DD" is older than the latest work-order-closed event, or when
-the post-commit hook's ops-gap.sh warns that the ops ledger is behind. Never a promote-to-code count.
+THE LEDGER'S CURRENCY. For an owned repository, one `stream.currency` flag (work order `(stream)`, owner
+pm) when the post-commit hook's ops-gap.sh warns that the ops ledger is behind. Never a promote-to-code
+count.
 
 Exit: 0 when the check completed, whatever it flagged; 2 bad input.
 """
@@ -124,7 +119,6 @@ CLOSE_REFUSED = "work order close overridden"  # the purpose predict-gate.py's r
 STREAM = "(stream)"
 CURRENCY_RULE = "stream.currency"
 CURRENCY_NEXT = "refresh the stream's PROJECT.md state block"
-LAST_UPDATED = re.compile(r"Last updated (\d{4}-\d{2}-\d{2})")
 PAIR = re.compile(r"(\S+) sha256:([0-9a-f]{64})")
 BASE_PAIR = re.compile(r"baseline (\S+) \(sha256 ([0-9a-f]{64})\)")
 DAY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -178,13 +172,13 @@ class BadInput(Exception):
         self.gate = gate  # the gate id of the refusal event main writes (docs/PROJECT-TEAM.md, "Gate refusals")
 
 
-def refusal_event(e: BadInput, perma: Path, stream=None, path=None):
+def refusal_event(e: BadInput, path=None):
     """One gate-refused event for a refused input. Best effort: a failed write changes nothing."""
     try:
         sys.path.insert(0, str(HERE))
         import gate_event
         gate_event.refused(e.gate, "records-check refused its input", f"records-check: bad input: {e}",
-                           stream=stream, path=None if path is None else str(path), perma=perma)
+                           path=None if path is None else str(path))
     except Exception:  # noqa: BLE001, S110 - the event reports a refusal; it never changes one
         pass
 
@@ -876,23 +870,12 @@ def close_state(events, read: Reader, own: list, need: set, last: datetime | Non
 
 # ---------- the check ----------
 
-def stream_currency(stream_dir: Path, ledger: Path, repo: Path) -> list:
-    """Why the stream's narrative is behind its ledgers, or [] when it is not. The ledgers stay current
-    because tools write them; PROJECT.md once fell a week behind nine closes on a prompt rule alone."""
+def stream_currency(repo: Path) -> list:
+    """Why the ops ledger is behind the repository, or [] when it is not."""
     why = []
     try:
-        m = LAST_UPDATED.search((stream_dir / "PROJECT.md").read_text(encoding="utf-8"))
-    except OSError:
-        m = None
-    closed = [ev for evs in closes(ledger).values() for ev in evs if ev.get("kind") == CLOSED_KIND]
-    latest = max(closed, key=lambda ev: str(ev.get("ts", "")), default=None)
-    if m and latest and m.group(1) < str(latest.get("ts", ""))[:10]:
-        why.append(f"PROJECT.md says Last updated {m.group(1)}, older than the latest {CLOSED_KIND} "
-                   f"({latest['task']}, {str(latest['ts'])[:10]})")
-    perma = os.environ.get("PERMA_DIR") or str(HERE.parent)
-    try:
         p = subprocess.run([str(HERE / "ops-gap.sh")], capture_output=True, text=True,
-                           env=dict(os.environ, OPS_REPO=str(repo), PERMA_DIR=perma))
+                           env=dict(os.environ, OPS_REPO=str(repo)))
     except OSError:
         return why
     if p.returncode == 0 and p.stdout.startswith("⚠"):
@@ -938,7 +921,7 @@ def history(repo, ref, binding: dict, base: str):
     return record_at, added, changed_at
 
 
-def build(binding: dict, binding_path: Path, repo: Path, a, contracts: dict) -> dict:
+def build(binding: dict, ledger: Path | None, repo: Path, a, contracts: dict) -> dict:
     jobs = merged_jobs(binding, contracts)
     tracker = binding.get("tracker") if isinstance(binding.get("tracker"), dict) else {}
     if not isinstance(tracker.get("id"), str):
@@ -962,7 +945,8 @@ def build(binding: dict, binding_path: Path, repo: Path, a, contracts: dict) -> 
     reviews = posixpath.normpath(binding.get("reviews") or "axis/runs/")
     form = binding.get("reviewName") or "{date}-{id}-step{n}-review"
     owned = binding.get("owned") is True
-    ledger = Path(a.ledger) if a.ledger else binding_path.parent / "ops" / "events.jsonl"
+    if owned and ledger is None:
+        raise BadInput(f"{repo} has no team, so no ops ledger: pass --ledger")
 
     commits, last, uncredited = code_commits(repo, ref, since, as_of, roots, rx)
     tree, below = record_tree(repo, ref, reviews)
@@ -1109,12 +1093,12 @@ def build(binding: dict, binding_path: Path, repo: Path, a, contracts: dict) -> 
         r["promoteToCode"] = len(r["workOrders"]) >= contracts["promoteAt"]
         r["for"] = "owner" if r["promoteToCode"] else None
     if owned:
-        stale = stream_currency(binding_path.parent.parent, ledger, repo)
+        stale = stream_currency(repo)
         if stale:
             flags.append({"workOrder": STREAM, "rule": CURRENCY_RULE, "folders": [], "what": stale, "owner": "pm",
                           "state": "open", "next": CURRENCY_NEXT})
     return {
-        "_about": "Generated by Permanence runtime/records-check.py from runtime/record-contracts.json and the "
+        "_about": "Generated by bakehouse runtime/records-check.py from runtime/record-contracts.json and the "
                   "binding's 'records'. Rewritten on every run; it holds no decision.",
         "computed": {
             "since": since.isoformat(), "ref": ref, "codeRoots": list(roots),
@@ -1133,120 +1117,6 @@ def build(binding: dict, binding_path: Path, repo: Path, a, contracts: dict) -> 
         "rules": dict(sorted(rules.items())),
         "mutations": {"records": read_files, "rows": read_rows, "gates": dict(sorted(per_gate.items()))},
     }
-
-
-def build_stream(perma: Path, stream: str, a, contracts: dict) -> dict:
-    """A registered stream's own record folders, read through git at the ref in the repository that holds
-    the stream: every folder at any depth, checked against each job it marks with the shipped contracts
-    as they are (no binding: no gate ids, the shipped test roots). A job's record in a folder is history,
-    and not read, when every file marking it was added before `since`: --since, else the reviewer
-    contract's rounds.from, which --since also replaces. No close rule: a stream has no work order."""
-    spec = importlib.util.spec_from_file_location("team_roles", HERE / "team_roles.py")
-    tr = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(tr)  # lazy: only this mode reads the registry
-    if stream.strip("/") not in tr.registered_streams(perma):
-        raise BadInput(f"{stream!r} is not a stream _meta/REGISTRY.md registers (in {perma})")
-    sdir = (perma / stream.strip("/")).resolve()
-    if not sdir.is_dir():
-        raise BadInput(f"the stream folder {sdir} does not exist")
-    repo = Path(git(sdir, "rev-parse", "--show-toplevel").strip()).resolve()
-    base = sdir.relative_to(repo).as_posix()
-    ref = a.ref or "HEAD"
-    git(repo, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}")
-    jobs = merged_jobs({}, contracts)
-    since = (a.since.isoformat() if a.since else
-             next((j["rounds"]["from"] for j in jobs.values() if j.get("rounds")), None)
-             or (a.as_of - timedelta(days=contracts["windowDays"])).isoformat())
-    for j in jobs.values():
-        if j.get("rounds"):
-            j["rounds"]["from"] = since
-    tree = defaultdict(dict)
-    for e in git(repo, "ls-tree", "-r", "-z", ref, "--", base + "/").split("\0"):
-        if not e:
-            continue
-        meta, path = e.split("\t", 1)
-        mode, kind, blob = meta.split()
-        if kind == "blob" and mode != "120000":
-            folder, name = posixpath.split(path[len(base) + 1:])
-            tree[folder][name] = blob
-    record_at, added, changed_at = history(repo, ref, {}, base)
-    read = Reader(repo, ref)
-    roots = test_roots({}, contracts)
-    closer_id = next((n for n, j in jobs.items() if j.get("close") is True), None)
-    prover_id = next((n for n, j in jobs.items() if j.get("close") is False), None)
-    folders, flags, per_gate, files_read, rows_read = {}, [], {}, 0, 0
-    for f in sorted(tree):
-        files = tree[f]
-        own = {n: [x for x in files if any(fnmatch.fnmatchcase(x, g) for g in j["marks"])] for n, j in jobs.items()}
-        own = {n: hits for n, hits in own.items() if hits}
-        if closer_id and closer_id not in own and not (prover_id in own):
-            extra = [x for x in files if any(fnmatch.fnmatchcase(x, g)
-                                             for g in jobs[closer_id].get("marksOutsideRefactor", []))]
-            if extra:
-                own[closer_id] = extra
-        if not own:
-            continue
-        live = sorted(n for n, hits in own.items() if any(added(f"{base}/{f}/{x}") >= since for x in hits))
-        folders[f] = {"jobs": live, "history": not live}
-        for name in live:
-            rows, found = {}, defaultdict(list)
-            for rid, kind, what in check_folder(files, jobs[name], read, rows=rows, roots=roots,
-                                                record_at=lambda n, w=f: record_at(f"{base}/{w}/{n}"),
-                                                changed=changed_at(f), added=lambda n, w=f: added(f"{base}/{w}/{n}")):
-                found[(f"{name}.{rid}", "proof" if name == prover_id else kind)].append(what)
-            for (rule, kind), what in sorted(found.items()):
-                flags.append({"folder": f, "rule": rule, "what": what, "owner": jobs[name]["owner"], "state": "open",
-                              "next": NEXT[kind].format(wo="<work order>")})
-            for n, got in sorted(rows.items()):
-                files_read += 1
-                rows_read += len(got)
-                for r in got:
-                    g = per_gate.setdefault(gate_label(r["gate"]), {"killed": 0, "survived": 0})
-                    g[r["verdict"]] += 1
-    # a misnamed findings file is read at or below a record folder, as in a repository's record folders
-    for name, job in sorted(jobs.items()):
-        if not job.get("rounds"):
-            continue
-        for f in sorted(tree):
-            if not any(r in ("", f) or f.startswith(r + "/") for r in folders):
-                continue
-            what = [f"{n} is not a declared findings name; write it as {exp} and its rows as {mut} "
-                    "(record-contracts.json, rounds)" for n, exp, mut in misnamed(tree[f], job, claimed(jobs, name))
-                    if added(f"{base}/{f}/{n}") >= since]
-            if what:
-                flags.append({"folder": f, "rule": f"{name}.rounds", "what": what, "owner": job["owner"],
-                              "state": "open", "next": NEXT["rounds"].format(wo="<work order>")})
-    return {
-        "_about": "Generated by Permanence runtime/records-check.py --stream from runtime/record-contracts.json. "
-                  "Rewritten on every run; it holds no decision.",
-        "computed": {"stream": stream.strip("/"), "since": since, "ref": ref, "folders": len(folders),
-                     "history": sum(1 for v in folders.values() if v["history"]),
-                     "openFlags": len(flags)},
-        "folders": folders,
-        "flags": flags,
-        "mutations": {"records": files_read, "rows": rows_read, "gates": dict(sorted(per_gate.items()))},
-    }
-
-
-def render_stream(reg: dict, head: str) -> str:
-    c = reg["computed"]
-    lines = [(f"Stream records, {c['stream']} at `{head}`: {c['folders']} record folder(s), {c['history']} of them "
-              f"history (every file that marks them was added before {c['since']}); {c['openFlags']} open flag(s)."),
-             "The close rule does not apply: a stream record has no work order."]
-    by_rule = defaultdict(list)
-    for f in reg["flags"]:
-        by_rule[f["rule"]].append(f)
-    for rule, fs in sorted(by_rule.items()):
-        lines += ["", f"Rule `{rule}` (owner: {fs[0]['owner']}):"]
-        lines += [f"- {f['folder']}: " + "; ".join(f["what"]) for f in fs]
-        lines.append("  Next: " + fs[0]["next"])
-    m = reg["mutations"]
-    lines += ["", (f"Kill rate per gate (reported, never a target): {m['rows']} mutation row(s) in {m['records']} "
-                   "reviewer mutations file(s).")]
-    if m["gates"]:
-        lines += ["", "| gate | killed | survived |", "|---|---|---|"]
-        lines += [f"| {g} | {v['killed']} | {v['survived']} |" for g, v in m["gates"].items()]
-    return "\n".join(lines)
 
 
 def render(reg: dict, as_of: str, head: str) -> str:
@@ -1303,64 +1173,57 @@ def write_whole(path: Path, text: str):
     os.replace(tmp, path)
 
 
+def project_of(repo: Path):
+    """The project of the repository (runtime/locator.py), or None when it has no team."""
+    sys.path.insert(0, str(HERE))
+    import locator
+    try:
+        return locator.find(repo, {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"})
+    except locator.SetupNeeded as e:
+        raise BadInput(str(e))
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    mode = ap.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--binding", help="the repo's binding.json, in the owner's stream")
-    mode.add_argument("--stream", help="a stream _meta/REGISTRY.md registers: check its own record folders")
+    ap.add_argument("--binding", help="default: the project's .team/binding.json")
     ap.add_argument("--repo", default=".")
     ap.add_argument("--ref", help="default: the binding's signal.ref, else HEAD")
     ap.add_argument("--as-of", type=date.fromisoformat, default=date.today())
     ap.add_argument("--since", type=date.fromisoformat, help="default: records.since, else windowDays before --as-of")
     ap.add_argument("--code-roots", nargs="+",
                     help="default: the binding's signal.codeRoots (a rules signal), else records.codeRoots")
-    ap.add_argument("--ledger", help="default: ops/events.jsonl beside the binding")
-    ap.add_argument("--register", help="default records.json beside the binding; with --stream, "
-                                       "records-stream.json in the stream's repo/ folder. A relative path is "
-                                       "taken in that folder")
+    ap.add_argument("--ledger", help="default: the project's ops ledger")
+    ap.add_argument("--register", help="default registers/records.json in the project's records folder. A "
+                                       "relative path is taken in that registers/ folder")
     ap.add_argument("--no-write", action="store_true", help="print the block; write no register")
     a = ap.parse_args(argv)
-    if a.stream:
-        return main_stream(a)
-    bpath = Path(a.binding)
     try:
+        repo = Path(git(a.repo, "rev-parse", "--show-toplevel").strip())
+        project = project_of(repo)
+        if not a.binding and project is None:
+            raise BadInput(f"{repo} has no team (no .team/binding.json): run it in a project's repository, or "
+                           "pass --binding")
+        bpath = Path(a.binding) if a.binding else project.binding
         try:
             binding = json.loads(bpath.read_text(encoding="utf-8"))
         except (OSError, ValueError) as e:
             raise BadInput(f"cannot read the binding {bpath}: {e}")
         if not isinstance(binding, dict):
             raise BadInput(f"the binding {bpath} is not a JSON object")
-        repo = Path(git(a.repo, "rev-parse", "--show-toplevel").strip())
-        reg = build(binding, bpath.resolve(), repo, a, load_contracts())
+        register = None if a.no_write else Path(a.register or "records.json")
+        if register is not None and not register.is_absolute():
+            if project is None:
+                raise BadInput(f"{repo} has no team, so no records folder: pass --register with a full path")
+            register = project.records / "registers" / register
+        ledger = Path(a.ledger) if a.ledger else project.ops_ledger if project else None
+        reg = build(binding, ledger, repo, a, load_contracts())
     except BadInput as e:
         print(f"records-check: bad input: {e}", file=sys.stderr)
-        refusal_event(e, Path(os.environ.get("PERMA_DIR") or HERE.parent).expanduser(), path=bpath.resolve())
+        refusal_event(e, path=Path(a.repo).resolve())
         return 2
-    if not a.no_write:
-        register = Path(a.register or "records.json")
-        if not register.is_absolute():
-            register = bpath.resolve().parent / register
+    if register is not None:
         write_whole(register, json.dumps(reg, indent=2, ensure_ascii=False) + "\n")
     print(render(reg, a.as_of.isoformat(), git(repo, "rev-parse", "--short", reg["computed"]["ref"]).strip()))
-    return 0
-
-
-
-def main_stream(a) -> int:
-    perma = Path(os.environ.get("PERMA_DIR") or HERE.parent).expanduser()
-    try:
-        reg = build_stream(perma, a.stream, a, load_contracts())
-        head = git(perma / reg["computed"]["stream"], "rev-parse", "--short", reg["computed"]["ref"]).strip()
-    except BadInput as e:
-        print(f"records-check: bad input: {e}", file=sys.stderr)
-        refusal_event(e, perma, stream=a.stream)
-        return 2
-    if not a.no_write:
-        register = Path(a.register or "records-stream.json")
-        if not register.is_absolute():
-            register = perma / reg["computed"]["stream"] / "repo" / register
-        write_whole(register, json.dumps(reg, indent=2, ensure_ascii=False) + "\n")
-    print(render_stream(reg, head))
     return 0
 
 

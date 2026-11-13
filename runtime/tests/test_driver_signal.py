@@ -30,11 +30,16 @@ class Fixture(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         t = Path(self.tmp.name)
-        self.repo, self.stream = t / "repo", t / "stream"
+        self.repo, records = t / "repo", t / "repo.team-records"
         (self.repo / "runs").mkdir(parents=True)
-        self.stream.mkdir()
-        self.binding = self.stream / "binding.json"
-        self.register = self.stream / "drivers.json"
+        (self.repo / ".team").mkdir()
+        # a scratch project: .team/binding.json and a records worktree named by git config bakehouse.records
+        for args in (["init", "-q"], ["worktree", "add", "-q", "--orphan", "-b", "team-records", str(records)],
+                     ["config", "bakehouse.records", str(records)]):
+            subprocess.run(["git", "-C", str(self.repo), *args], check=True, capture_output=True)
+        self.binding = self.repo / ".team" / "binding.json"
+        self.register = records / "registers" / "drivers.json"
+        self.register.parent.mkdir()
         self.rules()
 
     def tearDown(self):
@@ -52,7 +57,7 @@ class Fixture(unittest.TestCase):
         p.write_bytes(text) if isinstance(text, bytes) else p.write_text(text)
 
     def run_signal(self, *args, as_of=AS_OF.isoformat()):
-        p = subprocess.run(["python3", str(SCRIPT), "--binding", str(self.binding), "--repo", str(self.repo),
+        p = subprocess.run(["python3", str(SCRIPT), "--repo", str(self.repo),
                             "--as-of", as_of, *args], capture_output=True, text=True)
         return p.returncode, p.stdout + p.stderr
 
@@ -236,6 +241,13 @@ class TestRegister(Fixture):
         self.assertEqual(code, 0, out)
         self.assertFalse(self.register.exists())
         self.assertIn("driver files in 1 run folders", out)
+
+    def test_binding_and_a_full_register_path_need_no_team(self):
+        self.put(f"{day(1)}-a", "drivers/x.py", body("a"))
+        other = Path(self.tmp.name) / "other.json"
+        self.binding.rename(other)
+        self.assertNotEqual(self.run_signal()[0], 0)
+        self.ok("--binding", str(other), "--register", str(self.register))
 
 
 

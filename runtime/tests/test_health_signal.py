@@ -17,12 +17,15 @@ class Fixture(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         t = Path(self.tmp.name)
-        self.repo, self.stream = t / "repo", t / "stream"
-        self.repo.mkdir()
-        self.stream.mkdir()
+        self.repo, records = t / "repo", t / "repo.team-records"
+        (self.repo / ".team").mkdir(parents=True)
         self.git("init", "-q")
-        self.binding = self.stream / "binding.json"
-        self.register = self.stream / "health.json"
+        # a scratch project: .team/binding.json and a records worktree named by git config bakehouse.records
+        self.git("worktree", "add", "-q", "--orphan", "-b", "team-records", str(records))
+        self.git("config", "bakehouse.records", str(records))
+        self.binding = self.repo / ".team" / "binding.json"
+        self.register = records / "registers" / "health.json"
+        self.register.parent.mkdir()
         self.rules(part="^src/([^/]+)/")
 
     def tearDown(self):
@@ -47,7 +50,7 @@ class Fixture(unittest.TestCase):
                                             "reviews": reviews}))
 
     def run_signal(self, *args, as_of="2026-06-15"):
-        p = subprocess.run(["python3", str(SCRIPT), "--binding", str(self.binding), "--register", "health.json",
+        p = subprocess.run(["python3", str(SCRIPT), "--register", "health.json",
                             "--repo", str(self.repo), "--as-of", as_of, *args],
                            capture_output=True, text=True, env=ENV)
         return p.returncode, p.stdout + p.stderr
@@ -161,6 +164,14 @@ class TestStateAndDecision(Fixture):
     def test_no_write_leaves_the_register_alone(self):
         self.assertEqual(self.run_signal("--no-write")[0], 0)
         self.assertFalse(self.register.exists())
+
+    def test_binding_and_a_full_register_path_need_no_team(self):
+        other = Path(self.tmp.name) / "other.json"
+        self.binding.rename(other)
+        self.assertNotEqual(self.run_signal()[0], 0)
+        code, out = self.run_signal("--binding", str(other), "--register", str(other.with_name("h.json")))
+        self.assertEqual(code, 0, out)
+        self.assertTrue(other.with_name("h.json").exists())
 
 
 class TestSizeAndReviews(Fixture):

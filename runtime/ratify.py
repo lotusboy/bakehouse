@@ -13,13 +13,13 @@ import json
 import os
 import random
 import re
-import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-PERMA = Path(os.environ.get("PERMA_DIR") or Path.home() / "permanence")
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import locator  # noqa: E402
 TEMPLATE = HERE.parent / "templates/ratify-vocabulary-brief.md"
 KINDS = ("regex", "phrase", "keyword")
 LABELS = ("RIGHT", "WRONG", "MIXED")
@@ -277,23 +277,20 @@ def agreement_md(doc):
     return "\n".join(lines)
 
 
-def resolve_stream(explicit):
-    if explicit:
-        return explicit
-    p = subprocess.run([str(PERMA / "runtime/resolve-stream.sh"), os.getcwd()], capture_output=True, text=True,
-                       env=dict(os.environ, PERMA_DIR=str(PERMA)))
-    s = p.stdout.strip()
-    if not s:
-        fail(f"no stream is registered for {os.getcwd()} in _meta/REGISTRY.md; pass --stream")
-    return s
+def resolve_project(repo):
+    """The project of --repo, else of the current folder (runtime/locator.py)."""
+    env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"} if repo else os.environ
+    try:
+        project = locator.find(repo, env)
+    except locator.SetupNeeded as e:
+        fail(str(e))
+    if project is None:
+        fail(f"{repo or os.getcwd()} has no team (no .team/binding.json); pass --repo")
+    return project
 
 
-def ledger_path(stream):
-    return PERMA / stream / "ratifications" / "ledger.jsonl"
-
-
-def latest(stream):
-    path = ledger_path(stream)
+def latest(project):
+    path = project.ratify_ledger
     rows = {}
     if path.is_file():
         for line in path.read_text().splitlines():
@@ -308,7 +305,7 @@ def now():
 
 
 def cmd_record(a):
-    stream = resolve_stream(a.stream)
+    project = resolve_project(a.repo)
     agreement = load_json(a.agreement, "agreement")
     owner = {x.strip() for x in (a.owner_approved or "").split(",") if x.strip()}
     by_id = {r["id"]: r for r in agreement["entries"]}
@@ -318,7 +315,7 @@ def cmd_record(a):
         if by_id[i]["verdict"] != "held":
             fail(f"--owner-approved {i}: its verdict is {by_id[i]['verdict']}; the owner approves held entries "
                  "only. A rejected entry goes back for a fix and a new round.")
-    path = ledger_path(stream)
+    path = project.ratify_ledger
     path.parent.mkdir(parents=True, exist_ok=True)
     evidence = str(Path(a.agreement).resolve())
     counts = {}
@@ -342,9 +339,9 @@ def cmd_record(a):
 
 
 def cmd_check(a):
-    stream = resolve_stream(a.stream)
+    project = resolve_project(a.repo)
     entries = load_entries(a.entries)
-    led = latest(stream)
+    led = latest(project)
     problems = []
     for e in entries:
         r = led.get(e["id"])
@@ -360,25 +357,24 @@ def cmd_check(a):
             continue
         problems.append({"id": e["id"], "state": state, "pattern": e["pattern"], "class": e["class"]})
     if a.json:
-        print(json.dumps({"stream": stream, "entries": len(entries), "problems": problems}, indent=2))
+        print(json.dumps({"stream": project.root.name, "entries": len(entries), "problems": problems}, indent=2))
     else:
         for p in problems:
             print(f"{p['id']}: {p['state']} — `{p['pattern']}` -> {p['class']}")
-        print(f"{len(entries) - len(problems)} of {len(entries)} entries ratified and unchanged in {stream}.")
+        print(f"{len(entries) - len(problems)} of {len(entries)} entries ratified and unchanged in {project.root.name}.")
     return 1 if problems else 0
 
 
 def cmd_status(a):
-    streams = [a.stream] if a.stream else sorted(
-        str(p.parent.parent.relative_to(PERMA)) for p in PERMA.glob("**/ratifications/ledger.jsonl"))
-    if not streams:
+    project = resolve_project(a.repo)
+    if not project.ratify_ledger.is_file():
         print("no ratification ledgers found")
-    for s in streams:
-        rows = latest(s).values()
-        counts = {v: sum(r["verdict"] == v for r in rows) for v in ("ratified", "rejected", "held")}
-        owner = sum(r.get("ratifiedBy") == "owner" for r in rows)
-        print(f"{s}: {len(rows)} entries — ratified {counts['ratified']} (by owner {owner}), "
-              f"rejected {counts['rejected']}, held {counts['held']}")
+        return 0
+    rows = latest(project).values()
+    counts = {v: sum(r["verdict"] == v for r in rows) for v in ("ratified", "rejected", "held")}
+    owner = sum(r.get("ratifiedBy") == "owner" for r in rows)
+    print(f"{project.root.name}: {len(rows)} entries — ratified {counts['ratified']} (by owner {owner}), "
+          f"rejected {counts['rejected']}, held {counts['held']}")
     return 0
 
 
@@ -400,16 +396,16 @@ def main(argv=None):
     c.add_argument("--out", required=True)
     c.add_argument("--sample", help="default <out>/sample.json")
     r = sub.add_parser("record")
-    r.add_argument("--stream")
+    r.add_argument("--repo")
     r.add_argument("--agreement", required=True)
     r.add_argument("--owner-approved", help="comma-separated ids of HELD entries the owner approved")
     r.add_argument("--note")
     k = sub.add_parser("check")
     k.add_argument("--entries", required=True)
-    k.add_argument("--stream")
+    k.add_argument("--repo")
     k.add_argument("--json", action="store_true")
     t = sub.add_parser("status")
-    t.add_argument("--stream")
+    t.add_argument("--repo")
     a = ap.parse_args(argv)
     if a.cmd == "sample" and (a.per_entry < 1 or not 2 <= a.readers <= 8):
         fail("--per-entry must be at least 1 and --readers between 2 and 8")

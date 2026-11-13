@@ -1,6 +1,7 @@
 """Tests for runtime/team-preflight.py. Standard library only: python3 -m unittest discover runtime/tests"""
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -22,8 +23,8 @@ other: 1
 """
 
 
-def run(*args, env=None):
-    p = subprocess.run(["python3", str(SCRIPT), *args], capture_output=True, text=True, env=env)
+def run(*args, env=None, script=SCRIPT):
+    p = subprocess.run(["python3", str(script), *args], capture_output=True, text=True, env=env)
     return p.returncode, p.stdout + p.stderr
 
 
@@ -38,13 +39,16 @@ class Fixture(unittest.TestCase):
         (self.repo / "recipe.yaml").write_text(RECIPE)
         (self.repo / "recipe.json").write_text(json.dumps({"gates": [{"id": "tests", "command": "true"}]}))
         subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
-        self.stream = t / "stream" / "repo"
-        self.stream.mkdir(parents=True)
-        self.binding = self.stream / "binding.json"
+        # a scratch project: .team/binding.json and a records worktree named by git config bakehouse.records
+        (self.repo / ".team").mkdir()
+        self.binding = self.repo / ".team" / "binding.json"
+        for args in (("worktree", "add", "-q", "--orphan", "-b", "team-records", str(t / "repo.team-records")),
+                     ("config", "bakehouse.records", str(t / "repo.team-records"))):
+            subprocess.run(["git", "-C", str(self.repo), *args], check=True, capture_output=True)
         # scratch install: results never depend on this machine's agents, plugins or tables
         (t / "home").mkdir()
-        (t / "perma" / "runtime").mkdir(parents=True)
-        self.env = dict(os.environ, HOME=str(t / "home"), PERMA_DIR=str(t / "perma"))
+        self.env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"}
+        self.env.update(HOME=str(t / "home"), BAKEHOUSE_MACHINE_DIR=str(t / "machine"))
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -64,8 +68,14 @@ class Fixture(unittest.TestCase):
         self.binding.write_text(json.dumps({"owned": False, "approver": "the repository's PM",
                                             "register": "h.json", "signal": "recipe.yaml#steps.build"}))
 
-    def pre(self, *job):
-        return run(*job, "--repo", str(self.repo), "--binding", str(self.binding), env=self.env)
+    def pre(self, *job, script=SCRIPT):
+        return run(*job, "--repo", str(self.repo), env=self.env, script=script)
+
+    def runtime(self, without=()):
+        """A copy of runtime/, so a test can add or remove a file beside team-preflight.py."""
+        rt = Path(self.tmp.name) / "rt"
+        shutil.copytree(SCRIPT.parent, rt, ignore=shutil.ignore_patterns("tests", "__pycache__", "logs", *without))
+        return rt
 
 
 class TestOwned(Fixture):
@@ -191,11 +201,18 @@ class TestOwned(Fixture):
         self.assertIn("check 2", out)
 
     def test_missing_binding(self):
-        none = str(self.stream / "none.json")
+        none = str(self.binding.parent / "none.json")
         code, out = run("health", "--repo", str(self.repo), "--binding", none, env=self.env)
         self.assertEqual(code, 1)
         self.assertIn("FAIL check 1", out)
         self.assertEqual(run("startup", "--repo", str(self.repo), "--binding", none, env=self.env)[0], 0)
+        code, out = self.pre("health")
+        self.assertEqual(code, 1)
+        self.assertIn("FAIL check 1: ", out)
+        self.assertIn("has no team", out)
+        code, out = self.pre("startup")
+        self.assertEqual(code, 0)
+        self.assertIn("has no team", out)
 
     def test_empty_outside_and_non_string_paths_fail(self):
         for bad, msg in (("", "= \"\" is not a path"), ("../x", "'reviews' = '../x' is outside"),
@@ -217,13 +234,15 @@ class TestOwned(Fixture):
         self.assertIn("'measure.commands.0' uses a '<...>' placeholder", out)
 
     def test_role_check_reads_the_next_table_before_the_swap(self):
-        rt = Path(self.env["PERMA_DIR"]) / "runtime"
+        rt = self.runtime()
         (rt / "agent-roles.json").write_text(json.dumps({"roles": {"refactor-engineer": {"providers": ["Plan"]}}}))
         (rt / "agent-roles.next.json").write_text(json.dumps({"roles": {"engineer": {"providers": ["Explore"]}}}))
+        script = rt / "team-preflight.py"
         self.owned()
-        self.assertIn("role refactor:engineer -> Explore (from runtime/agent-roles.next.json", self.pre("refactor", "engine")[1])
+        self.assertIn("role refactor:engineer -> Explore (from runtime/agent-roles.next.json",
+                      self.pre("refactor", "engine", script=script)[1])
         (rt / "agent-roles.next.json").unlink()
-        self.assertIn("role refactor:engineer -> the session does it", self.pre("refactor", "engine")[1])
+        self.assertIn("role refactor:engineer -> the session does it", self.pre("refactor", "engine", script=script)[1])
 
     def test_job_needs_its_argument(self):
         self.owned()
@@ -254,9 +273,7 @@ class TestMutationBlock(Fixture):
         self.assertIn("FAIL check 3: path field 'mutation.tests[0].tests' = 'tests/no-such-folder' does not exist", out)
 
     def test_a_runner_that_fails_to_load_stops_only_the_mutation_check(self):
-        import shutil
-        rt = Path(self.tmp.name) / "rt"
-        shutil.copytree(SCRIPT.parent, rt, ignore=shutil.ignore_patterns("tests", "__pycache__", "logs"))
+        rt = self.runtime()
         (rt / "mutate.py").write_text("raise RuntimeError('broken runner')\n")
         (self.repo / "tests").mkdir()
         self.owned()
@@ -292,7 +309,7 @@ class TestApproval(Fixture):
     """Move 1 gate: owned false - no record fails, unconsumed same scope passes, consumed fails."""
 
     def approvals(self, records):
-        (self.stream / "approvals.json").write_text(json.dumps(records))
+        (self.binding.parent / "approvals.json").write_text(json.dumps(records))
 
     def rec(self, scope, consumed=""):
         return {"proposal": "P1", "approver": "the repository's PM", "date": "2026-10-05",
@@ -347,56 +364,55 @@ class TestSignalRules(Fixture):
         g = ["git", "-C", str(self.repo), "-c", "user.name=t", "-c", "user.email=t@t"]
         subprocess.run(g + ["add", "-A"], check=True)
         subprocess.run(g + ["commit", "-qm", "init"], check=True)
-        perma = Path(self.tmp.name) / "perma"
-        (perma / "runtime").mkdir(parents=True, exist_ok=True)
-        env = dict(self.env, PERMA_DIR=str(perma))
+        rt = self.runtime(without=("health-signal.py",))
+        env, script = self.env, rt / "team-preflight.py"
         sig = {"script": "health-signal", "ref": "HEAD", "fix": "^fix", "codeRoots": ["src/"],
                "part": "^(src)/"}
         self.binding.write_text(json.dumps({"owned": False, "approver": "PM", "register": "h.json", "signal": sig}))
-        args = ("health", "--repo", str(self.repo), "--binding", str(self.binding))
+        args = ("health", "--repo", str(self.repo))
         for job in ("health", "startup"):
-            code, out = run(job, *args[1:], env=env)
+            code, out = run(job, *args[1:], env=env, script=script)
             self.assertEqual(code, 0, out)
             self.assertIn("note check 4: the generic signal script is not installed yet", out)
-        (self.stream / "approvals.json").write_text(json.dumps(
+        (self.binding.parent / "approvals.json").write_text(json.dumps(
             [{"scope": {"part": "src"}, "consumed": ""}, {"scope": {"workOrder": "T-1"}, "consumed": ""}]))
-        code, out = run("change", "T-1", *args[1:], env=env)
+        code, out = run("change", "T-1", *args[1:], env=env, script=script)
         self.assertEqual(code, 0, out)
         self.assertIn("note check 4: the generic signal script is not installed yet", out)
-        code, out = run("refactor", "src", *args[1:], env=env)
+        code, out = run("refactor", "src", *args[1:], env=env, script=script)
         self.assertEqual(code, 1)
         self.assertIn("FAIL check 4: the generic signal script is not installed yet", out)
-        (perma / "runtime" / "health-signal.py").write_text("")
-        code, out = run(*args, env=env)
+        (rt / "health-signal.py").write_text("")
+        code, out = run(*args, env=env, script=script)
         self.assertEqual(code, 0)
         self.assertNotIn("not installed", out)
-        self.assertEqual(run("refactor", "src", *args[1:], env=env)[0], 0)
+        self.assertEqual(run("refactor", "src", *args[1:], env=env, script=script)[0], 0)
         sig.update(ref="nope", fix="(")
         self.binding.write_text(json.dumps({"owned": False, "approver": "PM", "register": "h.json", "signal": sig}))
-        out = run(*args, env=env)[1]
+        out = run(*args, env=env, script=script)[1]
         self.assertIn("signal.fix does not compile", out)
         self.assertIn("signal.ref 'nope' does not resolve", out)
         sig.update(ref="HEAD", fix="^fix", codeRoots=["src/", "lib/"])
         self.binding.write_text(json.dumps({"owned": False, "approver": "PM", "register": "h.json", "signal": sig}))
-        self.assertIn("signal.codeRoots 'lib/' does not exist at HEAD", run(*args, env=env)[1])
+        self.assertIn("signal.codeRoots 'lib/' does not exist at HEAD", run(*args, env=env, script=script)[1])
         del sig["part"]
         sig.update(codeRoots=["src/"])
         self.binding.write_text(json.dumps({"owned": False, "approver": "PM", "register": "h.json", "signal": sig}))
-        self.assertIn("signal has no part rule", run(*args, env=env)[1])
+        self.assertIn("signal has no part rule", run(*args, env=env, script=script)[1])
         sig.update(parts=[{"kind": "x", "match": "^src/"}, {"match": "("}])
         self.binding.write_text(json.dumps({"owned": False, "approver": "PM", "register": "h.json", "signal": sig}))
-        out = run(*args, env=env)[1]
+        out = run(*args, env=env, script=script)[1]
         self.assertIn("signal.parts[0].match needs one group", out)
         self.assertIn("signal.parts[1].match is missing or does not compile", out)
         # the documented id template, a quantifier and a named group in a match, a finding pattern: all fine
         sig.update(parts=[{"kind": "config", "match": "^src/(?P<n>[a-z]{1,}[^/]*)/", "id": "config/{1}"}],
                    reviewFinding="\\bP[01]{1}\\b")
         self.binding.write_text(json.dumps({"owned": False, "approver": "PM", "register": "h.json", "signal": sig}))
-        code, out = run(*args, env=env)
+        code, out = run(*args, env=env, script=script)
         self.assertEqual(code, 0, out)
         sig.update(parts=[{"match": "^(src)/", "id": "config/{part}"}])
         self.binding.write_text(json.dumps({"owned": False, "approver": "PM", "register": "h.json", "signal": sig}))
-        self.assertIn("may only use group numbers such as '{1}', got '{part}'", run(*args, env=env)[1])
+        self.assertIn("may only use group numbers such as '{1}', got '{part}'", run(*args, env=env, script=script)[1])
 
 
 if __name__ == "__main__":

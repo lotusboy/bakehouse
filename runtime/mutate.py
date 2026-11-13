@@ -20,9 +20,10 @@ Usage:
             `engineer-` in front (engineer-mutations.json, engineer-mutations-fix<N>.json, and their logs
             engineer-mutations*.log.jsonl), so an engineer's batch never takes the reviewer's file.
 --repo      the repository (default: the working directory's). --commit: what is mutated (default
-            HEAD). --binding: the binding file (default: the stream binding for the repository, as
-            team-preflight finds it); only its `mutation` block is read. --work: where copies are
-            made (default: a temporary folder); refused when it lies inside the repository.
+            HEAD). --binding: the binding file (default: the repository's binding, found by
+            runtime/locator.py, as team-preflight finds it); only its `mutation` block is read. --work:
+            where copies are made (default: a temporary folder); refused when it lies inside the
+            repository.
 
 The binding's `mutation` block (docs/PROJECT-TEAM.md, "The mutation runner"):
   {"command": [argv...],        the test command, program first; the test paths are appended
@@ -101,13 +102,12 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import team_roles  # noqa: E402
+import locator  # noqa: E402
 
 _rc = importlib.util.spec_from_file_location("records_check", HERE / "records-check.py")
 records_check = importlib.util.module_from_spec(_rc)
 _rc.loader.exec_module(records_check)
 
-PERMA = Path(os.environ.get("PERMA_DIR", Path.home() / "permanence"))
 TIMEOUT = 600
 MUTANT_KEYS = ("id", "file", "find", "replace", "note")
 
@@ -374,7 +374,11 @@ def plan(a) -> dict:
     if a.binding:
         bpath = Path(a.binding).expanduser().resolve()
     else:
-        bpath, _ = team_roles.binding_path(PERMA, repo)
+        try:
+            project = locator.find(repo, {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"})
+        except locator.SetupNeeded as e:
+            raise Refused(str(e))
+        bpath = project.binding if project else None
     if bpath is None or not Path(bpath).is_file():
         raise Refused(f"no binding for {repo}: name one with --binding")
     try:

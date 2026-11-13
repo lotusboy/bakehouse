@@ -366,6 +366,23 @@ class TestRun(Fixture):
         self.assertEqual(code, 2, out)
         self.assertIn("tests/test_gone.py do not exist", out)
 
+    def test_without_binding_the_projects_own_binding_is_read(self):
+        argv = [sys.executable, str(SCRIPT), "--mutants", str(self.mutants(KILL)), "--repo", str(self.repo),
+                "--record", str(self.rec), "--round", "first", "--work", str(self.work)]
+        env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"}
+        p = subprocess.run(argv, capture_output=True, text=True, check=False, env=env)
+        self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+        self.assertIn("no binding for", p.stderr)
+        (self.repo / ".team").mkdir()
+        (self.repo / ".team" / "binding.json").write_text(self.binding.read_text())
+        records = Path(self.tmp.name) / "repo.team-records"
+        for args in (("worktree", "add", "-q", "--orphan", "-b", "team-records", str(records)),
+                     ("config", "bakehouse.records", str(records))):
+            subprocess.run(["git", "-C", str(self.repo), *args], check=True, capture_output=True)
+        p = subprocess.run(argv, capture_output=True, text=True, check=False, env=env)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual([r["verdict"] for r in self.rows()], ["killed"])
+
     def test_the_binding_env_and_root_placeholder_reach_the_tests(self):
         entry = [{"files": "envlib.py", "tests": ["tests/test_env.py"]}]
         mutant = ("E1", "envlib.py", "X = 1", "X = 2", "x is two")

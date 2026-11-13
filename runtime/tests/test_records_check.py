@@ -1,5 +1,6 @@
-"""Tests for runtime/records-check.py. Standard library only. Each test builds a scratch git repository
-and a scratch stream folder (binding, ops ledger, register)."""
+"""Tests for runtime/records-check.py. Standard library only. Each test builds a scratch project: a git
+repository with .team/binding.json and a records worktree (the ops ledger, the register) named by
+`git config bakehouse.records`."""
 import hashlib
 import json
 import os
@@ -28,13 +29,16 @@ class Fixture(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         t = Path(self.tmp.name)
-        self.repo, self.stream = t / "repo", t / "stream" / "repo"
-        self.repo.mkdir()
-        (self.stream / "ops").mkdir(parents=True)
+        self.repo, self.records = t / "repo", t / "repo.team-records"
+        (self.repo / ".team").mkdir(parents=True)
         self.git("init", "-q")
-        self.binding = self.stream / "binding.json"
-        self.ledger = self.stream / "ops" / "events.jsonl"
+        self.git("worktree", "add", "-q", "--orphan", "-b", "team-records", str(self.records))
+        self.git("config", "bakehouse.records", str(self.records))
+        self.binding = self.repo / ".team" / "binding.json"
+        self.ledger = self.records / "ops" / "events.jsonl"
+        self.ledger.parent.mkdir()
         self.ledger.write_text("")
+        self.register = self.records / "registers" / "records.json"
         self.bind()
 
     def tearDown(self):
@@ -79,12 +83,12 @@ class Fixture(unittest.TestCase):
         return hashlib.sha256((self.repo / path).read_bytes()).hexdigest()
 
     def run_check(self, *args, as_of="2026-06-15"):
-        p = subprocess.run(["python3", str(SCRIPT), "--binding", str(self.binding), "--repo", str(self.repo),
+        p = subprocess.run(["python3", str(SCRIPT), "--repo", str(self.repo),
                             "--as-of", as_of, *args], capture_output=True, text=True, env=ENV)
         return p.returncode, p.stdout + p.stderr
 
     def reg(self):
-        return json.loads((self.stream / "records.json").read_text())
+        return json.loads(self.register.read_text())
 
     def flags(self, wo=None):
         return {(f["workOrder"], f["rule"]): f for f in self.reg()["flags"] if wo in (None, f["workOrder"])}
@@ -288,18 +292,26 @@ class TestWorkOrders(Fixture):
         self.run_check()
         self.assertEqual(self.reg()["workOrders"]["T1"]["folders"], ["2026-06-10-review-T5-T1", "2026-06-10-t1-lower"])
 
-    def test_the_register_is_written_beside_the_binding_unless_no_write(self):
+    def test_the_register_is_written_in_the_records_folder_unless_no_write(self):
         self.commit("T1: x", {"src/a.py": "x\n"})
         self.run_check("--no-write")
-        self.assertFalse((self.stream / "records.json").exists())
+        self.assertFalse(self.register.exists())
         self.run_check()
-        self.assertTrue((self.stream / "records.json").exists())
+        self.assertTrue(self.register.exists())
 
     def test_the_repository_is_not_written(self):
         self.commit("T1: x", {"src/a.py": "x\n"})
         before = self.git("status", "--porcelain", "--ignored")
         self.run_check()
         self.assertEqual(self.git("status", "--porcelain", "--ignored"), before)
+
+    def test_a_repository_with_no_team_or_no_records_folder_is_bad_input(self):
+        self.git("config", "--unset", "bakehouse.records")
+        code, out = self.run_check()
+        self.assertEqual((code, "bakehouse setup" in out), (2, True), out)
+        self.binding.unlink()
+        code, out = self.run_check()
+        self.assertEqual((code, "has no team" in out), (2, True), out)
 
     def test_no_tracker_id_is_bad_input(self):
         self.bind(tracker={"file": "T.md"})
@@ -370,7 +382,7 @@ class TestBindingAddsOnly(Fixture):
             code, out = self.run_check()
             self.assertEqual(code, 2, (rec, out))
             self.assertIn(why, out, rec)
-            self.assertFalse((self.stream / "records.json").exists(), rec)
+            self.assertFalse(self.register.exists(), rec)
 
 
 class TestStepRecords(Fixture):
@@ -573,13 +585,13 @@ class TestWindowAndRegister(Fixture):
     def test_the_register_holds_no_as_of_or_head(self):
         self.bind(records={"since": "2026-06-01"})
         code, out = self.run_check(as_of="2026-06-15")
-        first = (self.stream / "records.json").read_bytes()
+        first = self.register.read_bytes()
         self.assertNotIn("asOf", self.reg()["computed"])
         self.assertNotIn("head", self.reg()["computed"])
         self.assertIn("2026-06-01 to 2026-06-15 at `", out)
         self.commit("docs: not code", {"docs/a.md": "a\n"})
         self.run_check(as_of="2026-06-16")
-        self.assertEqual((self.stream / "records.json").read_bytes(), first)
+        self.assertEqual(self.register.read_bytes(), first)
 
 
 
@@ -619,19 +631,15 @@ class TestTemplates(unittest.TestCase):
         spec.loader.exec_module(hook)
         with tempfile.TemporaryDirectory() as tmp:
             t = Path(tmp)
-            perma, repo = t / "perma", t / "repo"
-            for d in (perma / "runtime", perma / "_meta", perma / "team" / "repo" / "repo", repo):
-                d.mkdir(parents=True)
-            (perma / "runtime" / "resolve-stream.sh").symlink_to(root / "runtime" / "resolve-stream.sh")
-            (perma / "_meta" / "REGISTRY.md").write_text(
-                f"| workspace path | stream | notes |\n|---|---|---|\n| {repo} | team/repo | x |\n")
-            (perma / "team" / "repo" / "repo" / "binding.json").write_text(
+            repo = t / "repo"
+            (repo / ".team").mkdir(parents=True)
+            (repo / ".team" / "binding.json").write_text(
                 json.dumps({"owned": True, "reviews": "records/", "reviewName": "{date}-{id}-step{n}-review"}))
             subprocess.run(["git", "init", "-q", str(repo)], check=True)
-            hook.PERMA, hook.LOG = perma, t / "log.txt"
-            env = os.environ.get("PERMA_DIR")
-            os.environ["PERMA_DIR"] = str(perma)  # the stream resolver reads the registry from it
-            self.addCleanup(lambda: os.environ.pop("PERMA_DIR") if env is None else os.environ.update(PERMA_DIR=env))
+            for args in (("worktree", "add", "-q", "--orphan", "-b", "team-records", str(t / "repo.team-records")),
+                         ("config", "bakehouse.records", str(t / "repo.team-records"))):
+                subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
+            hook.LOG = t / "log.txt"
             terms = {"{root}": f"{repo}/", "binding.reviews": "records/", "binding.reviewName": "2026-01-03-T7-step1-review"}
             for path in ("perma-change.md", "perma-refactor.md"):
                 text = (root / "runtime" / "commands" / path).read_text()
@@ -744,20 +752,7 @@ class TestRealClose(Fixture):
 
     def setUp(self):
         super().setUp()
-        rt = SCRIPT.parent
-        self.perma = Path(self.tmp.name) / "perma"
-        (self.perma / "runtime").mkdir(parents=True)
-        (self.perma / "_meta").mkdir()
-        for s in ("resolve-stream.sh", "ops-event.sh", "ops_ledger.py", "predict-gate.sh", "predict-gate.py", "team_roles.py"):
-            (self.perma / "runtime" / s).symlink_to(rt / s)
-        (self.perma / "_meta/REGISTRY.md").write_text(
-            f"| path | stream | what |\n|---|---|---|\n| {self.repo.resolve()} | a/s | t |\n")
-        (self.perma / "a/s/repo/ops").mkdir(parents=True)
-        self.stream = self.perma / "a/s/repo"
-        self.binding = self.stream / "binding.json"
-        self.ledger = self.stream / "ops/events.jsonl"
-        self.bind()
-        self.env = dict(ENV, PERMA_DIR=str(self.perma))
+        self.env = dict(ENV)
         for k in ("PREDICT_GATE_OVERRIDE", "PREDICT_GATE_CLOSE_OVERRIDE"):
             self.env.pop(k, None)
 
@@ -770,7 +765,7 @@ class TestRealClose(Fixture):
             subprocess.run(["git", "-C", str(self.repo), *args], check=True, capture_output=True, env=env)
 
     def close(self, **env):
-        return subprocess.run([str(self.perma / "runtime/predict-gate.sh"), "close", "T1", "--repo", str(self.repo)],
+        return subprocess.run([str(SCRIPT.parent / "predict-gate.sh"), "close", "T1", "--repo", str(self.repo)],
                               capture_output=True, text=True, env=dict(self.env, **env))
 
     def check(self):
@@ -937,53 +932,23 @@ class TestRecordEdges(Fixture):
 
 
 class TestStreamCurrency(Fixture):
-    """The stream's narrative keeps up with its ledgers: PROJECT.md, and the ops ledger against the repo."""
-
-    def project(self, day):
-        self.commit("first", {"README": "x\n"})
-        (self.stream.parent / "PROJECT.md").write_text(f"# P\n\n> Last updated {day}. State block.\n"
-                                                      "> Last updated 2026-01-01 (an older line).\n")
+    """The ops ledger keeps up with the repo."""
 
     def currency(self):
         return [f for f in self.reg()["flags"] if f["rule"] == "stream.currency"]
 
-    def test_a_project_md_older_than_the_latest_close_flags(self):
-        self.project("2026-06-10")
-        self.close_event("T1", "x", ts="2026-06-09T23:00:00+00:00")
-        self.close_event("T2", "x", ts="2026-06-11T08:00:00+01:00")
-        code, out = self.run_check()
+    def test_an_ops_ledger_behind_the_repo_by_the_hooks_threshold_flags(self):
+        self.close_event("T0", "x", ts="2026-06-01T00:00:00+00:00")
+        for i in range(5):
+            self.commit(f"c{i}", {f"f{i}": "x\n"})
+        code, out = self.run_check("--code-roots", "src/")
         self.assertEqual(code, 0, out)
         [f] = self.currency()
         self.assertEqual((f["workOrder"], f["owner"], f["state"], f["next"]),
                          ("(stream)", "pm", "open", "refresh the stream's PROJECT.md state block"))
-        self.assertEqual(f["what"], ["PROJECT.md says Last updated 2026-06-10, older than the latest "
-                                     "work-order-closed (T2, 2026-06-11)"])
-        self.assertIn("Rule `stream.currency` (owner: pm):", out)
-
-    def test_a_project_md_dated_on_the_latest_close_does_not_flag(self):
-        self.project("2026-06-11")
-        self.close_event("T2", "x", ts="2026-06-11T08:00:00+01:00")
-        code, out = self.run_check()
-        self.assertEqual(code, 0, out)
-        self.assertEqual(self.currency(), [])
-
-    def test_an_ops_ledger_behind_the_repo_by_the_hooks_threshold_flags(self):
-        top = self.stream.parent.parent.resolve()
-        (top / "_meta").mkdir()
-        (top / "runtime").mkdir()
-        (top / "runtime" / "resolve-stream.sh").symlink_to(SCRIPT.parent / "resolve-stream.sh")
-        repo = Path(self.git("rev-parse", "--show-toplevel").strip())
-        (top / "_meta" / "REGISTRY.md").write_text(f"| path | stream | what |\n|---|---|---|\n| {repo} | stream | t |\n")
-        self.close_event("T0", "x", ts="2026-06-01T00:00:00+00:00")
-        for i in range(5):
-            self.commit(f"c{i}", {f"f{i}": "x\n"})
-        p = subprocess.run(["python3", str(SCRIPT), "--binding", str(self.binding), "--repo", str(self.repo),
-                            "--as-of", "2026-06-15", "--code-roots", "src/"], capture_output=True, text=True,
-                           env=dict(ENV, PERMA_DIR=str(top)))
-        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
-        [f] = self.currency()
         self.assertEqual(f["what"], ["ops ledger is 5 commit(s) behind — last event 2026-06-01T00:00:00+00:00 "
                                      "(the post-commit hook's warning)"])
+        self.assertIn("Rule `stream.currency` (owner: pm):", out)
 
 
 KILLED = {"id": "M1", "mutation": "guard removed", "site": "src/a.py:3", "gate": "tests/test_a.py", "verdict": "killed"}
@@ -1561,124 +1526,3 @@ class TestC2CodeRoots(Fixture):
         code, out = self.run_check()
         self.assertEqual(code, 0, out)
         self.assertEqual(list(self.reg()["workOrders"]), ["T1"])
-
-
-class TestStream(unittest.TestCase):
-    """T8: `--stream NAME` reads a registered stream's own record folders by the shipped contracts."""
-
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.perma = Path(self.tmp.name) / "perma"
-        (self.perma / "_meta").mkdir(parents=True)
-        (self.perma / "_meta" / "REGISTRY.md").write_text(
-            "| workspace path | stream | notes |\n|---|---|---|\n| /ws/widget | team/widget | x |\n"
-            "| /ws | perma-meta | x |\n")
-        (self.perma / "team" / "other").mkdir(parents=True)
-        self.git("init", "-q")
-        self.commit({"runtime/tests/test_x.py": "def test_x():\n    pass\n", "team/widget/PROJECT.md": "p\n"})
-
-    def tearDown(self):
-        self.tmp.cleanup()
-
-    def git(self, *args, date="2026-06-10T12:00:00"):
-        env = dict(ENV, GIT_AUTHOR_DATE=date, GIT_COMMITTER_DATE=date)
-        return subprocess.run(["git", "-C", str(self.perma), *args], check=True, capture_output=True, text=True,
-                              env=env).stdout
-
-    def commit(self, files, date="2026-06-10T12:00:00"):
-        for path, text in files.items():
-            f = self.perma / path
-            f.parent.mkdir(parents=True, exist_ok=True)
-            f.write_text(text)
-        self.git("add", "-A", date=date)
-        self.git("commit", "-qm", "c", date=date)
-
-    def rec(self, folder, files, date=FROM):
-        self.commit({f"team/widget/design/{folder}/{n}": t for n, t in files.items()}, date=date)
-
-    def check(self, *args, stream="team/widget"):
-        p = subprocess.run(["python3", str(SCRIPT), "--stream", stream, "--register", str(Path(self.tmp.name) / "r.json"),
-                            *args], capture_output=True, text=True, check=False, env=dict(ENV, PERMA_DIR=str(self.perma)))
-        return p.returncode, p.stdout + p.stderr
-
-    def reg(self, *args):
-        code, out = self.check(*args)
-        self.assertEqual(code, 0, out)
-        return json.loads((Path(self.tmp.name) / "r.json").read_text())
-
-    def flags(self, *args):
-        return {(f["folder"], f["rule"]): f["what"] for f in self.reg(*args)["flags"]}
-
-    def test_a_record_added_before_the_rounds_date_is_history(self):
-        self.rec("w1/review", {"findings.md": "F1\n"}, date="2026-06-10T12:00:00")
-        reg = self.reg()
-        self.assertEqual((reg["flags"], reg["folders"]), ([], {"design/w1/review": {"jobs": [], "history": True}}))
-        self.assertEqual((reg["computed"]["folders"], reg["computed"]["history"], reg["computed"]["since"]),
-                         (1, 1, FROM[:10]))
-
-    def test_a_record_added_on_the_rounds_date_is_checked_by_the_shipped_contract(self):
-        self.rec("w1/review", {"findings.md": "F1\n"})
-        self.assertEqual(self.flags(), {("design/w1/review", "reviewer.mutations"): ["no file matches mutations.json"]})
-        self.rec("w1/review", {"mutations.json": json.dumps([STREAM_ROW])})
-        reg = self.reg()
-        self.assertEqual(reg["flags"], [])
-        self.assertEqual(reg["mutations"], {"records": 1, "rows": 1,
-                                            "gates": {"runtime/tests/test_x.py": {"killed": 1, "survived": 0}}})
-
-    def test_since_replaces_the_date_for_every_rule(self):
-        self.rec("w1", {"prediction.md": "p\n", "result.md": "r\n"}, date="2026-06-10T12:00:00")
-        self.rec("w1/review", {"findings.md": "F1\n", "recheck.md": "G1\n"}, date="2026-06-10T12:00:00")
-        self.assertEqual(self.flags(), {})
-        got = self.flags("--since", "2026-06-01")
-        self.assertEqual(set(got), {("design/w1", "change.prediction"), ("design/w1", "change.baseline"),
-                                    ("design/w1", "change.measured"), ("design/w1/review", "reviewer.mutations"),
-                                    ("design/w1/review", "reviewer.rounds")})
-
-    def test_each_job_a_folder_marks_is_its_record(self):
-        self.rec("a", {"result.md": "r\n"})
-        self.rec("b", {"byte-identical.txt": "same\n"})
-        self.rec("c", {"notes.md": "n\n"})
-        self.rec("d", dict(TRIO))
-        reg = self.reg()
-        self.assertEqual({k: v["jobs"] for k, v in reg["folders"].items()},
-                         {"design/a": ["change"], "design/b": ["refactor"], "design/d": ["change"]})
-        self.assertEqual({(f["folder"], f["rule"]) for f in reg["flags"]},
-                         {("design/a", "change.prediction"), ("design/a", "change.baseline"), ("design/a", "change.measured")})
-
-    def test_a_gate_is_a_path_in_the_repository_holding_the_stream(self):
-        self.rec("w1/review", {"findings.md": "F1\n", "mutations.json": json.dumps([dict(KILLED, gate="lint"), dict(STREAM_ROW, id="M2")])})
-        self.assertIn("neither a gate id", " ".join(self.flags()[("design/w1/review", "reviewer.mutations")]))
-
-    def test_a_misnamed_file_is_read_only_at_or_below_a_record_folder(self):
-        self.rec("loose", {"recheck.md": "G1\n"})
-        self.rec("w1", {"result.md": "r\n"})
-        self.rec("w1/notes", {"recheck.md": "G1\n"})
-        got = self.flags()
-        self.assertIn(("design/w1/notes", "reviewer.rounds"), got)
-        self.assertNotIn(("design/loose", "reviewer.rounds"), got)
-
-    def test_only_a_registered_stream_is_read(self):
-        for name in ("team/other", "perma-meta", "team/none"):
-            with self.subTest(name=name):
-                code, out = self.check(stream=name)
-                self.assertEqual(code, 2)
-                self.assertIn("is not a stream _meta/REGISTRY.md registers", out)
-
-    def test_the_register_is_written_in_the_streams_repo_folder_unless_no_write(self):
-        self.rec("w1/review", {"findings.md": "F1\n"})
-        env = dict(ENV, PERMA_DIR=str(self.perma))
-        subprocess.run(["python3", str(SCRIPT), "--stream", "team/widget", "--no-write"], env=env, check=True,
-                       capture_output=True)
-        self.assertFalse((self.perma / "team" / "widget" / "repo").exists())
-        out = subprocess.run(["python3", str(SCRIPT), "--stream", "team/widget"], env=env, check=True,
-                             capture_output=True, text=True).stdout
-        self.assertEqual(json.loads((self.perma / "team/widget/repo/records-stream.json").read_text())["computed"]["openFlags"], 1)
-        self.assertIn("1 record folder(s), 0 of them history", out)
-        self.assertEqual(self.git("status", "--porcelain", "--", "team/widget/design"), "")
-
-    def test_binding_and_stream_are_one_or_the_other(self):
-        p = subprocess.run(["python3", str(SCRIPT), "--stream", "team/widget", "--binding", "b.json"], capture_output=True,
-                           text=True, check=False, env=dict(ENV, PERMA_DIR=str(self.perma)))
-        self.assertEqual(p.returncode, 2)
-        p = subprocess.run(["python3", str(SCRIPT)], capture_output=True, text=True, check=False, env=ENV)
-        self.assertEqual(p.returncode, 2)

@@ -4,7 +4,7 @@
 # and appends the rows of the reviewer's mutation record (mutations.json, mutations-fix<N>.json).
 #
 #   mutate.sh --mutants <list.json> --record <review folder> --round first|fix<N>
-#       [--repo <repo>] [--commit <rev>] [--binding <stream>/repo/binding.json] [--work <dir>]
+#       [--repo <repo>] [--commit <rev>] [--binding <binding.json>] [--work <dir>]
 #       [--by reviewer|engineer]   (an engineer's rows: engineer-mutations.json, engineer-mutations-fix<N>.json)
 #
 # The list, the binding's `mutation` block and the exit codes: runtime/mutate.py docstring and

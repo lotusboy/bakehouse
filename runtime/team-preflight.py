@@ -2,7 +2,7 @@
 """Team preflight: check a repository's binding before a team job or the health watch starts.
 
 The checks are listed in docs/PROJECT-TEAM.md, "Preflight". Standard library only. Reads files and runs
-read-only git commands; it never writes to the repository or the stream.
+read-only git commands; it never writes to the repository or its records.
 
 Usage:
   team-preflight.py refactor <part>      [--repo DIR] [--binding FILE]
@@ -10,8 +10,9 @@ Usage:
   team-preflight.py health               [--repo DIR] [--binding FILE]
   team-preflight.py startup              [--repo DIR] [--binding FILE]
 
---repo defaults to the working directory. --binding replaces the stream's binding.json (for a
-scratch copy); approvals.json is then read from the same folder.
+--repo defaults to the working directory. The binding is the project's (runtime/locator.py: .team/ or
+the sidecar folder); --binding replaces it (for a scratch copy). approvals.json is read from the
+binding's folder.
 
 Checks, in order: 1 binding exists; 2 it parses, has the fields its `owned` value requires, names a
 machine-checked prediction file (`gates.predictedMoves.prediction`, one predict-gate reads), only
@@ -21,7 +22,7 @@ field, and every test path the `mutation` block names, exists in the checkout; 4
 finds its key (prose gates are listed, not failed), and a generic-script signal is valid (a
 missing script is a note, except for `refactor`, which runs the signal); 5 every
 role the job dispatches resolves; 6 for a job when owned is false, an unconsumed approval of this
-exact scope exists. `startup` runs checks 1-4 and exits 0 when the stream has no binding.
+exact scope exists. `startup` runs checks 1-4 and exits 0 when the repository has no binding.
 
 Prints one line per failure. Exits 1 on any failure, 0 otherwise.
 """
@@ -35,6 +36,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import locator  # noqa: E402
 import team_roles  # noqa: E402
 
 _gate = importlib.util.spec_from_file_location("predict_gate", Path(__file__).resolve().with_name("predict-gate.py"))
@@ -51,7 +53,7 @@ try:  # an error in the runner must not stop preflight for every job; check 2 re
 except Exception as e:  # noqa: BLE001
     MUTATE_ERROR = f"{type(e).__name__}: {e}"
 
-PERMA = Path(os.environ.get("PERMA_DIR", Path.home() / "permanence"))
+HERE = Path(__file__).resolve().parent
 PLACEHOLDERS = {"root", "register", "id", "n", "date", "part", "name"}
 REGEX_FIELDS = {("tracker", "id"), ("signal", "fix"), ("signal", "part"), ("signal", "parts", "match"),
                 ("signal", "reviewFinding")}
@@ -94,10 +96,13 @@ def label(path):
 
 
 def find_binding(repo):
-    path, stream = team_roles.binding_path(PERMA, repo)
-    if not path:
-        return None, f"no stream is registered for {repo} in _meta/REGISTRY.md"
-    return path, f"stream {stream} has no repo/binding.json: the team does not apply to this repository"
+    try:
+        project = locator.find(repo, {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"})
+    except locator.SetupNeeded as e:
+        return None, str(e)
+    if project is None:
+        return None, f"{repo} has no team (no .team/binding.json): the team does not apply to this repository"
+    return project.binding, f"{project.binding} cannot be read as a file: the team does not apply to this repository"
 
 
 def check_fields(b):
@@ -274,8 +279,8 @@ def check_signal_rules(sig, repo, job):
     script = sig.get("script")
     if not script:
         fails.append("check 4: signal.script is missing")
-    elif not (PERMA / "runtime" / f"{script}.py").is_file():
-        msg = f"check 4: the generic signal script is not installed yet ({script}.py in {PERMA / 'runtime'})"
+    elif not (HERE / f"{script}.py").is_file():
+        msg = f"check 4: the generic signal script is not installed yet ({script}.py in {HERE})"
         (fails if job == "refactor" else notes).append(
             msg + ("; the refactor job refreshes the register with it" if job == "refactor" else ""))
     for k in ("fix", "part"):
@@ -309,7 +314,7 @@ def check_signal_rules(sig, repo, job):
 def check_roles(b, job, repo):
     """Resolve each role the job dispatches by §5.1 (team_roles.resolve)."""
     have = team_roles.installed_agents(str(repo))
-    lvls = team_roles.levels(PERMA, b)
+    lvls = team_roles.levels(b)
     notes = []
     for role in JOB_ROLES.get(job, []):
         res = team_roles.resolve(f"{job}:{role}", lvls, have)

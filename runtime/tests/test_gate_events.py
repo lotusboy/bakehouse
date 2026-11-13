@@ -561,9 +561,9 @@ class TestRefusalsWriteOneEvent(SpendScratch):
         )
 
     def test_records_check_bad_input_writes_one_event(self):
-        bad = self.stream / "repo" / "bad.json"
+        bad = self.root / "bad.json"
         bad.write_text("[]")
-        rule = self.stream / "repo" / "rule.json"
+        rule = self.root / "rule.json"
         rule.write_text(
             json.dumps(
                 {
@@ -576,7 +576,6 @@ class TestRefusalsWriteOneEvent(SpendScratch):
             p = self.rc("--binding", str(b), "--repo", str(self.work), "--no-write")
             self.assertEqual(p.returncode, 2)
             self.assertTrue(p.stderr.startswith("records-check: bad input:"))
-        self.assertEqual(self.rc("--stream", "a/nosuch", "--no-write").returncode, 2)
         self.assertEqual(
             [(e["gate"], e["purpose"]) for e in self.refusals()],
             [

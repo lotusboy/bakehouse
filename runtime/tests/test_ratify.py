@@ -37,12 +37,15 @@ class Ratify(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.t = Path(self.tmp.name).resolve()
-        self.perma = self.t / "perma"
-        (self.perma / "_meta").mkdir(parents=True)
-        (self.perma / "runtime").mkdir()
-        (self.perma / "runtime/resolve-stream.sh").symlink_to(RUNTIME / "resolve-stream.sh")
-        (self.perma / "_meta/REGISTRY.md").write_text("| path | stream | what |\n|---|---|---|\n")
-        self.env = dict(os.environ, PERMA_DIR=str(self.perma))
+        # a scratch project: .team/binding.json and a records worktree named by git config bakehouse.records
+        self.proj, records = self.t / "proj", self.t / "proj.team-records"
+        (self.proj / ".team").mkdir(parents=True)
+        (self.proj / ".team" / "binding.json").write_text("{}")
+        for args in (["init", "-q"], ["worktree", "add", "-q", "--orphan", "-b", "team-records", str(records)],
+                     ["config", "bakehouse.records", str(records)]):
+            subprocess.run(["git", "-C", str(self.proj), *args], check=True, capture_output=True)
+        self.ledger = records / "ratifications" / "ledger.jsonl"
+        self.env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"}
         self.entries = self.t / "entries.json"
         self.corpus = self.t / "corpus.json"
         self.entries.write_text(json.dumps(ENTRIES))
@@ -52,9 +55,9 @@ class Ratify(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def ratify(self, *args, code=0):
+    def ratify(self, *args, code=0, cwd=None):
         p = subprocess.run([str(RUNTIME / "ratify.sh"), *map(str, args)], capture_output=True, text=True,
-                           env=self.env, cwd=self.t)
+                           env=self.env, cwd=cwd or self.t)
         self.assertEqual(p.returncode, code, p.stdout + p.stderr)
         return p
 
@@ -155,11 +158,11 @@ class Ratify(unittest.TestCase):
     def recorded(self, *owner):
         self.sample()
         self.compare({"X1": "RIGHT", "X2": "RIGHT", "X3": "WRONG"}, {"X1": "RIGHT", "X2": "MIXED", "X3": "WRONG"})
-        args = ["record", "--stream", "a/proj", "--agreement", self.run_dir / "agreement.json"]
+        args = ["record", "--repo", self.proj, "--agreement", self.run_dir / "agreement.json"]
         if owner:
             args += ["--owner-approved", ",".join(owner)]
         self.ratify(*args)
-        return [json.loads(x) for x in (self.perma / "a/proj/ratifications/ledger.jsonl").read_text().splitlines()]
+        return [json.loads(x) for x in self.ledger.read_text().splitlines()]
 
     def test_record_rows(self):
         rows = {r["id"]: r for r in self.recorded()}
@@ -175,42 +178,42 @@ class Ratify(unittest.TestCase):
         rows = {r["id"]: r for r in self.recorded("X2")}
         self.assertEqual(rows["X2"]["verdict"], "ratified")
         self.assertEqual(rows["X2"]["ratifiedBy"], "owner")
-        self.ratify("record", "--stream", "a/proj", "--agreement", self.run_dir / "agreement.json",
+        self.ratify("record", "--repo", self.proj, "--agreement", self.run_dir / "agreement.json",
                     "--owner-approved", "X3", code=2)
 
     def test_check_exit_codes_and_hash_invalidation(self):
         self.recorded("X2")
-        p = self.ratify("check", "--entries", self.entries, "--stream", "a/proj", code=1)
+        p = self.ratify("check", "--entries", self.entries, "--repo", self.proj, code=1)
         self.assertIn("X3: rejected", p.stdout)
         self.assertIn("X4: held", p.stdout)
         good = self.t / "good.json"
         good.write_text(json.dumps(ENTRIES[:2]))
-        self.ratify("check", "--entries", good, "--stream", "a/proj")
+        self.ratify("check", "--entries", good, "--repo", self.proj)
         good.write_text(json.dumps([dict(ENTRIES[0], pattern="We shall not cover …"), ENTRIES[1]]))
-        p = self.ratify("check", "--entries", good, "--stream", "a/proj", code=1)
+        p = self.ratify("check", "--entries", good, "--repo", self.proj, code=1)
         self.assertIn("X1: changed (pattern since ratified", p.stdout)
         good.write_text(json.dumps([dict(ENTRIES[0], **{"class": "condition"}), ENTRIES[1]]))
-        p = self.ratify("check", "--entries", good, "--stream", "a/proj", code=1)
+        p = self.ratify("check", "--entries", good, "--repo", self.proj, code=1)
         self.assertIn("X1: changed (class since ratified", p.stdout)
         good.write_text(json.dumps([dict(ENTRIES[0], kind="new note"), ENTRIES[1]]))
-        self.ratify("check", "--entries", good, "--stream", "a/proj")  # kind/source are not judged
+        self.ratify("check", "--entries", good, "--repo", self.proj)  # kind/source are not judged
         good.write_text(json.dumps(ENTRIES[:2] + [{"id": "NEW", "pattern": "x", "patternKind": "phrase",
                                                    "class": "c"}]))
-        p = self.ratify("check", "--entries", good, "--stream", "a/proj", "--json", code=1)
+        p = self.ratify("check", "--entries", good, "--repo", self.proj, "--json", code=1)
         self.assertEqual(json.loads(p.stdout)["problems"][0]["state"], "unratified")
 
     def test_latest_row_wins_and_status(self):
         self.recorded()
-        self.ratify("record", "--stream", "a/proj", "--agreement", self.run_dir / "agreement.json",
+        self.ratify("record", "--repo", self.proj, "--agreement", self.run_dir / "agreement.json",
                     "--owner-approved", "X2")
-        p = self.ratify("status")
-        self.assertIn("a/proj: 4 entries — ratified 2 (by owner 1), rejected 1, held 1", p.stdout)
+        p = self.ratify("status", "--repo", self.proj)
+        self.assertIn("proj: 4 entries — ratified 2 (by owner 1), rejected 1, held 1", p.stdout)
 
-    def test_stream_resolves_from_registry(self):
-        (self.perma / "_meta/REGISTRY.md").write_text(f"| path | stream | what |\n|---|---|---|\n| {self.t} | a/proj | t |\n")
+    def test_the_project_is_found_from_the_current_folder(self):
         self.recorded()
-        p = self.ratify("check", "--entries", self.entries, code=1)
-        self.assertIn("in a/proj", p.stdout)
+        p = self.ratify("check", "--entries", self.entries, code=1, cwd=self.proj)
+        self.assertIn("in proj", p.stdout)
+        self.ratify("check", "--entries", self.entries, code=2)  # the scratch folder holds no team
 
 
 if __name__ == "__main__":
