@@ -945,7 +945,7 @@ class TestStreamCurrency(Fixture):
         self.assertEqual(code, 0, out)
         [f] = self.currency()
         self.assertEqual((f["workOrder"], f["owner"], f["state"], f["next"]),
-                         ("(stream)", "pm", "open", "refresh the stream's PROJECT.md state block"))
+                         ("(stream)", "pm", "open", "bring the ops ledger up to date with the repository's commits"))
         self.assertEqual(f["what"], ["ops ledger is 5 commit(s) behind — last event 2026-06-01T00:00:00+00:00 "
                                      "(the post-commit hook's warning)"])
         self.assertIn("Rule `stream.currency` (owner: pm):", out)
