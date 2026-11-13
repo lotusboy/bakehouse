@@ -1,0 +1,56 @@
+{
+  "_about": [
+    "Record contracts: what each job type's record folder must hold. Shipped defaults, read by runtime/records-check.py (docs/PROJECT-TEAM.md, \"Records against the process\").",
+    "marks: file names (globs, top level of the folder) that say a record folder is this job's record. A folder may mark more than one job.",
+    "owner: who acts on this job's flags. close: true when the job closes through predict-gate.sh close (a work-order-closed event in the ops ledger); false when it does not; null when the job says nothing about closing.",
+    "require: each artefact the folder must hold. check is one of: prediction (each moves.prediction<R>.json parses under predict-gate's own checker and names a move), baseline / measured (each prediction round's file exists and is flat JSON), nonempty (a file matching glob exists and is not empty), mutations (the file matching glob is a reviewer's mutation record: a JSON list of {id, mutation, site, gate, verdict, disposition}; docs/PROJECT-TEAM.md, \"The reviewer's mutation record\"). An empty file always fails.",
+    "per: the artefact is owed once for each file matching this glob, named by putting what the per glob's * matched into the artefact glob's *: findings.md owes mutations.json, findings-fix1.md owes mutations-fix1.json. A re-check in the same folder writes its own file. A file matching the glob that no per file owes is not read.",
+    "nested: true reads this job's records at any depth inside a work order's record folder, not only at its top level: a reviewer writes in a subfolder of the step folder it reviews.",
+    "active: false lists an artefact whose format is not defined yet. It is reported, never flagged. Switch it on here, in this file, when its format is defined.",
+    "Step folders: a folder whose name matches the binding's reviewName ({n} any step number, case ignored) is a step record. A work order is a refactor when one of its folders marks the job with close false and holds no prediction. In a refactor, a step folder that holds no prediction is that job's record (it owes its proof). A refactor never closes: a step without its proof, or a code commit that comes after the latest step proof, is flagged refactor.byte-identical. Outside a refactor, a step folder, or a folder holding a file in marksOutsideRefactor, is a record of the job with close true.",
+    "rounds: a review round's file names, declared once. first: the first review's findings and mutations files. fix: the re-check of fix round N ({n} = N, 1 or more), in the same review folder. log: the mutation runner's append-only batch log beside that round's mutations file, one JSON line per verdict, written before the row; records-check reconciles every row that carries a batch id with it. like: the words (case ignored) that make a .md file findings-like; a findings-like file that is not a declared name, and that no other job's marks claim, is refused by the stop check and flagged by records-check (rule reviewer.rounds). from: a file added before this date is history and is never flagged. The brief templates and the reviewer's prompt state these names literally; runtime/tests keeps them equal.",
+    "testRoots: the folders a reviewer's `test-added <path>` may name without a test name (`path::name` names one in any file). A binding's 'records.testRoots' replaces them.",
+    "A binding may ADD artefacts to a job through its 'records' field, never remove or replace one. promoteAt: a rule flagged on this many work orders or more is a promote-to-code candidate for the CTO. windowDays: the window when the binding sets no 'records.since'."
+  ],
+  "windowDays": 30,
+  "testRoots": ["tests/", "test/"],
+  "promoteAt": 2,
+  "jobs": {
+    "change": {
+      "marks": ["moves.prediction*.json", "moves.prediction*.yaml", "moves.prediction*.yml", "prediction*.md"],
+      "marksOutsideRefactor": ["result*.md"],
+      "owner": "pm",
+      "close": true,
+      "require": [
+        {"id": "prediction", "check": "prediction"},
+        {"id": "baseline", "check": "baseline"},
+        {"id": "measured", "check": "measured"},
+        {"id": "result", "check": "nonempty", "glob": "result*.md"}
+      ]
+    },
+    "refactor": {
+      "marks": ["byte-identical*"],
+      "owner": "pm",
+      "close": false,
+      "require": [
+        {"id": "byte-identical", "check": "nonempty", "glob": "byte-identical*"}
+      ]
+    },
+    "reviewer": {
+      "marks": ["findings*.md"],
+      "nested": true,
+      "owner": "reviewer",
+      "close": null,
+      "require": [
+        {"id": "mutations", "check": "mutations", "glob": "mutations*.json", "per": "findings*.md"},
+        {"id": "findings", "check": "nonempty", "glob": "findings*.md", "per": "findings*.md"}
+      ],
+      "rounds": {
+        "first": {"findings": "findings.md", "mutations": "mutations.json", "log": "mutations.log.jsonl"},
+        "fix": {"findings": "findings-fix{n}.md", "mutations": "mutations-fix{n}.json", "log": "mutations-fix{n}.log.jsonl"},
+        "like": ["findings", "recheck", "re-check", "review-"],
+        "from": "2026-11-01"
+      }
+    }
+  }
+}
