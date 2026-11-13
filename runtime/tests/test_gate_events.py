@@ -2,7 +2,7 @@
 sites that write it (docs/PROJECT-TEAM.md, "Gate refusals"). Standard library only:
 python3 -m unittest discover -s runtime/tests
 
-Every test writes to a scratch PERMA_DIR with one owned stream, never to a real ledger."""
+Every test writes to a scratch project with one owned binding, never to a real ledger."""
 
 import ast
 import contextlib
@@ -25,42 +25,43 @@ GIT = {
 
 
 class Scratch(unittest.TestCase):
-    """A scratch Permanence: runtime/ holds a symlink to every runtime file; stream a/s is owned and
-    registered for the repository `work`."""
+    """A scratch project: runtime/ holds a copy of every runtime file (so a test can replace one, and each
+    tool finds its neighbours in its own folder); the repository `work` has an owned .team/binding.json
+    and a records worktree named by `git config bakehouse.records`."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         t = Path(self.tmp.name).resolve()
-        self.root, self.perma, self.work = t, t / "perma", t / "work"
-        rt = self.perma / "runtime"
-        rt.mkdir(parents=True)
-        (rt / "logs").mkdir()
+        self.root, self.rt, self.work = t, t / "runtime", t / "work"
+        self.machine = t / "machine"
+        self.rt.mkdir()
         for f in RUNTIME.iterdir():
             if f.is_file():
-                (rt / f.name).symlink_to(f)
-        (self.perma / "_meta").mkdir()
-        self.stream = self.perma / "a" / "s"
-        (self.stream / "repo").mkdir(parents=True)
+                shutil.copy2(f, self.rt / f.name)
         self.binding = {
             "owned": True,
             "reviews": "runs/",
             "reviewName": "{date}-{id}-step{n}-review",
             "tracker": {"file": "docs/TRACKER.md", "id": "^T[0-9]+$"},
         }
-        (self.stream / "repo" / "binding.json").write_text(json.dumps(self.binding))
         subprocess.run(["git", "init", "-q", str(self.work)], check=True)
         self.git("commit", "-q", "--allow-empty", "-m", "first")
-        (self.perma / "_meta" / "REGISTRY.md").write_text(
-            f"| path | stream | what |\n|---|---|---|\n| {self.work} | a/s | t |\n"
-        )
-        self.ledger = self.stream / "repo" / "ops" / "events.jsonl"
+        (self.work / ".team").mkdir()
+        (self.work / ".team" / "binding.json").write_text(json.dumps(self.binding))
+        self.records = t / "work.team-records"
+        self.git("worktree", "add", "-q", "--orphan", "-b", "team-records", str(self.records))
+        self.git("config", "bakehouse.records", str(self.records))
+        self.ledger = self.records / "ops" / "events.jsonl"
         self.env = {
             k: v
             for k, v in os.environ.items()
-            if not k.startswith(("PREDICT_GATE", "OPS_", "SPEND_", "DECISION_"))
+            if not k.startswith(("PREDICT_GATE", "OPS_", "SPEND_", "DECISION_", "BAKEHOUSE_", "CLAUDE_PROJECT_DIR"))
         }
+        # PERMA_DIR: the tools of later groups still read it until they are converted; an empty scratch
+        # folder, so none of them can reach a real one
         self.env.update(
-            GIT, PERMA_DIR=str(self.perma), DECISION_NOW="2026-01-02T12:00:00+00:00"
+            GIT, BAKEHOUSE_MACHINE_DIR=str(self.machine), PERMA_DIR=str(t / "no-permanence"),
+            DECISION_NOW="2026-01-02T12:00:00+00:00",
         )
 
     def tearDown(self):
@@ -98,8 +99,8 @@ class Scratch(unittest.TestCase):
 
 
 class TestOpsEvent(Scratch):
-    def ops(self, *args, env=None):
-        return self.run_([str(self.perma / "runtime" / "ops-event.sh"), *args], env=env)
+    def ops(self, *args, env=None, cwd=None):
+        return self.run_([str(self.rt / "ops-event.sh"), *args], env=env, cwd=cwd)
 
     def test_an_event_without_a_gate_has_no_gate_key(self):
         p = self.ops("note", "T1", "a note", "-", "-", "3", "-", "-", "done", "x")
@@ -200,8 +201,8 @@ class TestOpsEvent(Scratch):
                 self.assertIn("is not <tool>:<check>", p.stderr)
         self.assertEqual(self.events(), [])
 
-    def test_ops_stream_names_the_stream(self):
-        # from outside any repository: the named stream's ledger, commit null
+    def test_ops_repo_names_the_project(self):
+        # from outside any repository: the named project's ledger, commit its HEAD
         p = self.ops(
             "gate-refused",
             "-",
@@ -214,20 +215,48 @@ class TestOpsEvent(Scratch):
             "refused",
             "x",
             "spend:by",
-            env={"OPS_STREAM": "a/s", "OPS_REPO": str(self.root)},
+            env={"OPS_REPO": str(self.work)},
+            cwd=self.root,
         )
         self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertIsNone(self.events()[0]["commit"])
-        for bad in ("../a/s", "/a/s", "a/../a/s", "nosuch"):
-            with self.subTest(stream=bad):
+        head = self.git("rev-parse", "--short", "HEAD").stdout.strip()
+        self.assertEqual(self.events()[0]["commit"], head)
+        elsewhere = self.root / "elsewhere"
+        subprocess.run(["git", "init", "-q", str(elsewhere)], check=True)
+        for bad in (self.root, elsewhere):
+            with self.subTest(repo=bad):
                 self.assertEqual(
-                    self.ops("note", "-", "r", env={"OPS_STREAM": bad}).returncode, 1
+                    self.ops("note", "-", "r", env={"OPS_REPO": str(bad)}).returncode, 1
                 )
-        (self.stream / "repo" / "binding.json").write_text(json.dumps({"owned": False}))
+        (self.work / ".team" / "binding.json").write_text(json.dumps({"owned": False}))
         self.assertEqual(
-            self.ops("note", "-", "r", env={"OPS_STREAM": "a/s"}).returncode, 1
+            self.ops("note", "-", "r", env={"OPS_REPO": str(self.work)}).returncode, 1
         )
         self.assertEqual(len(self.events()), 1)
+
+
+class TestGateEvent(Scratch):
+    def refused(self, path, cwd):
+        code = ("import sys; sys.path.insert(0, sys.argv[1]); import gate_event; "
+                "print(gate_event.refused('decision:by', 'p', 'n', task='T1', path=sys.argv[2] or None))")
+        return self.run_(["python3", "-c", code, str(self.rt), str(path or "")], cwd=cwd)
+
+    def test_the_event_goes_to_the_project_of_the_path_else_of_the_working_folder(self):
+        elsewhere = self.root / "elsewhere"
+        subprocess.run(["git", "init", "-q", str(elsewhere)], check=True)
+        (self.work / "design").mkdir()
+        rec = self.work / "design" / "t1.json"
+        p = self.refused(rec, cwd=elsewhere)
+        self.assertEqual(p.stdout, "None\n", p.stderr)
+        (ev,) = self.refusals()
+        self.assertEqual((ev["gate"], ev["task"], ev["purpose"], ev["note"]), ("decision:by", "T1", "p", "n"))
+        p = self.refused(None, cwd=self.work / "design")
+        self.assertEqual(p.stdout, "None\n", p.stderr)
+        self.assertEqual(len(self.refusals()), 2)
+        # a folder with no team: the reason comes back, and nothing is written
+        p = self.refused(None, cwd=elsewhere)
+        self.assertIn("has no team", p.stdout)
+        self.assertEqual(len(self.events()), 2)
 
 
 PG_BASE = {"rules:fired": 120, "gaps:open": 9}
@@ -249,7 +278,7 @@ RESULT = [
 class SpendScratch(Scratch):
     def spend(self, *args, env=None, script=None):
         return self.run_(
-            [str(script or self.perma / "runtime" / "spend.sh"), *args], env=env
+            [str(script or self.rt / "spend.sh"), *args], env=env
         )
 
     def rec(self, agent, *extra, env=None, script=None):
@@ -268,7 +297,7 @@ class SpendScratch(Scratch):
         )
 
     def rows(self):
-        p = self.stream / "spend" / "ledger.jsonl"
+        p = self.records / "spend" / "ledger.jsonl"
         return [json.loads(x) for x in p.read_text().splitlines()] if p.exists() else []
 
     def kind_of(self, agent):
@@ -277,7 +306,7 @@ class SpendScratch(Scratch):
 
 class TestRefusalsWriteOneEvent(SpendScratch):
     def decision(self, *args, env=None):
-        return self.run_([str(self.perma / "runtime" / "decision.sh"), *args], env=env)
+        return self.run_([str(self.rt / "decision.sh"), *args], env=env)
 
     def test_decision_refusal_writes_one_event_with_its_gate(self):
         p = self.decision("ask", "--category", " ")
@@ -331,7 +360,7 @@ class TestRefusalsWriteOneEvent(SpendScratch):
     def test_decision_refusal_output_is_unchanged_without_a_ledger(self):
         args = ("answer", "d20990101-ffffff", "--choice", "yes")
         with_ledger = self.decision(*args)
-        (self.stream / "repo" / "binding.json").write_text(json.dumps({"owned": False}))
+        (self.work / ".team" / "binding.json").write_text(json.dumps({"owned": False}))
         without = self.decision(*args)
         self.assertEqual(len(self.refusals()), 1)
         self.assertEqual(
@@ -380,7 +409,7 @@ class TestRefusalsWriteOneEvent(SpendScratch):
 
     def pg(self, *args, env=None):
         return self.run_(
-            [str(self.perma / "runtime" / "predict-gate.sh"), *args], env=env
+            [str(self.rt / "predict-gate.sh"), *args], env=env
         )
 
     def test_predict_gate_check_refusal_writes_one_event(self):
@@ -532,7 +561,7 @@ class TestRefusalsWriteOneEvent(SpendScratch):
 
     def rc(self, *args):
         return self.run_(
-            ["python3", str(self.perma / "runtime" / "records-check.py"), *args]
+            ["python3", str(self.rt / "records-check.py"), *args]
         )
 
     def test_records_check_bad_input_writes_one_event(self):
@@ -584,7 +613,7 @@ class TestRefusalsWriteOneEvent(SpendScratch):
         reg = self.root / "records.json"
         p = self.rc(
             "--binding",
-            str(self.stream / "repo" / "binding.json"),
+            str(self.work / ".team" / "binding.json"),
             "--repo",
             str(self.work),
             "--code-roots",
@@ -602,7 +631,7 @@ class TestRefusalsWriteOneEvent(SpendScratch):
 
     def hook(self, d):
         return self.run_(
-            ["python3", str(self.perma / "runtime" / "agent-roles.py")],
+            ["python3", str(self.rt / "agent-roles.py")],
             stdin=json.dumps(d),
             env={"HOME": str(self.home())},
         )
@@ -645,7 +674,7 @@ class TestRefusalsWriteOneEvent(SpendScratch):
         )
 
     def test_hook_deny_and_block_write_one_event_each(self):
-        rec, rv = self.stream / "design" / "t7", self.stream / "design" / "rv"
+        rec, rv = self.work / "design" / "t7", self.work / "design" / "rv"
         rec.mkdir(parents=True)
         calls = [
             self.pre("role:no-such-role", "p"),
@@ -685,11 +714,11 @@ class TestRefusalsWriteOneEvent(SpendScratch):
         self.assertEqual(len(self.events()), 5)
 
     def test_stop_routes_by_the_record_folder_not_the_working_folder(self):
-        """The record folder is in stream a/s; the agent's working folder is a repository no stream holds.
-        The stop's event goes to a/s: routed by the record, not by the working folder (review F10)."""
+        """The record folder is in the project `work`; the agent's working folder is a repository with no team.
+        The stop's event goes to `work`: routed by the record, not by the working folder (review F10)."""
         elsewhere = self.root / "elsewhere"
         subprocess.run(["git", "init", "-q", str(elsewhere)], check=True)
-        rv = self.stream / "design" / "rv"
+        rv = self.work / "design" / "rv"
         d = self.stop("refactor-reviewer", f"Review W1.\nRecord folder: {rv}/\n", "a")
         d["cwd"] = str(elsewhere)
         (rv / "review").mkdir(parents=True)
@@ -705,7 +734,7 @@ class TestRefusalsWriteOneEvent(SpendScratch):
         import time
 
         fast = self.decision("ask", "--category", " ")
-        ops = self.perma / "runtime" / "ops-event.sh"
+        ops = self.rt / "ops-event.sh"
         ops.unlink()
         ops.write_text("#!/bin/sh\nsleep 30\n")
         ops.chmod(0o755)
@@ -726,7 +755,7 @@ class TestRefusalsWriteOneEvent(SpendScratch):
         import time
 
         pids = self.root / "writer.pids"
-        ops = self.perma / "runtime" / "ops-event.sh"
+        ops = self.rt / "ops-event.sh"
         ops.unlink()
         ops.write_text(
             f"#!/bin/sh\necho $$ > {pids}\nsleep 37 &\necho $! >> {pids}\nwait\n"
@@ -757,14 +786,14 @@ class TestRefusalsWriteOneEvent(SpendScratch):
     def test_hook_without_ops_event_stays_silent(self):
         d = self.pre("role:no-such-role", "p")
         with_ledger = self.hook(d)
-        (self.perma / "runtime" / "ops-event.sh").unlink()
+        (self.rt / "ops-event.sh").unlink()
         without = self.hook(d)
         self.assertEqual(
             (without.returncode, without.stdout, without.stderr),
             (with_ledger.returncode, with_ledger.stdout, ""),
         )
         self.assertEqual(len(self.events()), 1)
-        log = (self.perma / "runtime" / "logs" / "agent-roles.log").read_text()
+        log = (self.machine / "logs" / "agent-roles.log").read_text()
         self.assertIn(
             "GATE-EVENT dispatch:role-unresolved not written: cannot run ops-event.sh",
             log,
@@ -1594,13 +1623,12 @@ class TestRefusalEventTime(unittest.TestCase):
         import gate_event
 
         with tempfile.TemporaryDirectory() as tmp:
-            perma = Path(tmp)
-            (perma / "runtime").mkdir()
-            seen = perma / "env.txt"
-            w = perma / "runtime" / "ops-event.sh"
+            here = Path(tmp)
+            seen = here / "env.txt"
+            w = here / "ops-event.sh"
             w.write_text(f'#!/bin/bash\necho "ts=${{OPS_TS-unset}} commit=${{OPS_COMMIT-unset}}" > \'{seen}\'\n')
             w.chmod(0o755)
-            with mock.patch.dict(os.environ, {"OPS_TS": "2020-01-01T00:00:00Z", "OPS_COMMIT": "abc123"}):
-                self.assertIsNone(gate_event.refused("spend:wave-unknown", "p", "n", stream="a/s", perma=perma))
+            with mock.patch.dict(os.environ, {"OPS_TS": "2020-01-01T00:00:00Z", "OPS_COMMIT": "abc123"}), \
+                    mock.patch.object(gate_event, "HERE", here):
+                self.assertIsNone(gate_event.refused("spend:wave-unknown", "p", "n", path=tmp))
             self.assertEqual(seen.read_text(), "ts=unset commit=unset\n")
-

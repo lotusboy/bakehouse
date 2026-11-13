@@ -1,17 +1,16 @@
 #!/usr/bin/env bash
 # Append ONE team-operations event to the ops ledger of the repository you are in. The ledger is the
-# owner's working file, so it lives in that repository's stream, never in the repository:
-#   <stream>/repo/ops/events.jsonl   (rules beside it in OPERATIONS.md)
-# The stream is found from the repository root through _meta/REGISTRY.md, as session start does.
+# owner's working file, so it lives in the project's team records, never in the repository:
+#   <records>/ops/events.jsonl   (rules in .team/OPERATIONS.md)
+# The project is found from the repository root through runtime/locator.py.
 # THE canonical writer: a hand-typed line in a different shape is a silent gap in any report built
 # from the ledger. Fields are positional; anything you do not know is left empty, never guessed.
 #
 # Usage (from inside the repository, or set OPS_REPO to its path):
 #   ops-event.sh <kind> <task> <purpose> [model] [effort] [count] [tokens] [duration_s] [outcome] [note] [gate]
 #
-# OPS_STREAM=<stream> names the stream directly, for a tool that knows it (decision.sh, spend.sh) or whose
-# record sits in a stream's own folder. The binding must still say "owned": true. `commit` is then the HEAD
-# of the repository at OPS_REPO or the working directory, or null outside one.
+# The binding must say "owned": true. `commit` is the HEAD of the repository at OPS_REPO or the working
+# directory.
 #
 # BACKFILL ONLY — two env overrides, for an event written after the fact:
 #   OPS_TS=2026-09-12T23:01:14+01:00 OPS_COMMIT=5308be8 ops-event.sh ...
@@ -39,28 +38,24 @@
 # (the first sealed event), every new line carries prev, the sha256 of the line before it.
 set -euo pipefail
 command -v python3 >/dev/null 2>&1 || { echo "$(basename "$0"): python3 not found on PATH — this tool needs it (standard library only)." >&2; exit 127; }
-PERMA="${PERMA_DIR:-$HOME/permanence}"
-if [ -n "${OPS_STREAM:-}" ]; then
-  STREAM="${OPS_STREAM%/}"
-  case "/$STREAM/" in (*/../*|//*) echo "ops-event: OPS_STREAM $OPS_STREAM is not a stream folder inside $PERMA" >&2; exit 1 ;; esac
-  REPO="$(git -C "${OPS_REPO:-$PWD}" rev-parse --show-toplevel 2>/dev/null || true)"
-else
-  REPO="$(git -C "${OPS_REPO:-$PWD}" rev-parse --show-toplevel 2>/dev/null)" \
-    || { echo "ops-event: ${OPS_REPO:-$PWD} is not inside a git repository" >&2; exit 1; }
-  STREAM="$("$PERMA/runtime/resolve-stream.sh" "$REPO")"
-  [ -n "$STREAM" ] || { echo "ops-event: no stream is registered for $REPO in _meta/REGISTRY.md" >&2; exit 1; }
-fi
-[ -d "$PERMA/$STREAM/repo" ] || { echo "ops-event: stream $STREAM has no repo/ folder: this repository keeps no ledger" >&2; exit 1; }
+HERE="$(cd "$(dirname "$0")" && pwd)"
+REPO="$(git -C "${OPS_REPO:-$PWD}" rev-parse --show-toplevel 2>/dev/null)" \
+  || { echo "ops-event: ${OPS_REPO:-$PWD} is not inside a git repository" >&2; exit 1; }
+# The locator is asked about REPO itself, so the ledger and the commit stamp come from one repository.
+locate() { env -u CLAUDE_PROJECT_DIR python3 "$HERE/locator.py" "$1" "$REPO"; }
+BINDING="$(locate binding)" || {
+  [ $? -eq 3 ] && echo "ops-event: $REPO has no team (no .team/binding.json): this repository keeps no ledger" >&2
+  exit 1; }
 # Only the owner's own repositories keep a ledger: another party's commits are not the owner's to log.
 python3 -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1])).get("owned") is True else 1)' \
-  "$PERMA/$STREAM/repo/binding.json" 2>/dev/null \
-  || { echo "ops-event: $STREAM/repo/binding.json does not say \"owned\": true: this repository keeps no ledger" >&2; exit 1; }
-OUT="$PERMA/$STREAM/repo/ops/events.jsonl"
+  "$BINDING" 2>/dev/null \
+  || { echo "ops-event: $BINDING does not say \"owned\": true: this repository keeps no ledger" >&2; exit 1; }
+OUT="$(locate ops_ledger)" || exit 1
 mkdir -p "$(dirname "$OUT")"
 KIND="${1:?kind}"; TASK="${2:?task}"; PURPOSE="${3:?purpose}"
 MODEL="${4:--}"; EFFORT="${5:--}"; COUNT="${6:--}"; TOKENS="${7:--}"; DUR="${8:--}"; OUTCOME="${9:--}"; NOTE="${10:-}"
 GATE="${11:-}"
-python3 - "$(cd "$(dirname "$0")" && pwd)" "$OUT" "$REPO" "$KIND" "$TASK" "$PURPOSE" "$MODEL" "$EFFORT" "$COUNT" "$TOKENS" "$DUR" "$OUTCOME" "$NOTE" "$GATE" <<'PY'
+python3 - "$HERE" "$OUT" "$REPO" "$KIND" "$TASK" "$PURPOSE" "$MODEL" "$EFFORT" "$COUNT" "$TOKENS" "$DUR" "$OUTCOME" "$NOTE" "$GATE" <<'PY'
 import json, re, sys, datetime, subprocess, os
 from pathlib import Path
 sys.path.insert(0, sys.argv.pop(1))

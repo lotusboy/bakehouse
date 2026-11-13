@@ -1,28 +1,24 @@
 #!/usr/bin/env bash
-# Append ONE lane event to <stream>/repo/ops/lanes.jsonl: the record of parallel work inside one
+# Append ONE lane event to <records>/ops/lanes.jsonl: the record of parallel work inside one
 # project (Lanes v0). One JSON object per line, a stable shape, so a later stats recorder or monitor
-# can read the stream without knowing who wrote it. Unknown fields are left out, never guessed.
+# can read the ledger without knowing who wrote it. Unknown fields are left out, never guessed.
 #
 # Usage:
 #   lane-event.sh <kind> [key=value ...]
 # kinds (v0): lane-opened lane-closed footprint-judged resource-waited resource-started
 #             resource-ended merge remeasure question-asked question-answered
 # common keys: lane workOrder resource waitedS heldS exit outcome reason files note
-# The stream: $PERMA_STREAM if set (a lane working in its own clone), else resolved from the repo
-# you are in ($OPS_REPO or $PWD) through _meta/REGISTRY.md, as ops-event.sh does.
-# $PERMA_LANE and $PERMA_WO fill `lane` and `workOrder` when not given.
+# The project: found from the repo you are in ($OPS_REPO or $PWD) through runtime/locator.py, as
+# ops-event.sh does (a lane clone's records pointer names the main clone's records).
+# $BAKEHOUSE_LANE and $BAKEHOUSE_WO fill `lane` and `workOrder` when not given.
 set -euo pipefail
-PERMA="${PERMA_DIR:-$HOME/permanence}"
+HERE="$(cd "$(dirname "$0")" && pwd)"
 [ $# -ge 1 ] || { echo "usage: lane-event.sh <kind> [key=value ...]" >&2; exit 2; }
-STREAM="${PERMA_STREAM:-}"
-if [ -z "$STREAM" ]; then
-  REPO="$(git -C "${OPS_REPO:-$PWD}" rev-parse --show-toplevel 2>/dev/null)" \
-    || { echo "lane-event: not inside a git repository and PERMA_STREAM is not set" >&2; exit 1; }
-  STREAM="$("$PERMA/runtime/resolve-stream.sh" "$REPO")"
-fi
-[ -n "$STREAM" ] && [ -d "$PERMA/$STREAM/repo" ] \
-  || { echo "lane-event: no stream with a repo/ folder (set PERMA_STREAM)" >&2; exit 1; }
-OUT="$PERMA/$STREAM/repo/ops/lanes.jsonl"
+REPO="$(git -C "${OPS_REPO:-$PWD}" rev-parse --show-toplevel 2>/dev/null)" \
+  || { echo "lane-event: not inside a git repository" >&2; exit 1; }
+OUT="$(env -u CLAUDE_PROJECT_DIR python3 "$HERE/locator.py" lanes_ledger "$REPO")" || {
+  [ $? -eq 3 ] && echo "lane-event: $REPO has no team (no .team/binding.json)" >&2
+  exit 1; }
 mkdir -p "$(dirname "$OUT")"
 python3 - "$OUT" "$@" <<'PY'
 import datetime, json, os, sys
@@ -32,7 +28,7 @@ KINDS = {"lane-opened", "lane-closed", "footprint-judged", "resource-waited", "r
 if kind not in KINDS:
     sys.exit(f"lane-event: unknown kind {kind!r}; one of {sorted(KINDS)}")
 ev = {"ts": datetime.datetime.now().astimezone().isoformat(timespec="seconds"), "kind": kind}
-for k, env in (("lane", "PERMA_LANE"), ("workOrder", "PERMA_WO")):
+for k, env in (("lane", "BAKEHOUSE_LANE"), ("workOrder", "BAKEHOUSE_WO")):
     if os.environ.get(env):
         ev[k] = os.environ[env]
 for p in pairs:

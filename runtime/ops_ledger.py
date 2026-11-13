@@ -2,7 +2,7 @@
 has started, every line carries `prev`, the sha256 of the bytes of the line before it.
 
 The lock is an exclusive flock on a lock file beside the ledger, `.<ledger name>.lock`, which the
-Permanence .gitignore names. It is not the ledger file: the ledger is tracked in git, and a checkout,
+records worktree's .gitignore names. It is not the ledger file: the ledger is tracked in git, and a checkout,
 merge or reset replaces the file (a new inode) while a writer holds a lock on the old one; git never
 touches an ignored file. No part of its path comes from the environment, so every writer of one
 ledger takes one lock, through a symlinked path too.

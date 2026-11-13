@@ -5,36 +5,24 @@ Best effort by design: the tool has already refused, so a failed write never cha
 what it prints. It returns the reason instead, and never raises. (An override is different: it must be
 recorded, and its writer refuses when it cannot be. That stays in predict-gate.py.)
 
-Where the event goes: the named stream; else the registered stream whose folder holds `path` (a record
-kept in a stream's own folder belongs to that stream, and the Permanence root itself keeps no ledger);
-else the repository at `path`; else the repository of the working directory.
+Where the event goes: the project of the repository at `path` (runtime/locator.py, through ops-event.sh);
+else the project of the working directory's repository.
 """
 
 import os
 import signal
 import subprocess
-import sys
 from pathlib import Path
 
+HERE = Path(__file__).resolve().parent
 NOTE_CHARS = 300
 WAIT_S = 3  # below the 10 s timeout the harness gives a hook; a slow write is cut, never waited on
 
 
-def target(perma: Path, stream=None, path=None) -> dict:
-    """The env that points ops-event.sh at the ledger: OPS_STREAM or OPS_REPO; {} for the cwd."""
-    if stream:
-        return {"OPS_STREAM": stream}
+def target(path=None) -> dict:
+    """The env that points ops-event.sh at the ledger: OPS_REPO; {} for the cwd."""
     if not path:
         return {}
-    try:
-        sys.path.insert(0, str(Path(__file__).resolve().parent))
-        import team_roles
-
-        held, _ = team_roles.stream_holding(perma, path)
-    except Exception:  # noqa: BLE001 - routing is best effort; the cwd's repository is the fallback
-        held = None
-    if held:
-        return {"OPS_STREAM": held}
     p = Path(path).expanduser()
     return {"OPS_REPO": str(p if p.is_dir() else p.parent)}
 
@@ -45,10 +33,8 @@ def refused(
     note,
     task=None,
     count=None,
-    stream=None,
     path=None,
     outcome="refused",
-    perma=None,
     wait=WAIT_S,
 ):
     """Write one gate-refused event. None when written, else why not. wait: the seconds the write may take
@@ -57,14 +43,13 @@ def refused(
     if wait <= 0:
         return "no time was left before the caller's deadline; not written"
     try:
-        perma = Path(perma or os.environ.get("PERMA_DIR") or Path.home() / "permanence")
         # OPS_TS and OPS_COMMIT would back-date the event or pin it to another commit: a refusal is dated now
         env = {
-            k: v for k, v in os.environ.items() if k not in ("OPS_STREAM", "OPS_REPO", "OPS_TS", "OPS_COMMIT")
+            k: v for k, v in os.environ.items() if k not in ("OPS_REPO", "OPS_TS", "OPS_COMMIT")
         }
-        env.update(target(perma, stream, path), PERMA_DIR=str(perma))
+        env.update(target(path))
         argv = [
-            str(perma / "runtime" / "ops-event.sh"),
+            str(HERE / "ops-event.sh"),
             "gate-refused",
             task or "-",
             purpose,

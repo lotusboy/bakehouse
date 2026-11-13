@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # How far a repository's ops ledger has drifted behind the work, in commits. Reads the ledger in the
-# repository's stream (<stream>/repo/ops/events.jsonl; see ops-event.sh), never a file in the
+# project's team records (<records>/ops/events.jsonl; see ops-event.sh), never a file in the
 # repository.
 #
 # A ledger once stopped being written and nobody noticed for three days; by then 108 of the period's
@@ -8,18 +8,19 @@
 # and free to fix. The post-commit hook that wire writes runs this after every commit.
 #
 # Prints the drift and exits 0 always: this reports, it never blocks a commit. Exit 1 only if the
-# repository has no stream or no ledger.
+# repository has no team or no ledger.
 #
 # Usage: ops-gap.sh [warn-threshold, default 5]   (from inside the repository, or set OPS_REPO)
 set -euo pipefail
 command -v python3 >/dev/null 2>&1 || { echo "$(basename "$0"): python3 not found on PATH — this tool needs it (standard library only)." >&2; exit 127; }
-PERMA="${PERMA_DIR:-$HOME/permanence}"
+HERE="$(cd "$(dirname "$0")" && pwd)"
 THRESHOLD="${1:-5}"
 REPO="$(git -C "${OPS_REPO:-$PWD}" rev-parse --show-toplevel 2>/dev/null)" \
   || { echo "ops-gap: ${OPS_REPO:-$PWD} is not inside a git repository" >&2; exit 1; }
-STREAM="$("$PERMA/runtime/resolve-stream.sh" "$REPO")"
-[ -n "$STREAM" ] || { echo "ops-gap: no stream is registered for $REPO" >&2; exit 1; }
-LEDGER="$PERMA/$STREAM/repo/ops/events.jsonl"
+locate() { env -u CLAUDE_PROJECT_DIR python3 "$HERE/locator.py" "$1" "$REPO"; }
+LEDGER="$(locate ops_ledger)" || {
+  [ $? -eq 3 ] && echo "ops-gap: $REPO has no team (no .team/binding.json)" >&2
+  exit 1; }
 [ -f "$LEDGER" ] || { echo "ops-gap: no ledger at $LEDGER" >&2; exit 1; }
 
 LAST_TS="$(python3 - "$LEDGER" <<'PY'
@@ -33,7 +34,7 @@ PY
 BEHIND="$(git -C "$REPO" log --since="$LAST_TS" --oneline | wc -l | tr -d ' ')"
 if [ "$BEHIND" -ge "$THRESHOLD" ]; then
   echo "⚠ ops ledger is $BEHIND commit(s) behind — last event $LAST_TS"
-  echo "   Record what actually happened with $PERMA/runtime/ops-event.sh (rules: $STREAM/repo/ops/OPERATIONS.md)."
+  echo "   Record what actually happened with $HERE/ops-event.sh (rules: $(locate operations))."
   echo "   Agent runs, fan-outs, gates and decisions cannot be recovered from commits later."
 else
   echo "ops ledger: $BEHIND commit(s) behind (last event $LAST_TS)"
