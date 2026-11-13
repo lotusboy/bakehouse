@@ -1,0 +1,7 @@
+{
+  "name": "bakehouse",
+  "owner": { "name": "Steve Loftus" },
+  "plugins": [
+    { "name": "bakehouse", "source": "./", "description": "A project team for Claude Code." }
+  ]
+}
