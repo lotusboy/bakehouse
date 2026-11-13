@@ -1,6 +1,5 @@
 """Tests for runtime/predict-gate.sh. Standard library only:
 python3 -m unittest discover -s runtime/tests"""
-import datetime
 import hashlib
 import json
 import os
@@ -131,33 +130,32 @@ class Check(unittest.TestCase):
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
 
     def test_override_without_ledger_stays_refused(self):
-        env = dict(os.environ, PERMA_DIR=str(self.d / "no-perma"))
+        env = dict(os.environ)
         p = self.run_gate({}, self.after(rules__fired=121), BASE, "--override", "owner said so", env=env)
         self.assertEqual(p.returncode, 1)
         self.assertIn("OVERRIDE REFUSED", p.stdout)
 
 
 class RepoFixture(unittest.TestCase):
-    """An owned repo registered to a stream, so ops-event.sh can write."""
+    """An owned repo with a team (.team/binding.json and a records worktree), so ops-event.sh can write."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         t = Path(self.tmp.name).resolve()
-        self.perma = t / "perma"
-        (self.perma / "_meta").mkdir(parents=True)
-        (self.perma / "runtime").mkdir()
-        for s in ("resolve-stream.sh", "ops-event.sh", "ops_ledger.py", "predict-gate.sh", "predict-gate.py", "team_roles.py"):
-            (self.perma / "runtime" / s).symlink_to(RUNTIME / s)
         self.repo = t / "repo"
         subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
-        self.env = dict(os.environ, PERMA_DIR=str(self.perma), **GIT)
+        self.env = dict(os.environ, **GIT)
         self.env.pop("PREDICT_GATE_OVERRIDE", None)
         self.env.pop("PREDICT_GATE_CLOSE_OVERRIDE", None)
+        self.env.pop("CLAUDE_PROJECT_DIR", None)
         self.git("commit", "-q", "--allow-empty", "-m", "first")
-        (self.perma / "a/s/repo").mkdir(parents=True)
-        (self.perma / "a/s/repo/binding.json").write_text(json.dumps({"owned": True}))
-        (self.perma / "_meta/REGISTRY.md").write_text(f"| path | stream | what |\n|---|---|---|\n| {self.repo} | a/s | t |\n")
-        self.ledger = self.perma / "a/s/repo/ops/events.jsonl"
+        self.binding = self.repo / ".team" / "binding.json"
+        self.binding.parent.mkdir()
+        self.binding.write_text(json.dumps({"owned": True}))
+        self.records = t / "repo.team-records"
+        self.git("worktree", "add", "-q", "--orphan", "-b", "team-records", str(self.records))
+        self.git("config", "bakehouse.records", str(self.records))
+        self.ledger = self.records / "ops/events.jsonl"
         self.run_dir = self.repo / "runs" / "x"
         self.run_dir.mkdir(parents=True)
 
@@ -174,7 +172,7 @@ class RepoFixture(unittest.TestCase):
             (self.run_dir / name).write_text(json.dumps(data))
 
     def gate(self, *args, env=None):
-        return subprocess.run([str(self.perma / "runtime/predict-gate.sh"), *args], capture_output=True,
+        return subprocess.run([str(GATE), *args], capture_output=True,
                               text=True, env=env or self.env)
 
     def events(self):
@@ -267,7 +265,7 @@ class Close(RepoFixture):
 
     def setUp(self):
         super().setUp()
-        (self.perma / "a/s/repo/binding.json").write_text(json.dumps({
+        self.binding.write_text(json.dumps({
             "owned": True, "reviews": "runs/", "reviewName": "{date}-{id}-step{n}-review",
             "tracker": {"file": "docs/TRACKER.md", "id": "^T[0-9]+$"}}))
         self.folder = self.repo / "runs" / "2026-01-02-T7-step1-review"
@@ -290,7 +288,7 @@ class Close(RepoFixture):
     def close(self, wo="T7", env=None, commit=True):
         if commit:
             self.commit()
-        return subprocess.run([str(self.perma / "runtime/predict-gate.sh"), "close", wo, "--repo", str(self.repo)],
+        return subprocess.run([str(GATE), "close", wo, "--repo", str(self.repo)],
                               capture_output=True, text=True, env=env or self.env)
 
     def sha(self, name):
@@ -395,18 +393,18 @@ class Close(RepoFixture):
 
     def test_close_without_a_ledger_is_refused(self):
         self.trio()
-        binding = self.perma / "a/s/repo/binding.json"
+        binding = self.binding
         other = Path(self.tmp.name) / "b.json"
         other.write_text(binding.read_text())
-        (self.perma / "_meta/REGISTRY.md").write_text("| path | stream | what |\n|---|---|---|\n")
+        binding.unlink()  # the repository has no team, so no ledger
         self.commit()
-        p = subprocess.run([str(self.perma / "runtime/predict-gate.sh"), "close", "T7", "--repo", str(self.repo),
+        p = subprocess.run([str(GATE), "close", "T7", "--repo", str(self.repo),
                             "--binding", str(other)], capture_output=True, text=True, env=self.env)
         self.assertEqual(p.returncode, 1, p.stdout)
         self.assertIn("The close could not be recorded in the ops ledger", p.stdout)
         self.put("moves.measured.json", {**BASE, "rules:fired": 125})
         self.commit()
-        p = subprocess.run([str(self.perma / "runtime/predict-gate.sh"), "close", "T7", "--repo", str(self.repo),
+        p = subprocess.run([str(GATE), "close", "T7", "--repo", str(self.repo),
                             "--binding", str(other)], capture_output=True, text=True,
                            env=dict(self.env, PREDICT_GATE_CLOSE_OVERRIDE="x"))
         self.assertEqual(p.returncode, 1, p.stdout)
@@ -567,7 +565,7 @@ class CloseRecord(Close):
         p = self.close(commit=False)
         self.assertEqual(p.returncode, 1, p.stdout)
         self.assertIn("no 'Prediction-approved: <decision id>' trailer", p.stdout)
-        decide(self.perma, "a/s", OK_ID)
+        decide(self.records, OK_ID)
         self.put("moves.prediction.json", {"moves": [{"what": "rules:fired", "range": [121, 123]}]})
         self.git("add", "-A")
         self.git("commit", "-q", "-m", f"prediction widened again\n\nPrediction-approved: {OK_ID}")
@@ -624,12 +622,9 @@ class CloseRecord(Close):
         self.assertEqual([(e["kind"], e.get("gate")) for e in self.events()],
                          [("gate-refused", "predict-gate:close")])
 
-    def test_close_refuses_a_perma_dir_that_is_not_its_own_and_names_its_ledger(self):
+    def test_close_writes_to_the_project_the_locator_finds_for_its_repo_and_names_its_ledger(self):
         self.trio()
-        p = self.close(env=dict(self.env, PERMA_DIR=str(Path(self.tmp.name) / "elsewhere")))
-        self.assertEqual(p.returncode, 2, p.stdout)
-        self.assertIn("Close writes only to the ops ledger of the Permanence it runs from", p.stderr)
-        p = self.close()
+        p = self.close(env=dict(self.env, CLAUDE_PROJECT_DIR=str(Path(self.tmp.name) / "elsewhere")))
         self.assertEqual(p.returncode, 0, p.stdout)
         self.assertIn(f"Recorded in {self.ledger}", p.stdout)
         self.assertIn(f"ledger: {self.ledger}", self.events()[-1]["note"])
@@ -638,7 +633,7 @@ class CloseRecord(Close):
         self.trio()
         p = self.close("T7\n")
         self.assertEqual(p.returncode, 2, p.stdout)
-        b = self.perma / "a/s/repo/binding.json"
+        b = self.binding
         b.write_text(b.read_text().replace("^T[0-9]+$", "T[0-9]+"))
         self.assertEqual(self.close("xT7").returncode, 2)
 
@@ -651,49 +646,6 @@ class CloseRecord(Close):
         p = self.close("T5")
         self.assertEqual(p.returncode, 1, p.stdout)
         self.assertIn("no record folder matches runs/*-T5-step1-review (with {date} as YYYY-MM-DD)", p.stdout)
-
-    def board(self, text="# WIP\n\n  - 09:00 (1 Jan) — T6 CLOSED.\n"):
-        wip = self.perma / "a/s/WIP.md"
-        wip.write_text(text)
-        return wip
-
-    def test_a_passing_close_appends_exactly_one_board_line(self):
-        wip = self.board()
-        self.trio()
-        p = self.close()
-        self.assertEqual(p.returncode, 0, p.stdout)
-        ts = self.events()[-1]["ts"]
-        t = datetime.datetime.fromisoformat(ts)
-        self.assertEqual(wip.read_text(), "# WIP\n\n  - 09:00 (1 Jan) — T6 CLOSED.\n"
-                         f"  - {t:%H:%M} ({t.day} {t:%b}) — T7 CLOSED by predict-gate close "
-                         f"(ref: a/s/repo/ops/events.jsonl, work-order-closed at {ts}).\n")
-
-    def test_a_refused_close_appends_no_board_line(self):
-        wip = self.board()
-        self.trio(measured={**BASE, "rules:fired": 121, "gaps:capture": 371})
-        p = self.close()
-        self.assertEqual(p.returncode, 1, p.stdout)
-        self.assertEqual(wip.read_text(), "# WIP\n\n  - 09:00 (1 Jan) — T6 CLOSED.\n")
-
-    def test_a_refused_override_appends_no_board_line(self):
-        wip = self.board()
-        self.trio(measured={**BASE, "rules:fired": 125})
-        other = Path(self.tmp.name) / "b.json"
-        other.write_text((self.perma / "a/s/repo/binding.json").read_text())
-        (self.perma / "_meta/REGISTRY.md").write_text("| path | stream | what |\n|---|---|---|\n")
-        self.commit()
-        p = subprocess.run([str(self.perma / "runtime/predict-gate.sh"), "close", "T7", "--repo", str(self.repo),
-                            "--binding", str(other)], capture_output=True, text=True,
-                           env=dict(self.env, PREDICT_GATE_CLOSE_OVERRIDE="x"))
-        self.assertIn("OVERRIDE REFUSED", p.stdout)
-        self.assertEqual(wip.read_text(), "# WIP\n\n  - 09:00 (1 Jan) — T6 CLOSED.\n")
-
-    def test_a_missing_board_still_closes_with_a_note(self):
-        self.trio()
-        p = self.close()
-        self.assertEqual(p.returncode, 0, p.stdout)
-        self.assertIn(f"note: no {self.perma / 'a/s/WIP.md'}; the close is recorded in the ops ledger only.", p.stdout)
-        self.assertFalse((self.perma / "a/s/WIP.md").exists())
 
 
 OK_ID = "d20260101-a0a0a1"
@@ -708,11 +660,11 @@ FIX_M = {**BASE, "rules:fired": 122}
 EARLY, LATE = "2026-01-01T00:00:00+00:00", "2099-01-01T00:00:00+00:00"
 
 
-def decide(perma, stream, did, answers=((EARLY, True),)):
-    """A synthetic decision in the stream's decision ledger: an ask, then each (time, agreed) answer."""
-    led = Path(perma) / stream / "decisions" / "ledger.jsonl"
+def decide(records, did, answers=((EARLY, True),)):
+    """A synthetic decision in the project's decision ledger: an ask, then each (time, agreed) answer."""
+    led = Path(records) / "decisions" / "ledger.jsonl"
     led.parent.mkdir(parents=True, exist_ok=True)
-    rows = [{"kind": "ask", "id": did, "ts": EARLY, "stream": stream, "category": "process", "question": "q",
+    rows = [{"kind": "ask", "id": did, "ts": EARLY, "stream": "repo", "category": "process", "question": "q",
              "options": ["yes", "no"], "recommendation": "yes", "confidence": 0.9, "blind": False,
              "autonomous": False}]
     rows += [{"kind": "answer", "id": did, "ts": ts, "choice": "yes", "agreed": ok} for ts, ok in answers]
@@ -727,7 +679,7 @@ class CloseLedger(RepoFixture):
 
     def setUp(self):
         super().setUp()
-        (self.perma / "a/s/repo/binding.json").write_text(json.dumps({
+        self.binding.write_text(json.dumps({
             "owned": True, "reviews": "runs/", "reviewName": "{date}-{id}-step{n}-review",
             "tracker": {"file": "docs/TRACKER.md", "id": "^T[0-9]+$"}}))
         self.folder = self.repo / "runs" / "2026-01-02-T7-step1-review"
@@ -742,17 +694,17 @@ class CloseLedger(RepoFixture):
         return self.close(commit=False)
 
     def test_a_trailer_naming_an_agreed_decision_approves_a_changed_prediction(self):
-        decide(self.perma, "a/s", OK_ID)
+        decide(self.records, OK_ID)
         p = self.change_prediction("prediction widened", f"Prediction-approved: {OK_ID}")
         self.assertEqual(p.returncode, 0, p.stdout)
         self.assertIn("approved: ", self.events()[-1]["note"])
         self.assertIn(f"({OK_ID})", self.events()[-1]["note"])
-        self.assertIn(str(self.perma / "a/s/decisions/ledger.jsonl"), p.stdout)
+        self.assertIn(str(self.records / "decisions/ledger.jsonl"), p.stdout)
 
     def test_a_trailer_that_is_not_a_ledger_backed_decision_refuses(self):
-        decide(self.perma, "a/s", "d20260101-f0f0f1", ((EARLY, False),))
-        decide(self.perma, "a/s", "d20260101-1a7e01", ((LATE, True),))
-        decide(self.perma, "a/s", "d20260101-4e4e01", ((EARLY, True), ("2026-01-02T00:00:00+00:00", False)))
+        decide(self.records, "d20260101-f0f0f1", ((EARLY, False),))
+        decide(self.records, "d20260101-1a7e01", ((LATE, True),))
+        decide(self.records, "d20260101-4e4e01", ((EARLY, True), ("2026-01-02T00:00:00+00:00", False)))
         for value, why in (("engineer, myself", "does not name a decision id"),
                            ("no", "does not name a decision id"),
                            ("d20260101-ffffff", "is not in the decision ledger"),
@@ -770,7 +722,7 @@ class CloseLedger(RepoFixture):
                          [("gate-refused", "predict-gate:close")] * 6)
 
     def test_a_trailer_in_the_subject_is_not_a_trailer(self):
-        decide(self.perma, "a/s", OK_ID)
+        decide(self.records, OK_ID)
         p = self.change_prediction(f"Prediction-approved: {OK_ID}")
         self.assertEqual(p.returncode, 1, p.stdout)
         self.assertIn("no 'Prediction-approved: <decision id>' trailer", p.stdout)
@@ -785,7 +737,7 @@ class CloseLedger(RepoFixture):
         p = self.close(commit=False)
         self.assertEqual(p.returncode, 1, p.stdout)
         self.assertIn("history/ changed in or after the commit of the record's first measurement", p.stdout)
-        decide(self.perma, "a/s", OK_ID)
+        decide(self.records, OK_ID)
         self.git("commit", "-q", "--amend", "-m", "unpaired to history", "-m", f"Prediction-approved: {OK_ID}")
         p = self.close(commit=False)
         self.assertEqual(p.returncode, 0, p.stdout)
@@ -830,7 +782,7 @@ class CloseLedger(RepoFixture):
         self.assertEqual(p.returncode, 1, p.stdout)
         self.assertIn("moves.measured.fix1.json, the baseline moves.prediction.fix2.json names, was not committed "
                       "before it", p.stdout)
-        decide(self.perma, "a/s", OK_ID)
+        decide(self.records, OK_ID)
         self.git("commit", "-q", "--amend", "-m", "record", "-m", f"Prediction-approved: {OK_ID}")
         p = self.close(commit=False)
         self.assertEqual(p.returncode, 0, p.stdout)
@@ -839,9 +791,9 @@ class CloseLedger(RepoFixture):
 
     def ask(self, did, task, approves=None, choice="yes", agreed=True, options=("yes", "no")):
         """An ask of the review-A2 form: its approving option, the work order it serves, and one answer."""
-        led = self.perma / "a/s/decisions/ledger.jsonl"
+        led = self.records / "decisions/ledger.jsonl"
         led.parent.mkdir(parents=True, exist_ok=True)
-        ask = {"kind": "ask", "id": did, "ts": EARLY, "stream": "a/s", "category": "process", "question": "q",
+        ask = {"kind": "ask", "id": did, "ts": EARLY, "stream": "repo", "category": "process", "question": "q",
                "options": list(options), "recommendation": options[0], "confidence": 0.9, "blind": False,
                "autonomous": False, "task": task}
         if approves:
@@ -851,7 +803,7 @@ class CloseLedger(RepoFixture):
                 {"kind": "answer", "id": did, "ts": EARLY, "choice": choice, "agreed": agreed}) + "\n")
 
     def again(self):
-        """A fresh repository and stream: a record path keeps its history."""
+        """A fresh repository and project: a record path keeps its history."""
         self.tearDown()
         self.setUp()
 
@@ -876,7 +828,7 @@ class CloseLedger(RepoFixture):
         self.assertEqual(p.returncode, 1, p.stdout)
         self.assertIn("moves.measured.json was removed in or after the commit of the record's first measurement", p.stdout)
         self.assertIn("moves.prediction.json was removed in or after", p.stdout)
-        decide(self.perma, "a/s", OK_ID)
+        decide(self.records, OK_ID)
         self.git("commit", "-q", "--amend", "-m", "round 2", "-m", f"Prediction-approved: {OK_ID}")
         p = self.close(commit=False)
         self.assertEqual(p.returncode, 0, p.stdout)
@@ -930,14 +882,14 @@ class CloseMerged(RepoFixture):
 
     def setUp(self):
         super().setUp()
-        (self.perma / "a/s/repo/binding.json").write_text(json.dumps({
+        self.binding.write_text(json.dumps({
             "owned": True, "reviews": "runs/", "reviewName": "{date}-{id}-step{n}-review",
             "tracker": {"file": "docs/TRACKER.md", "id": "^T[0-9]+$"}}))
         self.folder = self.repo / "runs" / "2026-01-02-T7-step1-review"
         self.folder.mkdir(parents=True)
 
     def merged(self):
-        return subprocess.run([str(self.perma / "runtime/predict-gate.sh"), "close", "T7", "--merged", "--repo",
+        return subprocess.run([str(GATE), "close", "T7", "--merged", "--repo",
                                str(self.repo)], capture_output=True, text=True, env=self.env, check=False)
 
     def test_merged_close_after_a_squash_checks_only_the_step_9_hashes(self):
@@ -973,7 +925,7 @@ class CloseMerged(RepoFixture):
         self.assertIn("moves.measured.json: sha256 ", p.stdout)
         self.assertIn("moves.baseline.json: not in git at HEAD", p.stdout)
         self.assertIn("--merged has no override", p.stdout)
-        p = subprocess.run([str(self.perma / "runtime/predict-gate.sh"), "close", "T7", "--merged", "--repo",
+        p = subprocess.run([str(GATE), "close", "T7", "--merged", "--repo",
                             str(self.repo)], capture_output=True, text=True,
                            env=dict(self.env, PREDICT_GATE_CLOSE_OVERRIDE="owner go"), check=False)
         self.assertEqual(p.returncode, 1, p.stdout)
@@ -997,7 +949,7 @@ class CloseOrder(RepoFixture):
              "tracker": {"file": "docs/TRACKER.md", "id": "^T[0-9]+$"}}
         if roots:
             b["signal"] = {"codeRoots": list(roots)}
-        (self.perma / "a/s/repo/binding.json").write_text(json.dumps(b))
+        self.binding.write_text(json.dumps(b))
         self.rec = "runs/2026-11-10-T7-step1-review"
         self.n, self.day = 0, "2026-11-10"
 
@@ -1019,7 +971,7 @@ class CloseOrder(RepoFixture):
         return f"{self.rec}/{n}"
 
     def close(self, **env):
-        return subprocess.run([str(self.perma / "runtime/predict-gate.sh"), "close", "T7", "--repo", str(self.repo)],
+        return subprocess.run([str(GATE), "close", "T7", "--repo", str(self.repo)],
                               capture_output=True, text=True, env=dict(self.env, **env), check=False)
 
     def round1(self, then=()):
@@ -1091,7 +1043,7 @@ class CloseOrder(RepoFixture):
         self.assertIn("has no round whose prediction was committed before it", p.stdout)
 
     def test_a_superseded_rounds_code_stays_covered_by_its_prediction_in_history(self):
-        decide(self.perma, "a/s", OK_ID)
+        decide(self.records, OK_ID)
         self.round1()
         self.at("T7: superseded round to history/", None, f"Prediction-approved: {OK_ID}",
                 mv=[(self.r(n), self.r(f"history/{n}")) for n in ("moves.prediction.json", "moves.measured.json")])

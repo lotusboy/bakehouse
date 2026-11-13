@@ -448,31 +448,27 @@ class TestRefusalsWriteOneEvent(SpendScratch):
         self.assertEqual(self.pg("check", "--measured", str(ok)).returncode, 0)
         self.assertEqual(len(self.events()), 2)
 
-    def test_predict_gate_check_refusal_in_a_stream_folder_goes_to_that_stream(self):
+    def test_predict_gate_check_refusal_goes_to_the_records_project_not_the_working_folders(self):
         m = self.trio(
-            self.stream / "design" / "x",
+            self.work / "runs" / "x",
             {**PG_BASE, "rules:fired": 121, "gaps:open": 11},
         )
+        gate = [str(self.rt / "predict-gate.sh"), "check", "--measured", str(m)]
         self.assertEqual(
-            self.pg("check", "--measured", str(m)).returncode,
+            self.run_(gate, cwd=self.root).returncode,
             1,
-            "run from the work repo",
+            "run from a folder outside any repository",
         )
         self.assertEqual(self.pg("check", "--measured", str(m)).returncode, 1)
         self.assertEqual(
             [e["gate"] for e in self.refusals()], ["predict-gate:check"] * 2
         )
-        # the override of a stream-held record keeps today's route (owner D2), so it cannot be recorded and
-        # the gate stays refused; the refusal still writes its own event, to the stream (review F1)
-        p = self.pg("check", "--measured", str(m), "--override", "owner said yes")
-        self.assertEqual(p.returncode, 1)
-        self.assertIn("OVERRIDE REFUSED", p.stdout)
+        # the override is recorded in the record's project too
+        p = self.run_(gate + ["--override", "owner said yes"], cwd=self.root)
+        self.assertEqual(p.returncode, 0, p.stdout)
         self.assertEqual(
             [(e["gate"], e["outcome"]) for e in self.refusals()],
-            [("predict-gate:check", "refused")] * 3,
-        )
-        self.assertIn(
-            "the owner's override could not be recorded", self.refusals()[2]["note"]
+            [("predict-gate:check", "refused")] * 2 + [("predict-gate:check", "done")],
         )
         self.assertEqual(len(self.events()), 3)
 

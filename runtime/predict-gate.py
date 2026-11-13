@@ -10,10 +10,10 @@ Standard library only. Usage (normally through predict-gate.sh):
 
   predict-gate.py check [--prediction P] [--baseline B] --measured M [--override REASON] [--task ID]
   predict-gate.py close WORK-ORDER [--repo DIR] [--binding FILE] [--merged]
-  predict-gate.py seal WORK-ORDER ROUND FILE [--stream S] [--report R]
-  predict-gate.py revise|retire WORK-ORDER ROUND FILE --decision ID [--stream S]
-  predict-gate.py seal-code WORK-ORDER ROUND [--stream S] -- GIT-COMMIT-ARGS   # the round's first code commit
-  predict-gate.py verify-chain [--stream S | --ledger FILE]
+  predict-gate.py seal WORK-ORDER ROUND FILE [--repo DIR] [--report R]
+  predict-gate.py revise|retire WORK-ORDER ROUND FILE --decision ID [--repo DIR]
+  predict-gate.py seal-code WORK-ORDER ROUND [--repo DIR] -- GIT-COMMIT-ARGS   # the round's first code commit
+  predict-gate.py verify-chain [--repo DIR | --ledger FILE]
   predict-gate.py hook                     # run by the pre-commit hook, inside the repo
   predict-gate.py install-hook REPO
 
@@ -41,7 +41,7 @@ close WORK-ORDER: see docs/PREDICT-GATE.md, "Closing a work order". Reads the re
 at HEAD; refuses unless every top-level prediction names a move and passes against its own round's
 measured file, and every top-level measured file is part of a pair. history/ is listed, never checked.
 Four exceptions need the owner's decision, cited in a `Prediction-approved: <decision id>` git
-trailer on the commit that made them and answered in the stream's decision ledger before that
+trailer on the commit that made them and answered in the project's decision ledger before that
 commit: a prediction changed after its measurement; a commit touching history/ that is not before
 the record's first measurement (the first commit that added a top-level measured file, over the
 folder's whole history); a top-level prediction or measured file removed (deleted or renamed) in or
@@ -61,7 +61,7 @@ event of the work order hashed hash the same at HEAD; refuses when there is no s
 override. It writes a `note` event, never a work-order-closed one.
 
 seal, revise, retire, verify-chain: docs/PREDICT-GATE.md, "Sealing". Each writes
-one event to the stream's ops ledger, under the ledger lock, chained to the line before it
+one event to the project's ops ledger, under the ledger lock, chained to the line before it
 (runtime/ops_ledger.py). close does not read them yet.
 
 Exit: 0 pass (or failed and overridden, recorded); 1 the gate refused; 2 bad input.
@@ -318,8 +318,16 @@ def report(r: dict, files: dict) -> str:
     return "\n".join(lines)
 
 
-def perma_dir() -> Path:
-    return Path(os.environ.get("PERMA_DIR") or Path.home() / "permanence")
+def project_of(folder):
+    """The project of the repository at folder (runtime/locator.py), or None when it has no team. Asked
+    about folder itself, as ops-event.sh asks, so the ledger close and seal read is the one ops-event.sh
+    writes."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import locator
+    try:
+        return locator.find(folder, {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"})
+    except locator.SetupNeeded as e:
+        raise BadInput(str(e))
 
 
 def ops_event(repo: Path, kind: str, task: str, purpose: str, count, note: str, gate: str | None = None) -> str | None:
@@ -327,7 +335,7 @@ def ops_event(repo: Path, kind: str, task: str, purpose: str, count, note: str, 
     not be written."""
     env = dict(os.environ, OPS_REPO=str(repo))
     try:
-        p = subprocess.run([str(perma_dir() / "runtime" / "ops-event.sh"), kind, task or "-", purpose,
+        p = subprocess.run([str(Path(__file__).resolve().parent / "ops-event.sh"), kind, task or "-", purpose,
                             "-", "-", str(count), "-", "-", "done", note] + ([gate] if gate else []),
                            capture_output=True, text=True, env=env)
     except OSError as e:
@@ -344,7 +352,7 @@ def record_override(reason: str, task: str, repo: Path, r: dict, gate: str = "pr
     return ops_event(repo, "gate-refused", task, "predicted-moves gate overridden", r["failures"], note, gate)
 
 
-def refusal_event(gate: str, purpose: str, note: str, task: str | None, count, path, perma: Path | None = None):
+def refusal_event(gate: str, purpose: str, note: str, task: str | None, count, path):
     """One gate-refused event for a refusal that stands (docs/PROJECT-TEAM.md, "Gate refusals"). Best
     effort: the gate has refused already, so a failed write changes nothing it prints or returns. Never
     called from run_check, which records-check also runs on every register build."""
@@ -352,7 +360,7 @@ def refusal_event(gate: str, purpose: str, note: str, task: str | None, count, p
         sys.path.insert(0, str(Path(__file__).resolve().parent))
         import gate_event
         gate_event.refused(gate, purpose, note, task=None if task in (None, "-") else task, count=count,
-                           path=str(path), perma=perma or perma_dir())
+                           path=str(path))
     except Exception:  # noqa: BLE001, S110 - the event reports a refusal; it never changes one
         pass
 
@@ -512,13 +520,13 @@ def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def find_binding(repo: Path, binding_arg: str | None) -> dict:
+def find_binding(repo: Path, binding_arg: str | None, project) -> dict:
     if binding_arg:
         path = Path(binding_arg)
     else:
-        path, stream = stream_binding(repo)
-        if path is None:
-            raise BadInput(f"no stream is registered for {repo} in _meta/REGISTRY.md, so there is no binding")
+        if project is None:
+            raise BadInput(f"{repo} has no team (no .team/binding.json), so there is no binding")
+        path = project.binding
     try:
         b = json.loads(path.read_text())
     except OSError as e:
@@ -528,13 +536,6 @@ def find_binding(repo: Path, binding_arg: str | None) -> dict:
     if not isinstance(b, dict):
         raise BadInput(f"the binding {path} is not a JSON object")
     return b
-
-
-def stream_binding(repo: Path):
-    """(binding path, stream) for the repo, through the registry of perma_dir()."""
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
-    import team_roles
-    return team_roles.binding_path(perma_dir(), repo)
 
 
 def record_folders(repo: Path, b: dict, wo: str) -> tuple[str, list]:
@@ -574,14 +575,13 @@ def closed_hashes(ledger: Path | None, wo: str) -> dict:
     return out
 
 
-def decisions(perma: Path, stream: str | None) -> tuple[dict, Path | None]:
-    """(decision id -> {ask, answers, outcomes}, the ledger file) for the stream, read by decision.py."""
-    if not stream:
+def decisions(project) -> tuple[dict, Path | None]:
+    """(decision id -> {ask, answers, outcomes}, the ledger file) for the project, read by decision.py."""
+    if project is None:
         return {}, None
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import decision
-    decision.PERMA = perma
-    return decision.fold(decision.read_events(stream)), perma / stream / decision.LEDGER
+    return decision.decisions(project)
 
 
 def when(ts) -> datetime.datetime | None:
@@ -1009,28 +1009,22 @@ def sealed_refusals(repo: Path, folders: list, evs: list, decided: dict, wo: str
 
 
 def run_close(wo: str, repo_arg: str | None, binding_arg: str | None, merged: bool = False) -> int:
-    own = Path(__file__).absolute().parent.parent
-    if os.environ.get("PERMA_DIR") and Path(os.environ["PERMA_DIR"]).resolve() != own.resolve():
-        raise BadInput(f"PERMA_DIR is {os.environ['PERMA_DIR']}, and this close runs from {own}. Close "
-                       "writes only to the ops ledger of the Permanence it runs from: unset PERMA_DIR, or "
-                       "run that Permanence's own runtime/predict-gate.sh")
-    os.environ["PERMA_DIR"] = str(own)
     for k in ("OPS_TS", "OPS_COMMIT"):  # backfill only: a close is stamped with its own time and commit
         os.environ.pop(k, None)
     top = git(repo_arg or ".", "rev-parse", "--show-toplevel", check=False)
     if top.returncode != 0:
         raise BadInput(f"{repo_arg or os.getcwd()} is not inside a git repository")
     repo = Path(top.stdout.strip())
-    b = find_binding(repo, binding_arg)
+    project = project_of(repo)  # close reads and writes only the ledger of the project the locator finds here
+    b = find_binding(repo, binding_arg, project)
     form = (b.get("tracker") or {}).get("id") if isinstance(b.get("tracker"), dict) else None
     if isinstance(form, str) and not re.fullmatch(form, wo):
         raise BadInput(f"{wo!r} does not match the binding's tracker id form {form!r}")
     if git(repo, "rev-parse", "--verify", "-q", "HEAD", check=False).returncode != 0:
         raise BadInput(f"{repo} has no commit: close reads the record from git")
-    stream = stream_binding(repo)[1]
-    ledger = own / stream / "repo" / "ops" / "events.jsonl" if stream else None
+    ledger = project.ops_ledger if project else None
     earlier = closed_hashes(ledger, wo)
-    decided, decision_ledger = decisions(own, stream)
+    decided, decision_ledger = decisions(project)
     sealed, seal_events, seal_refused = (False, [], []) if merged else sealed_state(ledger, wo)
     pattern, folders = record_folders(repo, b, wo)
     refused, passed, notes = [], [], []
@@ -1238,8 +1232,6 @@ def run_close(wo: str, repo_arg: str | None, binding_arg: str | None, merged: bo
         print(f"Result: REFUSED. The close could not be recorded in the ops ledger ({err}).")
         return 1
     print(f"Result: CLOSED. Recorded in {ledger} as {kind}, with each file's sha256.")
-    if not merged:
-        wip_line(own, stream, wo, ledger, bool(refused))
     return 0
 
 
@@ -1263,22 +1255,14 @@ def file_round(name: str) -> tuple[str, str]:
     return m.group(1), m.group(2)[1:] or "first"
 
 
-def seal_target(path: Path, stream_arg: str | None, wo: str, folder: bool = False) -> tuple[Path, str, str, Path, dict]:
-    """(repository, path in it, stream, ledger, stream binding) for a file to seal. The stream is
-    --stream, else OPS_STREAM, else the registry's stream for the file's repository: a lane clone is not
-    registered. The ledger is the one close reads: the Permanence this tool runs from. The work order
-    must match the stream binding's tracker id form, when it names one, for a record in the bound
-    repository; a record kept in the Permanence checkout itself is not judged by it."""
+def seal_target(path: Path, repo_arg: str | None, wo: str, folder: bool = False) -> tuple[Path, str, object, dict]:
+    """(repository, path in it, project, binding) for a file to seal. The project is the one the locator
+    finds for --repo, else for the file's repository; its ops ledger is the one close reads. The work order
+    must match the binding's tracker id form, when it names one."""
     for k in ("OPS_TS", "OPS_COMMIT"):
         if os.environ.get(k):
             os.environ.pop(k)  # so the refusal event is stamped now too
             raise BadInput(f"{k} is set: a seal is stamped with its own time and commit, never a backfilled one")
-    own = Path(__file__).absolute().parent.parent
-    if os.environ.get("PERMA_DIR") and Path(os.environ["PERMA_DIR"]).resolve() != own.resolve():
-        raise BadInput(f"PERMA_DIR is {os.environ['PERMA_DIR']}, and this seal runs from {own}. A seal writes only "
-                       "to the ops ledger of the Permanence it runs from, the one close reads: unset PERMA_DIR, or "
-                       "run that Permanence's own runtime/predict-gate.sh")
-    os.environ["PERMA_DIR"] = str(own)
     if not (path.is_dir() if folder else path.is_file()):
         raise BadInput(f"cannot read {path}")
     top = git(path if folder else path.parent, "rev-parse", "--show-toplevel", check=False)
@@ -1286,22 +1270,20 @@ def seal_target(path: Path, stream_arg: str | None, wo: str, folder: bool = Fals
         raise BadInput(f"{path} is not inside a git repository")
     repo = Path(top.stdout.strip())
     rel = path.resolve().relative_to(repo.resolve()).as_posix()
-    stream = (stream_arg or os.environ.get("OPS_STREAM") or stream_binding(repo)[1] or "").rstrip("/")
-    if not stream:
-        raise BadInput(f"no stream for {repo}: it is not registered in _meta/REGISTRY.md (a lane clone is "
-                       "not). Give --stream <stream> or set OPS_STREAM")
-    if stream.startswith("/") or "/../" in f"/{stream}/":
-        raise BadInput(f"stream {stream} is not a stream folder inside {perma_dir()}")
+    project = project_of(repo_arg or repo)
+    if project is None:
+        raise BadInput(f"{repo_arg or repo} has no team (no .team/binding.json), so it keeps no ledger: "
+                       "give --repo <the project's folder>")
     try:
-        b = json.loads((perma_dir() / stream / "repo" / "binding.json").read_text())
+        b = json.loads(project.binding.read_text())
     except (OSError, ValueError):
         b = None
     if not isinstance(b, dict) or b.get("owned") is not True:
-        raise BadInput(f"{stream}/repo/binding.json does not say \"owned\": true, so the stream keeps no ledger")
+        raise BadInput(f"{project.binding} does not say \"owned\": true, so the project keeps no ledger")
     form = (b.get("tracker") or {}).get("id") if isinstance(b.get("tracker"), dict) else None
-    if isinstance(form, str) and repo.resolve() != own.resolve() and not re.fullmatch(form, wo):
+    if isinstance(form, str) and not re.fullmatch(form, wo):
         raise BadInput(f"{wo!r} does not match the binding's tracker id form {form!r}")
-    return repo, rel, stream, perma_dir() / stream / "repo" / "ops" / "events.jsonl", b
+    return repo, rel, project, b
 
 
 def code_trees(repo: Path, commit: str, roots: list) -> dict | None:
@@ -1343,13 +1325,14 @@ def measured_fields(path: Path, repo: Path, report_arg: str | None) -> tuple[dic
             **shas, "report": rel(report) if report.is_file() else None}, rc
 
 
-def run_seal(cmd: str, wo: str, rnd: str, file: str, stream_arg: str | None, report: str | None = None,
+def run_seal(cmd: str, wo: str, rnd: str, file: str, repo_arg: str | None, report: str | None = None,
              decision_id: str | None = None) -> int:
     """seal: one sealed event for a prediction, baseline or measured file. revise: a prediction changed
     after its seal. retire: a sealed round's file moved to history/. Each writes one chained event under
     the ledger lock; the checks that read the ledger run under the lock too."""
     path = Path(file).absolute()
-    repo, rel, stream, ledger, binding = seal_target(path, stream_arg, wo)
+    repo, rel, project, binding = seal_target(path, repo_arg, wo)
+    ledger = project.ops_ledger
     data = path.read_bytes()
     digest = sha256(data)
     if cmd == "retire":
@@ -1366,7 +1349,7 @@ def run_seal(cmd: str, wo: str, rnd: str, file: str, stream_arg: str | None, rep
     if cmd in ("revise", "retire"):
         if not DECISION_ID.fullmatch(decision_id):
             raise BadInput(f"--decision {decision_id} is not a decision id (d<yyyymmdd>-<6 hex>)")
-        decided, _ = decisions(perma_dir(), stream)
+        decided, _ = decisions(project)
         if decision_id in decided and decided[decision_id]["ask"].get("approves") is None:
             raise BadInput(f"decision {decision_id} was asked without --approves, so it cannot approve a {cmd}: "
                            f"ask one with --task {wo} --approves <option>")
@@ -1429,7 +1412,7 @@ def run_seal(cmd: str, wo: str, rnd: str, file: str, stream_arg: str | None, rep
 
     ev = ledger_module().append(ledger, make, start=True, then=anchor)
     print(f"{ev['kind'].capitalize()}: {wo} round {rnd}, {ev['fileKind']} {rel}, sha256:{digest[:12]}, "
-          f"in {stream}/repo/ops/events.jsonl.")
+          f"in {ledger}.")
     if unanchored[0]:
         print(f"ANCHOR REFUSED: the {ev['kind']} line is written to the ledger but is not in a commit "
               f"({unanchored[0]}). Close counts only committed seals: seal again once the cause is gone.",
@@ -1443,7 +1426,7 @@ def run_seal(cmd: str, wo: str, rnd: str, file: str, stream_arg: str | None, rep
     return rc
 
 
-def run_seal_code(wo: str, rnd: str, stream_arg: str | None, commit_args: list) -> int:
+def run_seal_code(wo: str, rnd: str, repo_arg: str | None, commit_args: list) -> int:
     """Commit the round's first code and seal that commit: `git commit <commit_args>` in
     the working folder's repository, then one sealed event, fileKind code, with the commit, its parent and
     its code-root trees, anchored as every seal is. Close compares it with the round's prediction seal."""
@@ -1454,10 +1437,11 @@ def run_seal_code(wo: str, rnd: str, stream_arg: str | None, commit_args: list) 
     top = git(".", "rev-parse", "--show-toplevel", check=False)
     if top.returncode != 0:
         raise BadInput(f"{os.getcwd()} is not inside a git repository")
-    repo, _, stream, ledger, binding = seal_target(Path(top.stdout.strip()), stream_arg, wo, folder=True)
+    repo, _, project, binding = seal_target(Path(top.stdout.strip()), repo_arg, wo, folder=True)
+    ledger = project.ops_ledger
     roots = (binding.get("signal") or {}).get("codeRoots") if isinstance(binding.get("signal"), dict) else None
     if not roots:
-        raise BadInput(f"{stream}/repo/binding.json names no signal.codeRoots, so no code commit can be told apart")
+        raise BadInput(f"{project.binding} names no signal.codeRoots, so no code commit can be told apart")
     if not git(repo, "diff", "--cached", "--name-only", "--", *roots).stdout.strip():
         raise BadInput(f"nothing under the code roots ({', '.join(roots)}) is staged: seal-code commits the round's "
                        "first code")
@@ -1486,7 +1470,7 @@ def run_seal_code(wo: str, rnd: str, stream_arg: str | None, commit_args: list) 
             ledger, line, f"ops ledger: sealed {wo} round {rnd} code commit {commit[:8]} (predict-gate.sh seal-code)"))
 
     ledger_module().append(ledger, make, start=True, then=anchor)
-    print(f"Sealed: {wo} round {rnd}, code commit {commit[:8]}, in {stream}/repo/ops/events.jsonl.")
+    print(f"Sealed: {wo} round {rnd}, code commit {commit[:8]}, in {ledger}.")
     if unanchored[0]:
         print(f"ANCHOR REFUSED: the code seal is written to the ledger but is not in a commit ({unanchored[0]}). "
               "Close counts only committed seals: seal again once the cause is gone.", file=sys.stderr)
@@ -1497,45 +1481,20 @@ def run_seal_code(wo: str, rnd: str, stream_arg: str | None, commit_args: list) 
     return 0
 
 
-def run_verify_chain(stream_arg: str | None, ledger_arg: str | None) -> int:
+def run_verify_chain(repo_arg: str | None, ledger_arg: str | None) -> int:
     """Report the ledger's chain: not started, whole, or the first broken link (exit 1)."""
     if ledger_arg:
         ledger = Path(ledger_arg)
     else:
-        top = git(".", "rev-parse", "--show-toplevel", check=False)
-        stream = stream_arg or os.environ.get("OPS_STREAM") or (
-            stream_binding(Path(top.stdout.strip()))[1] if top.returncode == 0 else None)
-        if not stream:
-            raise BadInput("no stream: give --stream, set OPS_STREAM, or give --ledger")
-        ledger = perma_dir() / stream.rstrip("/") / "repo" / "ops" / "events.jsonl"
+        project = project_of(repo_arg or ".")
+        if project is None:
+            raise BadInput(f"{repo_arg or os.getcwd()} has no team (no .team/binding.json): give --repo or --ledger")
+        ledger = project.ops_ledger
     if not ledger.is_file():
         raise BadInput(f"no ledger at {ledger}")
     ok, text = ledger_module().verify(ledger)
     print(text)
     return 0 if ok else 1
-
-
-def wip_line(own: Path, stream: str, wo: str, ledger: Path, overridden: bool = False):
-    """One line on the stream's WIP.md board for a close that passed. The board once fell days behind
-    while the ledger stayed current: tools wrote the ledger, and only a prompt rule wrote the board."""
-    wip = own / stream / "WIP.md"
-    if not wip.is_file():
-        print(f"note: no {wip}; the close is recorded in the ops ledger only.")
-        return
-    events = [json.loads(x) for x in ledger.read_text(encoding="utf-8").splitlines() if x.strip()]
-    ts = next(ev["ts"] for ev in reversed(events) if ev.get("kind") == "work-order-closed" and ev.get("task") == wo)
-    t = datetime.datetime.fromisoformat(ts)
-    how = "CLOSED (OVERRIDDEN) by predict-gate close" if overridden else "CLOSED by predict-gate close"
-    try:
-        text = wip.read_text(encoding="utf-8")
-        with wip.open("a", encoding="utf-8") as f:
-            f.write(("" if not text or text.endswith("\n") else "\n")
-                    + f"  - {t:%H:%M} ({t.day} {t:%b}) — {wo} {how} "
-                      f"(ref: {stream}/repo/ops/events.jsonl, work-order-closed at {ts}).\n")
-    except OSError as e:
-        print(f"note: could not write {wip} ({e}); the close is recorded in the ops ledger only.")
-        return
-    print(f"Board: one line appended to {wip}.")
 
 
 def install_hook(repo_arg: str, gate: Path) -> int:
@@ -1589,7 +1548,7 @@ def main(argv) -> int:
             ap.add_argument("--override", default="", help="owner-approved reason; recorded in the ops ledger")
             ap.add_argument("--task", default="-", help="tracker id for the ops ledger line")
             a = ap.parse_args(rest)
-            where.update(task=a.task, path=a.measured, perma=perma_dir())
+            where.update(task=a.task, path=a.measured)
             if "--override" in rest and not a.override.strip():
                 raise BadInput("--override needs a reason")
             m = MEASURED_RE.match(a.measured.name)
@@ -1604,7 +1563,7 @@ def main(argv) -> int:
             rc = run_check(pred, base, a.measured, a.override.strip(), a.task, result=result)
             if rc == 1:
                 # with an override, rc 1 means the override could not be recorded (it keeps its own route, D2);
-                # the refusal still stands, and its event routes to the record's stream
+                # the refusal still stands, and its event routes to the record's project
                 unrecorded = " | the owner's override could not be recorded" if a.override.strip() else ""
                 refusal_event("predict-gate:check", "predicted-moves gate refused",
                               f"predicted-moves gate refused: {a.measured}{unrecorded} | refused lines: "
@@ -1615,12 +1574,12 @@ def main(argv) -> int:
             ap = argparse.ArgumentParser(prog="predict-gate.sh close")
             ap.add_argument("work_order")
             ap.add_argument("--repo", help="default: the working directory's repository")
-            ap.add_argument("--binding", help="default: the stream's repo/binding.json")
+            ap.add_argument("--binding", help="default: the project's .team/binding.json")
             ap.add_argument("--merged", action="store_true",
                             help="step 10: only check the record's files against the last close's sha256 values")
             a = ap.parse_args(rest)
-            # close writes only to the Permanence it runs from (run_close), so its bad input does too
-            where.update(task=a.work_order, path=a.repo or os.getcwd(), perma=Path(__file__).absolute().parent.parent)
+            # close writes only to the project the locator finds for the repository (run_close), so its bad input does too
+            where.update(task=a.work_order, path=a.repo or os.getcwd())
             return run_close(a.work_order, a.repo, a.binding, a.merged)
         if cmd == "seal-code":
             import argparse
@@ -1629,32 +1588,32 @@ def main(argv) -> int:
             ap = argparse.ArgumentParser(prog="predict-gate.sh seal-code")
             ap.add_argument("work_order")
             ap.add_argument("round", help='"first" for the first round, else the round label ("fix1")')
-            ap.add_argument("--stream", help="default: OPS_STREAM, else the registry's stream for this repository")
+            ap.add_argument("--repo", help="the project whose ledger it writes; default: this repository")
             a = ap.parse_args(head)
-            where.update(task=a.work_order, path=Path.cwd(), perma=perma_dir())
-            return run_seal_code(a.work_order, a.round, a.stream, commit_args)
+            where.update(task=a.work_order, path=Path.cwd())
+            return run_seal_code(a.work_order, a.round, a.repo, commit_args)
         if cmd in ("seal", "revise", "retire"):
             import argparse
             ap = argparse.ArgumentParser(prog=f"predict-gate.sh {cmd}")
             ap.add_argument("work_order")
             ap.add_argument("round", help='"first" for the first round\'s files, else the round label ("fix1")')
             ap.add_argument("file")
-            ap.add_argument("--stream", help="default: OPS_STREAM, else the registry's stream for the file's repo")
+            ap.add_argument("--repo", help="the project whose ledger it writes; default: the file's repository")
             if cmd == "seal":
                 ap.add_argument("--report", help="the measure report holding base.sha and head.sha (measured only)")
             else:
                 ap.add_argument("--decision", required=True, help="the owner's decision id that approves it")
             a = ap.parse_args(rest)
-            where.update(task=a.work_order, path=Path(a.file).absolute(), perma=perma_dir())
-            return run_seal(cmd, a.work_order, a.round, a.file, a.stream, getattr(a, "report", None),
+            where.update(task=a.work_order, path=Path(a.file).absolute())
+            return run_seal(cmd, a.work_order, a.round, a.file, a.repo, getattr(a, "report", None),
                             getattr(a, "decision", None))
         if cmd == "verify-chain":
             import argparse
             ap = argparse.ArgumentParser(prog="predict-gate.sh verify-chain")
-            ap.add_argument("--stream")
+            ap.add_argument("--repo", help="default: the working directory's repository")
             ap.add_argument("--ledger", help="a ledger file, e.g. a scratch copy")
             a = ap.parse_args(rest)
-            return run_verify_chain(a.stream, a.ledger)
+            return run_verify_chain(a.repo, a.ledger)
         if cmd == "hook":
             return run_hook()
         if cmd == "install-hook" and len(rest) == 1:
@@ -1663,14 +1622,14 @@ def main(argv) -> int:
         print(f"predict-gate: bad input: {e}", file=sys.stderr)
         if where:
             refusal_event("predict-gate:input", f"predict-gate {cmd} refused its input",
-                          f"predict-gate: bad input: {e}", where["task"], None, where["path"], where["perma"])
+                          f"predict-gate: bad input: {e}", where["task"], None, where["path"])
         return 2
     print("usage: predict-gate.sh check [--prediction P] --measured M [--baseline B] [--override R] [--task ID]\n"
           "       predict-gate.sh close <work-order> [--repo DIR] [--binding FILE] [--merged]\n"
-          "       predict-gate.sh seal <work-order> <round> <file> [--stream S] [--report R]\n"
-          "       predict-gate.sh revise|retire <work-order> <round> <file> --decision <id> [--stream S]\n"
-          "       predict-gate.sh seal-code <work-order> <round> [--stream S] -- <git commit args>\n"
-          "       predict-gate.sh verify-chain [--stream S | --ledger FILE]\n"
+          "       predict-gate.sh seal <work-order> <round> <file> [--repo DIR] [--report R]\n"
+          "       predict-gate.sh revise|retire <work-order> <round> <file> --decision <id> [--repo DIR]\n"
+          "       predict-gate.sh seal-code <work-order> <round> [--repo DIR] -- <git commit args>\n"
+          "       predict-gate.sh verify-chain [--repo DIR | --ledger FILE]\n"
           "       predict-gate.sh install-hook <repo>\n"
           "       predict-gate.sh hook", file=sys.stderr)
     return 2

@@ -6,10 +6,10 @@
 #   predict-gate.sh check [--prediction P] --measured M [--baseline B] [--override "<reason>"] [--task ID]
 #   predict-gate.sh close <work-order> [--repo DIR] [--binding FILE] [--merged]   # refuses unless every check passes;
 #                                           # override: PREDICT_GATE_CLOSE_OVERRIDE="<reason>"
-#   predict-gate.sh seal <work-order> <round> <file> [--stream S] [--report R]   # one sealed ledger event
-#   predict-gate.sh revise|retire <work-order> <round> <file> --decision <id> [--stream S]
-#   predict-gate.sh seal-code <work-order> <round> [--stream S] -- <git commit args>   # commit + seal the first code
-#   predict-gate.sh verify-chain [--stream S | --ledger FILE]   # the ledger's first broken link
+#   predict-gate.sh seal <work-order> <round> <file> [--repo DIR] [--report R]   # one sealed ledger event
+#   predict-gate.sh revise|retire <work-order> <round> <file> --decision <id> [--repo DIR]
+#   predict-gate.sh seal-code <work-order> <round> [--repo DIR] -- <git commit args>   # commit + seal the first code
+#   predict-gate.sh verify-chain [--repo DIR | --ledger FILE]   # the ledger's first broken link
 #   predict-gate.sh install-hook <repo>     # pre-commit hook in that repo; never run automatically
 #   predict-gate.sh hook                    # what the hook runs
 #

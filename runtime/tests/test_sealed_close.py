@@ -43,13 +43,16 @@ class Sealed(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         t = Path(self.tmp.name).resolve()
-        self.perma, self.repo = t / "perma", t / "repo"
-        (self.perma / "runtime").mkdir(parents=True)
+        self.repo = t / "repo"
+        self.rt = t / "runtime"
+        self.rt.mkdir()
         for f in RUNTIME.iterdir():
             if f.is_file():
-                (self.perma / "runtime" / f.name).symlink_to(f)
-        (self.perma / "s/repo").mkdir(parents=True)
-        (self.perma / "s/repo/binding.json").write_text(
+                (self.rt / f.name).symlink_to(f)
+        subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
+        self.binding = self.repo / ".team" / "binding.json"
+        self.binding.parent.mkdir()
+        self.binding.write_text(
             json.dumps(
                 {
                     "owned": True,
@@ -60,22 +63,18 @@ class Sealed(unittest.TestCase):
                 }
             )
         )
-        (self.perma / "_meta").mkdir()
-        (self.perma / "_meta/REGISTRY.md").write_text(
-            f"| path | stream | what |\n|---|---|---|\n| {self.repo} | s | t |\n"
-        )
-        (self.perma / ".gitignore").write_text("runtime\n")
-        self.ledger = self.perma / "s/repo/ops/events.jsonl"
-        for d in ("home", "tmp"):
+        self.records = t / "repo.team-records"
+        self.ledger = self.records / "ops/events.jsonl"
+        for d in ("home", "machine", "tmp"):
             (t / d).mkdir()
         self.env = {
             k: v
             for k, v in os.environ.items()
-            if not k.startswith(("OPS_", "PREDICT_GATE", "DECISION_"))
+            if not k.startswith(("OPS_", "PREDICT_GATE", "DECISION_", "BAKEHOUSE_", "CLAUDE_PROJECT_DIR"))
         }
         self.env.update(
             HOME=str(t / "home"),
-            PERMA_DIR=str(self.perma),
+            BAKEHOUSE_MACHINE_DIR=str(t / "machine"),
             TMPDIR=str(t / "tmp"),
             PYTHONDONTWRITEBYTECODE="1",
             GIT_AUTHOR_NAME="t",
@@ -83,18 +82,17 @@ class Sealed(unittest.TestCase):
             GIT_COMMITTER_NAME="t",
             GIT_COMMITTER_EMAIL="t@t",
         )
-        for a in (
-            ["init", "-q"],
-            ["add", "-A"],
-            ["commit", "-q", "-m", "scratch Permanence"],
+        for a in (  # the records worktree, where seals anchor; its branch has a first commit, as a branch does
+            ["-C", str(self.repo), "worktree", "add", "-q", "--orphan", "-b", "team-records", str(self.records)],
+            ["-C", str(self.repo), "config", "bakehouse.records", str(self.records)],
+            ["-C", str(self.records), "commit", "-q", "--allow-empty", "-m", "scratch records"],
         ):
             subprocess.run(
-                ["git", "-C", str(self.perma), *a],
+                ["git", *a],
                 check=True,
                 env=self.env,
                 capture_output=True,
             )
-        subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
         self.n = 0
         self.commit("base", {"src/app.py": "v = 1\n", "T.md": "t\n"})
         self.default = self.git("symbolic-ref", "--short", "HEAD")
@@ -154,7 +152,7 @@ class Sealed(unittest.TestCase):
 
     def gate(self, *args):
         return subprocess.run(
-            ["python3", str(self.perma / "runtime/predict-gate.py"), *args],
+            ["python3", str(self.rt / "predict-gate.py"), *args],
             cwd=self.repo,
             capture_output=True,
             text=True,
@@ -177,7 +175,7 @@ class Sealed(unittest.TestCase):
         p = subprocess.run(
             [
                 "python3",
-                str(self.perma / "runtime/predict-gate.py"),
+                str(self.rt / "predict-gate.py"),
                 "seal-code",
                 "W-1",
                 rnd,
@@ -211,7 +209,7 @@ class Sealed(unittest.TestCase):
         choice="revise",
         options=("keep", "revise"),
     ):
-        led = self.perma / "s/decisions/ledger.jsonl"
+        led = self.records / "decisions/ledger.jsonl"
         led.parent.mkdir(parents=True, exist_ok=True)
         with led.open("a") as fh:
             fh.write(
@@ -220,7 +218,7 @@ class Sealed(unittest.TestCase):
                         "kind": "ask",
                         "id": did,
                         "ts": "2026-11-01T00:00:00+00:00",
-                        "stream": "s",
+                        "stream": "repo",
                         "category": "process",
                         "question": "q",
                         "options": list(options),
@@ -548,7 +546,7 @@ class Sealed(unittest.TestCase):
     def test_a_seal_not_in_a_commit_does_not_count(self):
         self.flow()
         subprocess.run(
-            ["git", "-C", str(self.perma), "reset", "-q", "--soft", "HEAD~1"],
+            ["git", "-C", str(self.records), "reset", "-q", "--soft", "HEAD~1"],
             env=self.env,
             check=True,
         )
@@ -814,13 +812,13 @@ class Sealed(unittest.TestCase):
                 [
                     "git",
                     "-C",
-                    str(self.perma),
+                    str(self.records),
                     "commit",
                     "-q",
                     "-m",
                     "drop W-1",
                     "--",
-                    str(self.ledger.relative_to(self.perma)),
+                    str(self.ledger.relative_to(self.records)),
                 ],
                 env=self.env,
                 check=True,
@@ -916,9 +914,9 @@ class Sealed(unittest.TestCase):
         p = subprocess.run(
             [
                 "python3",
-                str(self.perma / "runtime/records-check.py"),
+                str(self.rt / "records-check.py"),
                 "--binding",
-                str(self.perma / "s/repo/binding.json"),
+                str(self.binding),
                 "--repo",
                 str(self.repo),
                 "--as-of",
@@ -948,7 +946,7 @@ class Sealed(unittest.TestCase):
 
     def pgit2(self, *a):
         return subprocess.run(
-            ["git", "-C", str(self.perma), *a],
+            ["git", "-C", str(self.records), *a],
             env=self.env,
             capture_output=True,
             text=True,
@@ -956,9 +954,9 @@ class Sealed(unittest.TestCase):
         )
 
     def test_j1_a_ledger_committed_by_hand_after_failed_anchors_still_seals(self):
-        hook = self.perma / ".git/hooks/pre-commit"
+        hook = self.repo / ".git/hooks/pre-commit"  # the records worktree shares the clone's hooks
         hook.parent.mkdir(parents=True, exist_ok=True)
-        hook.write_text("#!/bin/sh\nexit 1\n")
+        hook.write_text(f'#!/bin/sh\n[ "$(git rev-parse --show-toplevel)" = "{self.records}" ] && exit 1\nexit 0\n')
         hook.chmod(0o755)
         self.commit(
             "W-1: prediction",
@@ -989,7 +987,7 @@ class Sealed(unittest.TestCase):
             "-m",
             "by hand",
             "--",
-            str(self.ledger.relative_to(self.perma)),
+            str(self.ledger.relative_to(self.records)),
         )
         self.commit("tidy", {"src/extra.py": "x = 1\n"})
         self.assertEqual(
@@ -1019,15 +1017,12 @@ class Sealed(unittest.TestCase):
         self.flow()
         before = ops_ledger.sealed_trailers(self.ledger)
         self.assertEqual(len(before), 4)
-        self.pgit2("mv", "s", "s2")
-        reg = self.perma / "_meta/REGISTRY.md"
-        reg.write_text(reg.read_text().replace(" | s | ", " | s2 | "))
-        self.pgit2("add", "-A")
-        self.pgit2("commit", "-q", "-m", "rename the stream")
-        moved = self.perma / "s2/repo/ops/events.jsonl"
+        self.pgit2("mv", "ops", "ops2")
+        self.pgit2("commit", "-q", "-m", "move the ledger")
+        moved = self.records / "ops2/events.jsonl"
         after = ops_ledger.sealed_trailers(moved)
         self.assertEqual([d for _, d, _ in after], [d for _, d, _ in before])
-        self.assertEqual({p for _, _, p in after}, {"s/repo/ops/events.jsonl"})
+        self.assertEqual({p for _, _, p in after}, {"ops/events.jsonl"})
         keep = [
             x
             for x in moved.read_text().split("\n")
@@ -1040,7 +1035,7 @@ class Sealed(unittest.TestCase):
             "-m",
             "drop the measured seal",
             "--",
-            "s2/repo/ops/events.jsonl",
+            "ops2/events.jsonl",
         )
         sealed, _, refused = pg.sealed_state(moved, "W-1")
         self.assertTrue(sealed)
@@ -1069,7 +1064,7 @@ class Sealed(unittest.TestCase):
 
     def test_j1_a_committed_deletion_of_the_ledger_file_refuses_as_removed(self):
         self.flow()
-        rel = str(self.ledger.relative_to(self.perma))
+        rel = str(self.ledger.relative_to(self.records))
         self.pgit2("rm", "-q", "--", rel)
         self.pgit2("commit", "-q", "-m", "drop the ledger")
         self.assertFalse(self.ledger.exists())

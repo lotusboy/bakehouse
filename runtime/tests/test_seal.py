@@ -15,7 +15,6 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from unittest import mock
 
 RUNTIME = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RUNTIME))
@@ -34,39 +33,38 @@ def sha(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
 
+def team(repo: Path, binding: dict, env: dict) -> Path:
+    """Give the git repo at repo a team: .team/binding.json and a records worktree beside it, named by
+    `git config bakehouse.records`. Returns the records folder."""
+    (repo / ".team").mkdir(exist_ok=True)
+    (repo / ".team" / "binding.json").write_text(json.dumps(binding))
+    rec = repo.with_name(f"{repo.name}.team-records")
+    for a in (["worktree", "add", "-q", "--orphan", "-b", "team-records", str(rec)],
+              ["config", "bakehouse.records", str(rec)]):
+        subprocess.run(["git", "-C", str(repo), *a], check=True, env=env, capture_output=True)
+    return rec
+
+
 class SealTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         t = Path(self.tmp.name).resolve()
-        self.perma, self.repo = t / "perma", t / "repo"
-        rt = self.perma / "runtime"
-        rt.mkdir(parents=True)
+        self.repo = t / "repo"
+        self.rt = t / "runtime"
+        self.rt.mkdir()
         for f in RUNTIME.iterdir():
             if f.is_file():
-                (rt / f.name).symlink_to(f)
-        (self.perma / "s/repo").mkdir(parents=True)
-        (self.perma / "s/repo/binding.json").write_text(json.dumps({"owned": True}))
-        (self.perma / "u/repo").mkdir(parents=True)
-        (self.perma / "u/repo/binding.json").write_text(json.dumps({"owned": False}))
-        (self.perma / "_meta").mkdir()
-        self.registry = self.perma / "_meta/REGISTRY.md"
-        self.registry.write_text(
-            f"| path | stream | what |\n|---|---|---|\n| {self.repo} | s | t |\n"
-        )
-        self.ledger = self.perma / "s/repo/ops/events.jsonl"
-        self.ledger.parent.mkdir(parents=True)
-        self.ledger.write_text("".join(x + "\n" for x in LEGACY))
-        for d in ("home", "lock", "tmp"):
+                (self.rt / f.name).symlink_to(f)
+        for d in ("home", "machine", "tmp"):
             (t / d).mkdir()
         self.env = {
             k: v
             for k, v in os.environ.items()
-            if not k.startswith(("OPS_", "PREDICT_GATE", "DECISION_"))
+            if not k.startswith(("OPS_", "PREDICT_GATE", "DECISION_", "BAKEHOUSE_", "CLAUDE_PROJECT_DIR"))
         }
         self.env.update(
             HOME=str(t / "home"),
-            PERMA_DIR=str(self.perma),
-            PERMA_LOCK_DIR=str(t / "lock"),
+            BAKEHOUSE_MACHINE_DIR=str(t / "machine"),
             TMPDIR=str(t / "tmp"),
             PYTHONDONTWRITEBYTECODE="1",
             GIT_AUTHOR_NAME="t",
@@ -75,6 +73,11 @@ class SealTest(unittest.TestCase):
             GIT_COMMITTER_EMAIL="t@t",
         )
         subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
+        self.records = team(self.repo, {"owned": True}, self.env)
+        self.binding = self.repo / ".team" / "binding.json"
+        self.ledger = self.records / "ops/events.jsonl"
+        self.ledger.parent.mkdir(parents=True)
+        self.ledger.write_text("".join(x + "\n" for x in LEGACY))
         self.write(
             {
                 f"{REC}/moves.prediction.json": PRED,
@@ -86,16 +89,12 @@ class SealTest(unittest.TestCase):
         )
         self.git("add", "-A")
         self.git("commit", "-q", "-m", "W-1: record")
-        (self.perma / ".gitignore").write_text(
-            "runtime\n"
-        )  # the Permanence is a git repo: seals anchor there
         for a in (
-            ["init", "-q"],
             ["add", "-A"],
-            ["commit", "-q", "-m", "scratch Permanence"],
-        ):
+            ["commit", "-q", "-m", "scratch records"],
+        ):  # the records worktree is a git checkout: seals anchor there
             subprocess.run(
-                ["git", "-C", str(self.perma), *a],
+                ["git", "-C", str(self.records), *a],
                 check=True,
                 env=self.env,
                 capture_output=True,
@@ -124,7 +123,7 @@ class SealTest(unittest.TestCase):
 
     def gate(self, *args, **env):
         return subprocess.run(
-            ["python3", str(self.perma / "runtime/predict-gate.py"), *args],
+            ["python3", str(self.rt / "predict-gate.py"), *args],
             cwd=self.repo,
             capture_output=True,
             text=True,
@@ -137,7 +136,7 @@ class SealTest(unittest.TestCase):
 
     def ops(self, *args):
         return subprocess.run(
-            [str(self.perma / "runtime/ops-event.sh"), *args],
+            [str(self.rt / "ops-event.sh"), *args],
             cwd=self.repo,
             capture_output=True,
             text=True,
@@ -154,7 +153,7 @@ class SealTest(unittest.TestCase):
     def decide(
         self, did, task="W-1", approves="yes", choice="yes", options=("yes", "no")
     ):
-        led = self.perma / "s/decisions/ledger.jsonl"
+        led = self.records / "decisions/ledger.jsonl"
         led.parent.mkdir(parents=True, exist_ok=True)
         with led.open("a") as fh:
             fh.write(
@@ -163,7 +162,7 @@ class SealTest(unittest.TestCase):
                         "kind": "ask",
                         "id": did,
                         "ts": "2026-11-01T00:00:00+00:00",
-                        "stream": "s",
+                        "stream": "repo",
                         "category": "process",
                         "question": "q",
                         "options": list(options),
@@ -192,11 +191,8 @@ class SealTest(unittest.TestCase):
 
     @contextlib.contextmanager
     def hold_lock(self):
-        """Hold the ledger's lock as another writer would: its own lock file, under PERMA_LOCK_DIR."""
-        with mock.patch.dict(
-            os.environ, {"PERMA_LOCK_DIR": self.env["PERMA_LOCK_DIR"]}
-        ):
-            lp = ops_ledger.lock_path(self.ledger)
+        """Hold the ledger's lock as another writer would: its own lock file, beside the ledger."""
+        lp = ops_ledger.lock_path(self.ledger)
         lp.parent.mkdir(parents=True, exist_ok=True)
         with lp.open("a") as held:
             fcntl.flock(held, fcntl.LOCK_EX)
@@ -337,28 +333,29 @@ class SealTest(unittest.TestCase):
             self.assertNotEqual(new[0]["ts"][:4], "2020")
             self.assertNotEqual(new[0]["commit"], "feedbee")
 
-    def test_refuses_when_no_stream_resolves_and_takes_stream_or_ops_stream(self):
-        self.registry.write_text("| path | stream | what |\n|---|---|---|\n")
-        p = self.seal("first", "moves.prediction.json")
+    def test_refuses_when_no_project_is_found_and_takes_repo(self):
+        lane = Path(self.tmp.name) / "lane"
+        subprocess.run(["git", "clone", "-q", str(self.repo), str(lane)], check=True, capture_output=True)
+        rec = str(lane / REC / "moves.prediction.json")
+        p = self.gate("seal", "W-1", "first", rec)
         self.assertEqual(p.returncode, 2)
-        self.assertIn("Give --stream <stream> or set OPS_STREAM", p.stderr)
+        self.assertIn("bakehouse setup --pointer", p.stderr)  # a lane clone with no records pointer
         self.assertWrote(0)
+        self.assertEqual(self.gate("seal", "W-1", "first", rec, "--repo", str(self.repo)).returncode, 0)
         self.assertEqual(
-            self.seal("first", "moves.prediction.json", "--stream", "s").returncode, 0
-        )
-        self.assertEqual(
-            self.seal("first", "moves.baseline.json", OPS_STREAM="s").returncode, 0
+            self.gate("seal", "W-1", "first", str(lane / REC / "moves.baseline.json"), "--repo",
+                      str(self.repo)).returncode, 0
         )
         self.assertWrote(2)
 
-    def test_refuses_a_stream_that_keeps_no_ledger(self):
-        for s, why in (
-            ("u", 'u/repo/binding.json does not say "owned": true'),
-            ("nope", 'nope/repo/binding.json does not say "owned": true'),
-            ("../s", "is not a stream folder inside"),
-        ):
-            p = self.seal("first", "moves.prediction.json", "--stream", s)
-            self.assertEqual(p.returncode, 2, s)
+    def test_refuses_a_project_that_keeps_no_ledger(self):
+        t = Path(self.tmp.name)
+        for name, why in (("u", '.team/binding.json does not say "owned": true'), ("nope", "has no team")):
+            subprocess.run(["git", "init", "-q", str(t / name)], check=True)
+            if name == "u":
+                team(t / name, {"owned": False}, self.env)
+            p = self.seal("first", "moves.prediction.json", "--repo", str(t / name))
+            self.assertEqual(p.returncode, 2, name)
             self.assertIn(why, p.stderr)
         self.assertFalse(any(e["kind"] == "sealed" for e in self.events()))
 
@@ -569,7 +566,7 @@ class SealTest(unittest.TestCase):
         self.assertIn("Chain: not started. 2 event(s), none chained.", p.stdout)
         self.seal("first", "moves.prediction.json")
         self.seal("first", "moves.baseline.json")
-        p = self.gate("verify-chain", "--stream", "s")
+        p = self.gate("verify-chain", "--repo", str(self.repo))
         self.assertEqual(p.returncode, 0)
         self.assertIn(
             "Chain: whole. 2 chained event(s), lines 3 to 4; 2 earlier event(s) not chained.",
@@ -610,7 +607,7 @@ class SealTest(unittest.TestCase):
             p = subprocess.Popen(
                 [
                     "python3",
-                    str(self.perma / "runtime/predict-gate.py"),
+                    str(self.rt / "predict-gate.py"),
                     "seal",
                     "W-1",
                     "first",
@@ -632,7 +629,7 @@ class SealTest(unittest.TestCase):
     def test_ops_event_waits_for_the_ledger_lock(self):
         with self.hold_lock():
             p = subprocess.Popen(
-                [str(self.perma / "runtime/ops-event.sh"), "note", "-", "x"],
+                [str(self.rt / "ops-event.sh"), "note", "-", "x"],
                 cwd=self.repo,
                 env=self.env,
                 stdout=subprocess.DEVNULL,
@@ -649,9 +646,9 @@ class SealTest(unittest.TestCase):
         script = Path(self.tmp.name) / "lane.sh"
         script.write_text(
             "#!/bin/sh\nfor i in 1 2 3 4 5 6 7 8; do\n"
-            f'  python3 {self.perma / "runtime/predict-gate.py"} seal W-1 first "$1" >/dev/null 2>&1\n'
+            f'  python3 {self.rt / "predict-gate.py"} seal W-1 first "$1" >/dev/null 2>&1\n'
             "  ./ops-event.sh note - lane >/dev/null 2>&1\ndone\n".replace(
-                "./ops-event.sh", str(self.perma / "runtime/ops-event.sh")
+                "./ops-event.sh", str(self.rt / "ops-event.sh")
             )
         )
         script.chmod(0o755)
@@ -739,7 +736,7 @@ class SealTest(unittest.TestCase):
             p = subprocess.Popen(
                 [
                     "python3",
-                    str(self.perma / "runtime/predict-gate.py"),
+                    str(self.rt / "predict-gate.py"),
                     "seal",
                     "W-1",
                     "first",
@@ -930,7 +927,7 @@ class SealTest(unittest.TestCase):
         )
 
     def test_f10_seal_checks_the_work_order_against_the_binding(self):
-        (self.perma / "s/repo/binding.json").write_text(
+        self.binding.write_text(
             json.dumps({"owned": True, "tracker": {"id": "^W-[0-9]+$"}})
         )
         p = self.gate("seal", "w-1", "first", self.f("moves.prediction.json"))
@@ -982,18 +979,19 @@ class SealTest(unittest.TestCase):
         self.assertIn("no sealed file of W-1 moved to", p.stderr)
 
     def test_g1_one_lock_through_a_symlink_and_any_environment(self):
-        link = Path(self.tmp.name).resolve() / "perma-link"
-        link.symlink_to(self.perma)
+        link = Path(self.tmp.name).resolve() / "records-link"
+        link.symlink_to(self.records)
+        self.git("config", "bakehouse.records", str(link))
         other = Path(self.tmp.name).resolve() / "elsewhere"
         other.mkdir()
         env = dict(
-            self.env, PERMA_DIR=str(link), PERMA_LOCK_DIR=str(other), HOME=str(other)
+            self.env, BAKEHOUSE_MACHINE_DIR=str(other), HOME=str(other)
         )
         with self.hold_lock():
             p = subprocess.Popen(
                 [
                     "python3",
-                    str(link / "runtime/predict-gate.py"),
+                    str(self.rt / "predict-gate.py"),
                     "seal",
                     "W-1",
                     "first",
@@ -1007,7 +1005,7 @@ class SealTest(unittest.TestCase):
             time.sleep(1.5)
             self.assertIsNone(
                 p.poll(),
-                "a writer through a symlink, with another PERMA_LOCK_DIR and HOME, took no lock",
+                "a writer through a symlink, with another machine folder and HOME, took no lock",
             )
         self.assertEqual(p.wait(timeout=30), 0)
         self.assertWrote(1)
@@ -1016,7 +1014,7 @@ class SealTest(unittest.TestCase):
 
     def pgit(self, *a):
         return subprocess.run(
-            ["git", "-C", str(self.perma), *a],
+            ["git", "-C", str(self.records), *a],
             capture_output=True,
             text=True,
             env=self.env,
@@ -1026,7 +1024,7 @@ class SealTest(unittest.TestCase):
     def test_anchor_commits_the_sealed_line_and_only_the_ledger(self):
         self.assertEqual(self.seal("first", "moves.prediction.json").returncode, 0)
         line = self.raw().split(b"\n")[-2]
-        rel = str(self.ledger.relative_to(self.perma))
+        rel = str(self.ledger.relative_to(self.records))
         self.assertIn(
             line.decode(), self.pgit("show", f"HEAD:{rel}").stdout.split("\n")
         )
@@ -1037,12 +1035,12 @@ class SealTest(unittest.TestCase):
         )
 
     def test_anchor_retries_git_index_lock_then_commits(self):
-        lock = self.perma / ".git/index.lock"
+        lock = Path(self.pgit("rev-parse", "--path-format=absolute", "--git-path", "index.lock").stdout.strip())
         lock.write_text("")
         p = subprocess.Popen(
             [
                 "python3",
-                str(self.perma / "runtime/predict-gate.py"),
+                str(self.rt / "predict-gate.py"),
                 "seal",
                 "W-1",
                 "first",
@@ -1058,11 +1056,11 @@ class SealTest(unittest.TestCase):
         self.assertEqual(p.wait(timeout=30), 0)
         self.assertIn(
             '"sealed"',
-            self.pgit("show", f"HEAD:{self.ledger.relative_to(self.perma)}").stdout,
+            self.pgit("show", f"HEAD:{self.ledger.relative_to(self.records)}").stdout,
         )
 
     def test_anchor_refuses_loudly_when_it_cannot_commit(self):
-        (self.perma / ".git/index.lock").write_text("")
+        Path(self.pgit("rev-parse", "--path-format=absolute", "--git-path", "index.lock").stdout.strip()).write_text("")
         p = self.seal("first", "moves.prediction.json")
         self.assertEqual(p.returncode, 1)
         self.assertIn(
@@ -1077,40 +1075,21 @@ class SealTest(unittest.TestCase):
             (rows[-1]["kind"], rows[-1].get("gate")),
             ("gate-refused", "predict-gate:anchor"),
         )
-        shutil.rmtree(self.perma / ".git")
+        n = len(self.lines())
+        (self.records / ".git").unlink()  # the records folder is no longer a git checkout
         p = self.seal("first", "moves.baseline.json")
-        self.assertEqual(p.returncode, 1)
-        self.assertIn("is not inside a git repository", p.stderr)
-
-    def test_seal_writes_only_to_the_permanence_it_runs_from(self):
-        other = Path(self.tmp.name).resolve() / "other"
-        shutil.copytree(self.perma / "s", other / "s")
-        p = self.seal(
-            "first", "moves.prediction.json", "--stream", "s", PERMA_DIR=str(other)
-        )
         self.assertEqual(p.returncode, 2)
-        self.assertIn(
-            "A seal writes only to the ops ledger of the Permanence it runs from",
-            p.stderr,
-        )
-        self.assertNotIn(b'"sealed"', (other / "s/repo/ops/events.jsonl").read_bytes())
+        self.assertIn("is missing or is not a records checkout", p.stderr)  # the locator's refusal
+        self.assertEqual(len(self.lines()), n, "nothing is written to a ledger that cannot be anchored")
 
-    def test_g2_a_record_kept_in_the_permanence_is_sealed_without_the_id_form(self):
-        (self.perma / "s/repo/binding.json").write_text(
-            json.dumps({"owned": True, "tracker": {"id": "^W-[0-9]+$"}})
-        )
-        rec = self.perma / "s/design/v12x"
-        rec.mkdir(parents=True)
-        (rec / "moves.prediction.json").write_text(json.dumps(PRED))
-        p = self.gate(
-            "seal", "V12x", "first", str(rec / "moves.prediction.json"), "--stream", "s"
-        )
+    def test_seal_writes_only_to_the_project_the_locator_finds_for_the_file(self):
+        other = Path(self.tmp.name).resolve() / "other"
+        subprocess.run(["git", "init", "-q", str(other)], check=True)
+        other_ledger = team(other, {"owned": True}, self.env) / "ops/events.jsonl"
+        p = self.seal("first", "moves.prediction.json", CLAUDE_PROJECT_DIR=str(other))
         self.assertEqual(p.returncode, 0, p.stderr)
-        p = self.gate("seal", "V12x", "first", self.f("moves.prediction.json"))
-        self.assertEqual(
-            p.returncode, 2, "a record in the bound repository keeps the form check"
-        )
-        self.assertIn("does not match the binding's tracker id form", p.stderr)
+        self.assertEqual(self.events()[-1]["kind"], "sealed")
+        self.assertFalse(other_ledger.exists())
 
     def test_g5_a_retired_seal_does_not_count(self):
         self.assertEqual(self.seal("first", "moves.prediction.json").returncode, 0)
@@ -1148,7 +1127,7 @@ class SealTest(unittest.TestCase):
         )
 
     def test_a_measured_seal_carries_its_heads_code_trees(self):
-        (self.perma / "s/repo/binding.json").write_text(
+        self.binding.write_text(
             json.dumps({"owned": True, "signal": {"codeRoots": ["runs/"]}})
         )
         head = self.git("rev-parse", "HEAD")
@@ -1182,10 +1161,10 @@ class SealTest(unittest.TestCase):
     def test_k6_the_anchor_commits_the_ledger_alone_and_leaves_staged_files_staged(
         self,
     ):
-        (self.perma / "other.txt").write_text("staged by the PM\n")
+        (self.records / "other.txt").write_text("staged by the PM\n")
         self.pgit("add", "other.txt")
         self.assertEqual(self.seal("first", "moves.prediction.json").returncode, 0)
-        rel = str(self.ledger.relative_to(self.perma))
+        rel = str(self.ledger.relative_to(self.records))
         self.assertEqual(
             self.pgit("show", "--name-only", "--format=", "HEAD").stdout.split(), [rel]
         )
@@ -1199,7 +1178,7 @@ class SealTest(unittest.TestCase):
     # ---- Step 2b: seal-code, the round's first code commit ----
 
     def code_roots(self):
-        (self.perma / "s/repo/binding.json").write_text(
+        self.binding.write_text(
             json.dumps({"owned": True, "signal": {"codeRoots": ["src/"]}})
         )
 
@@ -1223,7 +1202,7 @@ class SealTest(unittest.TestCase):
         self.assertEqual(ev["codeTrees"], {"src/": self.git("rev-parse", "HEAD:src")})
         self.assertIn(
             self.lines()[-1],
-            self.pgit("show", f"HEAD:{self.ledger.relative_to(self.perma)}").stdout,
+            self.pgit("show", f"HEAD:{self.ledger.relative_to(self.records)}").stdout,
         )
         self.write({"src/b.py": "b = 1\n"})
         self.git("add", "src/b.py")
