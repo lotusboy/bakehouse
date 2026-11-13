@@ -33,7 +33,7 @@ THE TWO RULES. Content, not presence: an empty file always fails.
       step folders; it carries the sha256 of every file `predict-gate.sh close` hashes in this
       record (each prediction, its measured file and its baseline, in the step folders that close
       reads: {n} = 1); every sha256 it carries matches that file at the ref; and no code commit is
-      later than the record's latest measured file's commit (review A4; for a record with a round whose
+      later than the record's latest measured file's commit (for a record with a round whose
       prediction is first committed on or after predict-gate's ORDER_FROM, by commit time; an older
       record keeps the older rule: the close's time is not before the last code commit). For a SEALED
       work order (one with sealed events) that time rule is replaced: it is stale when the code at the
@@ -70,7 +70,7 @@ owner's override (PREDICT_GATE_CLOSE_OVERRIDE) marks that work order's record fl
 clean close marks `superseded` the flags found only in folders that are not step folders (a design
 or planning folder): the closed step record replaces them. A flag that holds an open survivor stays
 open whatever the folder: only the round that settles it clears it.
-A rule flagged on `promoteAt` work orders or more is a promote-to-code candidate for the CTO.
+A rule flagged on `promoteAt` work orders or more is a promote-to-code candidate for the owner.
 
 THE KILL RATE. Every mutation row read in the window is counted per gate: killed and survived, the
 mutation files (records) and the work orders it came from. A file is counted once, though a folder
@@ -1067,8 +1067,8 @@ def build(binding: dict, binding_path: Path, repo: Path, a, contracts: dict) -> 
             rs = [r for f in folders if closable.fullmatch(f) for r in pg.rounds(repo, f"{reviews}/{f}", ref)]
             judged = any(r[0] and r[0].date().isoformat() >= pg.ORDER_FROM for r in rs)
             measured_at = max((r[1] for r in rs if r[1]), default=None) if judged else None
-            # the events close judges, from the same function (review H4): sealed is a fact in git
-            if owned and seal_scan is None:  # once per run, not once per work order (Step 2b)
+            # the events close judges, from the same function: sealed is a fact in git
+            if owned and seal_scan is None:  # once per run, not once per work order
                 seal_scan = pg.sealed_scan(ledger)
             sealed_wo, sealed_evs, _ = pg.sealed_state(ledger, wo, seal_scan) if owned else (False, [], [])
             sealed_close = ((True, pg.sealed_stale(repo, ref, sealed_evs, roots, wo, tracker["id"])[1]) if sealed_wo
@@ -1107,7 +1107,7 @@ def build(binding: dict, binding_path: Path, repo: Path, a, contracts: dict) -> 
         r["codeCommits"] += commits[f["workOrder"]]
     for r in rules.values():
         r["promoteToCode"] = len(r["workOrders"]) >= contracts["promoteAt"]
-        r["for"] = "cto" if r["promoteToCode"] else None
+        r["for"] = "owner" if r["promoteToCode"] else None
     if owned:
         stale = stream_currency(binding_path.parent.parent, ledger, repo)
         if stale:
@@ -1286,7 +1286,7 @@ def render(reg: dict, as_of: str, head: str) -> str:
                   for g, v in m["gates"].items()]
     cand = [(r, v) for r, v in reg["rules"].items() if v["promoteToCode"]]
     if cand:
-        lines += ["", f"Promote-to-code candidates for the CTO (a rule flagged on {c['promoteAt']} or more "
+        lines += ["", f"Promote-to-code candidates for the owner (a rule flagged on {c['promoteAt']} or more "
                       "work orders): " + "; ".join(f"`{r}` {len(v['workOrders'])} work orders, {v['codeCommits']} "
                                                   f"code commits ({', '.join(v['workOrders'])})" for r, v in cand)]
     return "\n".join(lines)

@@ -7,7 +7,7 @@ merge or reset replaces the file (a new inode) while a writer holds a lock on th
 touches an ignored file. No part of its path comes from the environment, so every writer of one
 ledger takes one lock, through a symlinked path too.
 
-The anchor (owner d20261104-3cba63): `anchor` commits the ledger file, by path, into the git repository
+The anchor: `anchor` commits the ledger file, by path, into the git repository
 that holds it, with a `Sealed-line: <sha256 of the line>` trailer. `committed` reads the ledger as the
 repository's HEAD holds it; close judges only the sealed events in it.
 
@@ -179,7 +179,7 @@ def sealed_trailers(path: Path) -> list:
     """[(commit, sha256 of the line, the ledger's path in that commit)] for every Sealed-line trailer in the
     git history of the ledger, oldest first: the anchor's record of every line it committed, which no edit
     of the ledger file removes. --full-history keeps a commit that history simplification would prune (a
-    merge resolved to one side, review J2); --follow keeps the trailers from before a move of the file."""
+    merge resolved to one side); --follow keeps the trailers from before a move of the file."""
     top = _top(path)
     if top is None:
         return []

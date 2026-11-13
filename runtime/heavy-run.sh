@@ -2,7 +2,8 @@
 # Run ONE heavy job under its lane's own lock (Lanes v0). Inside a lane, heavy jobs take turns; a lane
 # never waits for another lane, and memory is left to the operating system. Each job writes lane
 # events (resource-waited, resource-started, resource-ended) through lane-event.sh, so waits and holds
-# become statistics. The lock is advisory (macOS/BSD lockf); every lane starts its heavy jobs here.
+# become statistics. The lock is advisory (lockf on macOS/BSD, flock on Linux); every lane starts its
+# heavy jobs here.
 #
 # Usage:
 #   heavy-run.sh <resource> <command> [args ...]
@@ -25,4 +26,11 @@ res="$1"; shift
 mkdir -p "$LOCKS"
 t0=$(date +%s)
 "$PERMA/runtime/lane-event.sh" resource-waited resource="$res" >/dev/null 2>&1 || true
-exec lockf -k "$LOCKS/$res.lane${PERMA_LANE:-main}.lock" "$0" --held "$res" "$t0" "$@"
+lock="$LOCKS/$res.lane${PERMA_LANE:-main}.lock"
+if command -v lockf >/dev/null 2>&1; then
+  exec lockf -k "$lock" "$0" --held "$res" "$t0" "$@"
+elif command -v flock >/dev/null 2>&1; then
+  exec flock "$lock" "$0" --held "$res" "$t0" "$@"
+fi
+echo "heavy-run.sh: needs lockf (macOS/BSD) or flock (Linux, util-linux) to take the lane lock" >&2
+exit 2

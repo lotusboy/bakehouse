@@ -124,7 +124,7 @@ When close refuses (exit 1). Each reason names the file:
 8. The folder, or any file in it, is a symbolic link.
 9. A prediction or measured file whose sha256 an earlier close of ANOTHER work order recorded. Close
    may run again for the same work order.
-10. The code-order rules (review A4, owner D5), when the binding names `signal.codeRoots`. A code
+10. The code-order rules, when the binding names `signal.codeRoots`. A code
     commit of the work order is a non-merge commit that touches a code root and whose subject's first
     tracker id is the work order. Close refuses one that comes after the latest top-level measured
     file's commit, and one that no round covers: a round covers a code commit that comes after its
@@ -134,7 +134,7 @@ When close refuses (exit 1). Each reason names the file:
     merges after its record is committed on the run branch.
 11. An uncommitted or untracked change under the binding's `signal.codeRoots` (`git status`, untracked
     files included). No record measured it. This applies to every close whose binding names code
-    roots, with no cut-off (owner, fix round 1 of V12a): a dirty tree is wrong for any record.
+    roots, with no cut-off: a dirty tree is wrong for any record.
 
 On a pass it writes one `work-order-closed` line to the ops ledger. The line carries, for each pair:
 the prediction's sha256 and its commits, the measured file's sha256, the baseline's name and sha256,
@@ -144,7 +144,7 @@ cannot be recorded is refused. Exit 2 is bad input: an id that does not match, n
 `PERMA_DIR` below.
 
 **The board line.** A close that passed also appends one line to the stream's `WIP.md`, in the
-board's line style: `  - HH:MM (D Mon) — <work-order> CLOSED by predict-gate close (ref:
+board's line style (indented two spaces): `- HH:MM (D Mon) — <work-order> CLOSED by predict-gate close (ref:
 <stream>/repo/ops/events.jsonl, work-order-closed at <ts>).` The time and the ts are the close
 event's own. The stream is the one close found its ledger through. A refused close, and an override
 that could not be recorded, write no line. When the stream has no `WIP.md`, close still passes and
@@ -210,7 +210,7 @@ stream's decision ledger, and cited on the commit that made the exception:
    committer time. The latest such answer must choose the approving option (compared as `decision.py`
    compares a choice: case and spacing aside), and the ask's `task` must be the work order being
    closed. An id that is not in the ledger, another choice, another work order's decision, or an
-   answer recorded after the commit refuses. Named limit (owner D1): a decision asked without
+   answer recorded after the commit refuses. Named limit: a decision asked without
    `--approves` (every one asked before it existed) keeps the older rule: its latest answer says
    `agreed: true`, and its task is not checked. Git dates are
    written by the committer: the time order catches a decision cited before it was answered, not a
@@ -223,10 +223,10 @@ stream's decision ledger, and cited on the commit that made the exception:
 **Limits of close, named.**
 
 1. The code-order rules and records-check's stale rule judge only a work order with a round whose
-   prediction is first committed on or after `ORDER_FROM` in `runtime/predict-gate.py` (2026-11-04,
-   owner d20261103-fb2f2c). An older record keeps its result: code after its measurement, or before
+   prediction is first committed on or after `ORDER_FROM` in `runtime/predict-gate.py` (2026-11-04).
+   An older record keeps its result: code after its measurement, or before
    its prediction, is not refused.
-2. Their order is commit time, which the committer sets (owner d20261103-692b10; review A14). A
+2. Their order is commit time, which the committer sets. A
    forward-dated commit can pass. Ancestry cannot order a lane branch's code against a record
    committed on the run branch.
 3. A round label used again after a supersede (a new `moves.prediction.json` after the old one went
@@ -234,7 +234,7 @@ stream's decision ledger, and cited on the commit that made the exception:
 4. A binding with no `signal.codeRoots` gets no code-order check and no dirty-tree check; close says
    so in a note.
 
-**Sealing: the evidence close will judge (owner d20261103-2a691d).** Each prediction, baseline and
+**Sealing: the evidence close will judge.** Each prediction, baseline and
 measured file is sealed in the stream's ops ledger at the moment it is written. A seal is a ledger
 event the tool writes, not a git fact the judged party can rewrite. Close judges a sealed work order
 by these events ("Closing a sealed work order", below).
@@ -246,7 +246,7 @@ by these events ("Closing a sealed work order", below).
    (`fix1` for `moves.prediction.fix1.json` or `moves.prediction-fix1.json`). A file whose name is not
    that round's is refused. When the stream's binding names a `tracker.id` form, the work order of a
    record in the bound repository must match it, as close requires. A record kept in the Permanence
-   checkout itself (a T- or V-series one) is sealed without that form.
+   checkout itself is sealed without that form.
 2. A measured seal also runs `check` against the round's prediction and baseline, found as `check`
    finds them, and carries the result (`pass` or `refused`, the failure count, and the sha256 of the
    prediction and baseline it used). It carries the `base` and `head` commits the measurement read,
@@ -291,7 +291,7 @@ by these events ("Closing a sealed work order", below).
    event. From it on, every new event, from any writer, carries `prev`: the sha256 of the bytes of the
    line before it. Events before it stay as they are. `ops-event.sh` refuses the kinds `sealed`,
    `revised` and `retired`.
-   **The anchor (owner d20261104-3cba63).** After seal, revise or retire appends its line, still under
+   **The anchor.** After seal, revise or retire appends its line, still under
    the lock, it commits the ledger file alone, by path, into the git repository that holds the stream,
    with the trailer `Sealed-line: <sha256 of the line>`. git's index lock, held by another git command,
    is retried 5 times; then the command refuses loudly (exit 1, gate `predict-gate:anchor`): the line is
@@ -310,8 +310,8 @@ by these events ("Closing a sealed work order", below).
     Otherwise it says the chain is not started, or whole. Exit 0 not started or whole, 1 broken, 2
     bad input. It only reads.
 
-**Closing a sealed work order (V12c step 2a; architect report option 1).** Whether a work order is
-sealed is a fact in git, not in the ledger file, whichever writer put the line there (review J1): it is
+**Closing a sealed work order.** Whether a work order is
+sealed is a fact in git, not in the ledger file, whichever writer put the line there: it is
 sealed when the ledger at `HEAD` holds a sealed, revised or retired line of it, or when a
 `Sealed-line:` trailer in the git history of the ledger names one (that history is read with
 `--full-history --follow`, so a merge resolved to one side and a move of the ledger file do not hide
@@ -320,7 +320,7 @@ the ledger file that no commit holds yet also counts, and refuses until a new se
 lines never unseals. Close and records-check read this one answer. A sealed work order is judged by its events as
 the ledger at `HEAD` holds them.
 
-On EVERY close, sealed or not, before that decision, close refuses when verify-chain is BROKEN (G3):
+On EVERY close, sealed or not, before that decision, close refuses when verify-chain is BROKEN:
 close did not write that line, so it names the line and says the owner decides its repair, through
 a decision (`decision.sh ask --task <id> --approves <option>`), and judges nothing until verify-chain
 is whole. It also refuses when the ledger file no longer begins with the ledger its last commit holds
@@ -338,7 +338,7 @@ is whole. It also refuses when the ledger file no longer begins with the ledger 
 5. **A round's prediction is sealed before its code.** Its first seal's commit is an ancestor of the
    round's measured base; or, if not, every file under the code roots that the round's measurement
    changed (base to head) reads the same at the seal's commit as at the base.
-5b. **A round's first code commit is sealed, after its prediction (Step 2b, review H2).** When a round's
+5b. **A round's first code commit is sealed, after its prediction.** When a round's
    latest measurement changed code under the code roots (base to head), the round needs a code seal:
    the engineer commits the round's first code through `predict-gate.sh seal-code <work-order> <round>
    [--stream S] -- <git commit args>`, which runs `git commit` on the staged code (it does not read
@@ -351,7 +351,7 @@ is whole. It also refuses when the ledger file no longer begins with the ledger 
 6. **The code at `HEAD` is the code the latest measured seal read**, compared by code-root tree. A head
    on `HEAD`'s own first-parent line is compared with `HEAD`. A head a merge brought in is compared with
    that merge's lane parent; and a code commit on `HEAD`'s own line after that merge whose subject's first
-   tracker id is this work order refuses, because nothing measured it (review H3). A head `HEAD` cannot
+   tracker id is this work order refuses, because nothing measured it. A head `HEAD` cannot
    reach (not merged, or amended away) is compared with
    `HEAD` and every merged lane parent, using the seal's `headTrees` when the commit itself is gone. A
    head this repository does not hold, with no trees, refuses and names the fetch
@@ -386,25 +386,24 @@ after the measurement refuses the close.)
   round's files between the base and the prediction seal's commit (a false refusal, not a miss).
 - L11 to L14 are what the code seal leaves open. Each needs an engineer to cheat on purpose, or (L12) an
   honest rewrite of the sealed commit. The gate is built to catch honest mistakes and to fail safe, not to
-  defend against an agent cheating on purpose (owner, 2026-11-04, d20261104-0e1416). An honest engineer
+  defend against an agent cheating on purpose. An honest engineer
   avoids L12 by never amending or rebasing the sealed code commit: a later change goes in a new commit.
-- L11 (Step 2b review F2, named, not fixed). Rule 5b does not tie the sealed commit to the measured code.
+- L11 (named, not fixed). Rule 5b does not tie the sealed commit to the measured code.
   It checks that a code seal exists, that the prediction seal comes first, and that the code just before
   the sealed commit equals the measured base. It does not check that the sealed commit changes a code
   root, nor that it is an ancestor of the measured head. A throwaway commit sealed on a branch from the
-  base, or `seal-code -- <path>` that commits only a non-code file, satisfies the rule (review probes T2,
-  T3).
-- L12 (Step 2b review F3, named, not fixed; avoided by the rule above). An honest amend or rebase of the sealed
+  base, or `seal-code -- <path>` that commits only a non-code file, satisfies the rule.
+- L12 (named, not fixed; avoided by the rule above). An honest amend or rebase of the sealed
   first code commit refuses, and no seal-side recovery exists. An amended commit that is not fetched, or
   is gone after gc, refuses as "not in this repository"; a lane rebased onto a moved main refuses as "not
   the round's first code change"; and seal-code refuses a second code seal of the round. Only the owner's
-  close override remains (review probes T4, T6).
-- L13 (Step 2b review F5, named, not fixed). The stop check's seal test matches a moves file by its bytes
+  close override remains.
+- L13 (named, not fixed). The stop check's seal test matches a moves file by its bytes
   against any `sealed` or `revised` line of any work order in the working ledger. A measured file
   byte-identical to a sealed baseline (a 0-move round), or to another work order's sealed file, reads as
   sealed, and so does a seal whose anchor failed. Close is the backstop: its rule 3 wants a committed seal
   of that path.
-- L14 (Step 2b review F6, named, not fixed). After a failed anchor, seal-code's message says "seal again",
+- L14 (named, not fixed). After a failed anchor, seal-code's message says "seal again",
   but a second seal-code of the round is refused, and running it makes one more unsealed commit. The
   code seal's line is already in the ledger file: the next seal of any file, or a commit of the ledger,
   anchors it.
@@ -413,10 +412,10 @@ after the measurement refuses the close.)
   one resolved to the other side, brings them back into view.
 - L9. `--follow` relies on git's rename detection. A move of the ledger file that also rewrites most of
   it in the same commit is not followed, and the trailers from before it are not seen.
-- L10. The anchor and the sealed state use git's own discovery from the ledger's folder upward (review
-  K1). A Permanence that is not its own git repository, inside another one (installed from a zip into
-  a project, say), would anchor its ledger into that enclosing repository. Today ~/permanence is its own
-  repository, and the folder above it is not one.
+- L10. The anchor and the sealed state use git's own discovery from the ledger's folder upward.
+  A Permanence that is not its own git repository, inside another one (installed from a zip into
+  a project, say), would anchor its ledger into that enclosing repository. A standard install, a git clone,
+  is its own repository and is not affected.
 - L7. A git history rewrite. Close compares the ledger with its last commit, and reads the git
   trailers of every anchored line, so an edit after a commit refuses, and so does a committed edit that
   removes an anchored line. A rewrite of the Permanence repository's git history itself (amend, rebase,
@@ -464,7 +463,7 @@ hard gate.
    binding's folder for the `Work order <id>:`. Another folder never satisfies it.
 5. It sends the engineer back once unless that folder holds a `moves.prediction*.json` that `check`
    reads and that names at least one move.
-5b. Then (Step 2b) it sends the engineer back once for any top-level moves file (prediction, baseline
+5b. Then it sends the engineer back once for any top-level moves file (prediction, baseline
    or measured) whose bytes no `sealed` or `revised` event in its stream's ops ledger names: the stream
    holding a stream-held record, else the bound repository's stream. The reason names each unsealed file
    and the `predict-gate.sh seal` command. On the second stop it lets the engineer stop and tells the

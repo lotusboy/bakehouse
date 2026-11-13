@@ -14,7 +14,7 @@
 #   --kind is the role the agent ran as: one of runtime/agent-roles.json's roles or its spend_kinds.
 #   'agent' names no role: a new first record may not take it; old rows and backfills keep it.
 #   A first record states the tool's result, not only its cost: --kind, --why, --predicted,
-#   --predicted-tokens, --result and --outcome are required (--kind since T6a; the rest since v1.11.0).
+#   --predicted-tokens, --result and --outcome are required (--kind since v1.12.0; the rest since v1.11.0).
 #   A --correct row with no --kind keeps the kind of the row it corrects. --kind architect also needs
 #   --task, and a second architect run on one task needs --stepped-back.
 #   spend.sh status [--wave W] [--all] [--json]

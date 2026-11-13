@@ -440,7 +440,6 @@ holds them all.
 **The limit.** A rewrite from scratch under a new name is invisible to both signals: its content does
 not match any copy, and its name does not either.
 
-
 ## Records against the process
 
 A rule kept only in a prompt lapses. `runtime/records-check.py` checks each work order's record
@@ -550,7 +549,7 @@ is reported as a warning.
      close` pairs them, all three read at the ref. A failing pair makes the close
      `not-its-record`, with the reason;
    - no code commit of the work order is later than the record's latest measured file's commit, by
-     commit time (review A4). This holds for a record with a round whose prediction is first committed
+     commit time. This holds for a record with a round whose prediction is first committed
      on or after predict-gate's `ORDER_FROM` (2026-11-04). An older record keeps the older rule: the
      close's time is not before the last code commit. A close with no time is stale either way. So
      running close again, with nothing measured, does not clear a stale record.
@@ -719,7 +718,7 @@ a contract (a `.md` whose name holds `contract`: `contract.md`, or a round's own
 survivor lets it stop. It is sent back once, with what is wrong.
 
 **Escalation.** A rule flagged on 2 or more work orders (overridden ones included) is written with
-`promoteToCode: true` and `for: "cto"`: a candidate to be enforced in code rather than in a prompt.
+`promoteToCode: true` and `for: "owner"`: a candidate to be enforced in code rather than in a prompt.
 
 **The register.** `records.json` holds no date and no head, so it changes only when the findings
 do. It lists each code commit that names no tracker id (`uncreditedCommits`).
@@ -785,6 +784,10 @@ the register does not list; when a copy is deleted, added, or moved under anothe
 new agent or role file is missing from `files`; when a `code` proof names no test case; or when a
 `reviewer` proof names a file that is not a review brief, or a line that is not in it. Edit the
 prompt and the register together.
+
+The register checks the template's own prompts, so the test runs only where `PERMA_RULES_REGISTER=1`
+is set: the template repo's CI sets it. In your own install the prompts are yours to edit, and the
+test skips.
 
 The register is the input for promotion: a lapse of a `prompt` rule makes it a candidate for code,
 and a `code exists, no proof test` entry needs only its test.
@@ -854,8 +857,8 @@ byte-for-byte.
 ### Turn caps
 
 An agent that stops at its turn cap is recorded as an `agent-run` with outcome `turn-cap`: `count` is
-the turns it used, as the harness reported them, and the note starts "briefed <N|-> of cap <M>", the turns
-its brief gave it and its agent type's `maxTurns` (runtime/agents/<name>.md). ops-event.sh keeps both as
+the turns it used, as the harness reported them, and the note starts `briefed <N|-> of cap <M>`, the turns
+its brief gave it and its agent type's `maxTurns` (`runtime/agents/<name>.md`). ops-event.sh keeps both as
 `turnsBriefed` and `turnCap`, and refuses a turn-cap event without them. A cap hit means the brief asked
 for more work than fits the agent type, so before each dispatch the PM states a turn estimate against
 the cap beside the token estimate, and splits or cuts a brief that does not fit.

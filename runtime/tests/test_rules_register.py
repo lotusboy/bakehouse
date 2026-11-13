@@ -9,6 +9,7 @@ brief it names."""
 
 import importlib
 import json
+import os
 import re
 import shutil
 import sys
@@ -198,6 +199,14 @@ def entry(reg, f, sentence):
     )
 
 
+# The register is the template's own: its CI sets PERMA_RULES_REGISTER=1. In a user's install the
+# prompts are theirs to edit, so the two classes that read the real prompts are skipped there.
+TEMPLATE_ONLY = unittest.skipUnless(
+    os.environ.get("PERMA_RULES_REGISTER") == "1", "the rule register is checked in the template's CI only"
+)
+
+
+@TEMPLATE_ONLY
 class TestTheRegister(unittest.TestCase):
     def test_the_register_lists_every_rule_sentence_and_every_proof_holds(self):
         got = problems(ROOT)
@@ -206,6 +215,7 @@ class TestTheRegister(unittest.TestCase):
         )
 
 
+@TEMPLATE_ONLY
 class TestTheCheckBites(unittest.TestCase):
     """Each way the register can go wrong, planted in a copy."""
 

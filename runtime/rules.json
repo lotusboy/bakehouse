@@ -1702,7 +1702,7 @@
    ],
    "enforcer": "code",
    "proof": "test_predict_gate.CloseOrder.test_a_prediction_committed_with_or_after_the_code_refuses",
-   "note": "a fix round's code before its prediction: test_predict_gate.CloseOrder.test_a_fix_rounds_code_before_its_prediction_refuses; rounds before ORDER_FROM keep their result (owner d20261103-fb2f2c)"
+   "note": "a fix round's code before its prediction: test_predict_gate.CloseOrder.test_a_fix_rounds_code_before_its_prediction_refuses; rounds before ORDER_FROM keep their result"
   },
   {
    "id": "perma-change-61",

@@ -313,7 +313,7 @@ class Close(RepoFixture):
         self.assertIn("4. Moved, and nobody predicted it: 1.", p.stdout)
         self.assertIn("2026-01-02-T7-step1-review/moves.prediction.json: check exit 1", p.stdout)
         self.assertIn("Result: REFUSED", p.stdout)
-        # a refused close writes one gate-refused event, and nothing else (T6a)
+        # a refused close writes one gate-refused event, and nothing else
         self.assertEqual([(e["kind"], e.get("gate")) for e in self.events()],
                          [("gate-refused", "predict-gate:close")])
 
@@ -322,7 +322,7 @@ class Close(RepoFixture):
         p = self.close()
         self.assertEqual(p.returncode, 1, p.stdout)
         self.assertIn("moves.prediction.json: check exit 2", p.stdout)
-        # a refused close writes one gate-refused event, and nothing else (T6a)
+        # a refused close writes one gate-refused event, and nothing else
         self.assertEqual([(e["kind"], e.get("gate")) for e in self.events()],
                          [("gate-refused", "predict-gate:close")])
 
@@ -333,7 +333,7 @@ class Close(RepoFixture):
         p = self.close()
         self.assertEqual(p.returncode, 1, p.stdout)
         self.assertIn("no moves.prediction*.json. A prose prediction is not checked by a machine.", p.stdout)
-        # a refused close writes one gate-refused event, and nothing else (T6a)
+        # a refused close writes one gate-refused event, and nothing else
         self.assertEqual([(e["kind"], e.get("gate")) for e in self.events()],
                          [("gate-refused", "predict-gate:close")])
 
@@ -497,7 +497,7 @@ class CloseRecord(Close):
         self.assertEqual(p.returncode, 1, p.stdout)
         self.assertIn("moves.measured.fix1.json: a measured file with no prediction of its round. If it is not "
                       "part of the closed record, move it into history/ (git mv) and commit.", p.stdout)
-        # a refused close writes one gate-refused event, and nothing else (T6a)
+        # a refused close writes one gate-refused event, and nothing else
         self.assertEqual([(e["kind"], e.get("gate")) for e in self.events()],
                          [("gate-refused", "predict-gate:close")])
 
@@ -585,7 +585,7 @@ class CloseRecord(Close):
         p = self.close()
         self.assertEqual(p.returncode, 1, p.stdout)
         self.assertIn("0 keys moved, and the prediction names 1 move(s)", p.stdout)
-        # a refused close writes one gate-refused event, and nothing else (T6a)
+        # a refused close writes one gate-refused event, and nothing else
         self.assertEqual([(e["kind"], e.get("gate")) for e in self.events()],
                          [("gate-refused", "predict-gate:close")])
 
@@ -620,7 +620,7 @@ class CloseRecord(Close):
         self.trio(measured={**BASE, "rules:fired": 125})
         p = self.close(env=dict(self.env, PREDICT_GATE_OVERRIDE="exported for a commit"))
         self.assertEqual(p.returncode, 1, p.stdout)
-        # a refused close writes one gate-refused event, and nothing else (T6a)
+        # a refused close writes one gate-refused event, and nothing else
         self.assertEqual([(e["kind"], e.get("gate")) for e in self.events()],
                          [("gate-refused", "predict-gate:close")])
 
@@ -765,7 +765,7 @@ class CloseLedger(RepoFixture):
                 p = self.change_prediction("prediction widened", f"Prediction-approved: {value}")
                 self.assertEqual(p.returncode, 1, p.stdout)
                 self.assertIn(why, p.stdout)
-        # a refused close writes one gate-refused event, and nothing else (T6a)
+        # a refused close writes one gate-refused event, and nothing else
         self.assertEqual([(e["kind"], e.get("gate")) for e in self.events()],
                          [("gate-refused", "predict-gate:close")] * 6)
 
@@ -817,7 +817,7 @@ class CloseLedger(RepoFixture):
                 p = self.close()
                 self.assertEqual(p.returncode, 1, p.stdout)
                 self.assertIn("moves.prediction.json names no move", p.stdout)
-        # a refused close writes one gate-refused event, and nothing else (T6a)
+        # a refused close writes one gate-refused event, and nothing else
         self.assertEqual([(e["kind"], e.get("gate")) for e in self.events()],
                          [("gate-refused", "predict-gate:close")] * 2)
 

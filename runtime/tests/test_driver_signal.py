@@ -174,9 +174,9 @@ class TestWindowAndRules(Fixture):
     def test_the_binding_overrides_window_count_and_owner(self):
         self.three((40, 10))
         self.assertEqual(self.ok()["families"]["name:probe"]["state"], "watch")
-        self.rules(minRuns=2, windowDays=45, owner="cto")
+        self.rules(minRuns=2, windowDays=45, owner="owner")
         f = self.ok()["families"]["name:probe"]
-        self.assertEqual((f["runsInWindow"], f["state"], f["flag"]["owner"]), (2, "build-candidate", "cto"))
+        self.assertEqual((f["runsInWindow"], f["state"], f["flag"]["owner"]), (2, "build-candidate", "owner"))
         self.assertEqual(self.ok("--window-days", "30")["families"]["name:probe"]["state"], "watch")
         self.rules()
         self.assertEqual(self.ok("--min-runs", "1")["families"]["name:probe"]["state"], "build-candidate")

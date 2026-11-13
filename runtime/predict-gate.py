@@ -48,7 +48,7 @@ folder's whole history); a top-level prediction or measured file removed (delete
 after that commit and absent at HEAD; a named baseline not committed before its prediction. A
 decision asked with an approving option (decision.sh ask --approves) approves only when its answer
 chose that option and its task is this work order; one asked without it keeps the older rule, an
-answer agreed true. With the binding's signal.codeRoots, the code-order rules (review A4, owner D5):
+answer agreed true. With the binding's signal.codeRoots, the code-order rules:
 each code commit of the work order (the first tracker id in its subject) comes after its round's
 prediction commit and no later than that round's measurement, and none comes after the latest
 measured file's commit. Ordered by commit time; judged only for work orders with a round whose
@@ -56,11 +56,11 @@ prediction is first committed on or after ORDER_FROM. An uncommitted or untracke
 roots refuses any close, with no cut-off. The owner's override:
 PREDICT_GATE_CLOSE_OVERRIDE="<reason>", recorded as a `gate-refused` event first.
 
-close WORK-ORDER --merged (step 10, owner D2): checks only that the files the latest work-order-closed
+close WORK-ORDER --merged (step 10): checks only that the files the latest work-order-closed
 event of the work order hashed hash the same at HEAD; refuses when there is no such event. No
 override. It writes a `note` event, never a work-order-closed one.
 
-seal, revise, retire, verify-chain (owner d20261103-2a691d): docs/PREDICT-GATE.md, "Sealing". Each writes
+seal, revise, retire, verify-chain: docs/PREDICT-GATE.md, "Sealing". Each writes
 one event to the stream's ops ledger, under the ledger lock, chained to the line before it
 (runtime/ops_ledger.py). close does not read them yet.
 
@@ -91,8 +91,8 @@ HISTORY = "history"
 CLOSE_OVERRIDE = "PREDICT_GATE_CLOSE_OVERRIDE"
 TRAILER = "Prediction-approved"
 DECISION_ID = re.compile(r"d\d{8}-[0-9a-f]{6}")
-# The code-order rules judge only rounds whose prediction is first committed on or after this day
-# (owner d20261103-fb2f2c): records made before /perma-change said to commit the prediction first
+# The code-order rules judge only rounds whose prediction is first committed on or after this day:
+# records made before /perma-change said to commit the prediction first
 # keep their result. Move it to the day the install takes this change if that is later.
 ORDER_FROM = "2026-11-04"
 ABSENT = object()
@@ -665,7 +665,7 @@ def rounds(repo, folder: str, ref: str = "HEAD") -> list:
 
 
 def code_order(repo: Path, roots: list, form, wo: str, folders: list) -> list:
-    """Refusals of the code-order rules (review A4, owner D5), by commit time, not ancestry: a lane
+    """Refusals of the code-order rules, by commit time, not ancestry: a lane
     branch merges after the record is committed on the run branch. Only a work order with a round whose
     prediction is first committed on or after ORDER_FROM is judged, and only its code after the earlier
     rounds' last record commit."""
@@ -695,7 +695,7 @@ def code_order(repo: Path, roots: list, form, wo: str, folders: list) -> list:
 
 
 def merged_check(repo: Path, ledger: Path | None, wo: str) -> tuple[list, list, list]:
-    """Step 10 (owner D2): (refusals, matched files, notes) for the record at HEAD against the latest
+    """Step 10: (refusals, matched files, notes) for the record at HEAD against the latest
     work-order-closed event of the work order. Its sha256 values only."""
     try:
         lines = ledger.read_text(encoding="utf-8").splitlines() if ledger else []
@@ -730,11 +730,11 @@ def merged_check(repo: Path, ledger: Path | None, wo: str) -> tuple[list, list, 
 
 
 
-# ---------- close of a SEALED work order (V12c step 2a; architect report option 1, points 4 to 6) ----------
+# ---------- close of a SEALED work order ----------
 
 def ledger_refusals(ledger: Path | None, wo: str) -> list:
-    """Run on EVERY close, before close decides whether the work order is sealed (review H1): the ledger
-    must read whole (G3), and the ledger file must still begin with the ledger its last commit holds. A
+    """Run on EVERY close, before close decides whether the work order is sealed: the ledger
+    must read whole, and the ledger file must still begin with the ledger its last commit holds. A
     ledger file that is gone reads as empty, so its committed lines refuse."""
     if ledger is None:
         return []
@@ -779,7 +779,7 @@ def sealed_scan(ledger: Path) -> dict:
 
 def sealed_state(ledger: Path | None, wo: str, scan: dict | None = None) -> tuple[bool, list, list]:
     """(sealed, the work order's sealed events in the ledger at HEAD, refusals). One answer for close and
-    records-check (review H1, H4). Sealed is a fact in git, by any writer (review J1): the ledger at HEAD
+    records-check. Sealed is a fact in git, by any writer: the ledger at HEAD
     holds a sealed, revised or retired line of the work order, or a Sealed-line trailer in the ledger's
     history names one (read from HEAD's ledger, or, when HEAD no longer holds it, from that commit's own;
     then it refuses as removed). An event of the work order in the ledger file that no commit holds yet
@@ -849,7 +849,7 @@ def head_refusal(repo: Path, ref: str, head: str, sealed_trees: dict | None, roo
                 if code_trees(repo, f"{m}^2", roots) != want:
                     return (f"the sealed head {head[:8]} was merged by {m[:8]}, and that merge's lane parent holds "
                             "other code than the latest measurement read: measure it in a new round")
-                # review H3: the same work order's code committed straight on ref after the merge
+                # the same work order's code committed straight on ref after the merge
                 after = git(repo, "log", "--first-parent", "--no-merges", "--format=%H%x09%s", f"{m}..{ref}",
                             "--", *roots).stdout.splitlines()
                 late = [h for h, s in (x.split("\t", 1) for x in after) if wo and names_wo(s, wo, form)]
@@ -950,7 +950,7 @@ def sealed_refusals(repo: Path, folders: list, evs: list, decided: dict, wo: str
     measured = [e for e in seals if e.get("fileKind") == "measured" and not retire_of(e["path"], e.get("sha256"))]
     if not roots:
         return out
-    for e in seals:  # a round's prediction is sealed before its code (review A4, repro 2)
+    for e in seals:  # a round's prediction is sealed before its code
         if e["kind"] != "sealed" or e.get("fileKind") != "prediction" or retire_of(e["path"], e.get("sha256")) \
                 or e is not by_path[e["path"]][0]:
             continue
@@ -972,7 +972,7 @@ def sealed_refusals(repo: Path, folders: list, evs: list, decided: dict, wo: str
             out.append(f"{e['path']}: its first seal was made at {s}, which already holds code this round measured "
                        f"({', '.join(early[:3])}): a prediction is sealed before its code")
     codes = [e for e in evs if e.get("kind") == "sealed" and e.get("fileKind") == "code"]
-    for rnd in dict.fromkeys(x.get("round") for x in measured):  # Step 2b, review H2: the code seal
+    for rnd in dict.fromkeys(x.get("round") for x in measured):  # the code seal
         m = [x for x in measured if x.get("round") == rnd][-1]
         if not m.get("base"):
             continue
@@ -990,7 +990,7 @@ def sealed_refusals(repo: Path, folders: list, evs: list, decided: dict, wo: str
                   and x.get("round") == rnd), None)
         if p is None or evs.index(p) > evs.index(cs):
             out.append(f"round {rnd} of {wo}: its prediction was sealed after its first code commit "
-                       f"{str(cs.get('commit'))[:8]} was sealed: a prediction is sealed before its code (review H2)")
+                       f"{str(cs.get('commit'))[:8]} was sealed: a prediction is sealed before its code")
         before = code_trees(repo, f"{cs.get('commit')}^", roots) if code_trees(repo, str(cs.get("commit")), roots) \
             else None
         if before is None:
@@ -1034,7 +1034,7 @@ def run_close(wo: str, repo_arg: str | None, binding_arg: str | None, merged: bo
     sealed, seal_events, seal_refused = (False, [], []) if merged else sealed_state(ledger, wo)
     pattern, folders = record_folders(repo, b, wo)
     refused, passed, notes = [], [], []
-    if not merged:  # every close, sealed or not (review H1): the ledger reads whole and matches its commit
+    if not merged:  # every close, sealed or not: the ledger reads whole and matches its commit
         refused += ledger_refusals(ledger, wo)
 
     def rel(p: Path) -> str:
@@ -1094,7 +1094,7 @@ def run_close(wo: str, repo_arg: str | None, binding_arg: str | None, merged: bo
                          + ", ".join(n[len(HISTORY) + 1:] for n in history)
                          + (f"; changed after the first measurement, approved: {', '.join(hist_ok)}" if hist_ok else ""))
         if measured_at and not sealed:
-            # a round removed outright (git rm, a rename) escapes as surely as one parked in history/ (review A1)
+            # a round removed outright (git rm, a rename) escapes as surely as one parked in history/
             hist_commits = set(git(repo, "log", "--format=%H", "HEAD", "--", f"{r_folder}/{HISTORY}/").stdout.split()) \
                 if history else set()
             ever = {p.rsplit("/", 1)[-1] for p in git(repo, "log", "--format=", "--name-only", "--no-renames", "HEAD",
@@ -1190,7 +1190,7 @@ def run_close(wo: str, repo_arg: str | None, binding_arg: str | None, merged: bo
     sig = b.get("signal") if isinstance(b.get("signal"), dict) else {}
     if folders and not merged:
         if sig.get("codeRoots"):
-            # review A4 repro 1: code the record cannot have measured, because git does not hold it
+            # code the record cannot have measured, because git does not hold it
             changed = [x.strip() for x in git(repo, "--no-optional-locks", "status", "--porcelain", "--untracked-files=all",
                                               "--", *sig["codeRoots"]).stdout.split("\n") if x.strip()]
             if changed:
@@ -1243,7 +1243,7 @@ def run_close(wo: str, repo_arg: str | None, binding_arg: str | None, merged: bo
     return 0
 
 
-# ---------- the sealer (owner d20261103-2a691d): close's evidence, written when each file is written ----------
+# ---------- the sealer: close's evidence, written when each file is written ----------
 
 ROUND_ARG = re.compile(r"first|[A-Za-z0-9][A-Za-z0-9_.-]*")
 SEAL_FILE = re.compile(rf"^moves\.(prediction|baseline|measured){ROUND}\.(json|ya?ml)$")
@@ -1268,7 +1268,7 @@ def seal_target(path: Path, stream_arg: str | None, wo: str, folder: bool = Fals
     --stream, else OPS_STREAM, else the registry's stream for the file's repository: a lane clone is not
     registered. The ledger is the one close reads: the Permanence this tool runs from. The work order
     must match the stream binding's tracker id form, when it names one, for a record in the bound
-    repository; a record kept in the Permanence checkout itself (a T- or V-series one) is not judged by it."""
+    repository; a record kept in the Permanence checkout itself is not judged by it."""
     for k in ("OPS_TS", "OPS_COMMIT"):
         if os.environ.get(k):
             os.environ.pop(k)  # so the refusal event is stamped now too
@@ -1444,7 +1444,7 @@ def run_seal(cmd: str, wo: str, rnd: str, file: str, stream_arg: str | None, rep
 
 
 def run_seal_code(wo: str, rnd: str, stream_arg: str | None, commit_args: list) -> int:
-    """Commit the round's first code and seal that commit (Step 2b, review H2): `git commit <commit_args>` in
+    """Commit the round's first code and seal that commit: `git commit <commit_args>` in
     the working folder's repository, then one sealed event, fileKind code, with the commit, its parent and
     its code-root trees, anchored as every seal is. Close compares it with the round's prediction seal."""
     if not ROUND_ARG.fullmatch(rnd):
@@ -1604,7 +1604,7 @@ def main(argv) -> int:
             rc = run_check(pred, base, a.measured, a.override.strip(), a.task, result=result)
             if rc == 1:
                 # with an override, rc 1 means the override could not be recorded (it keeps its own route, D2);
-                # the refusal still stands, and its event routes to the record's stream (review F1)
+                # the refusal still stands, and its event routes to the record's stream
                 unrecorded = " | the owner's override could not be recorded" if a.override.strip() else ""
                 refusal_event("predict-gate:check", "predicted-moves gate refused",
                               f"predicted-moves gate refused: {a.measured}{unrecorded} | refused lines: "

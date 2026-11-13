@@ -318,8 +318,8 @@ class TestPromote(Fixture):
         code, out = self.run_check()
         r = self.reg()["rules"]["close"]
         self.assertEqual((r["workOrders"], r["codeCommits"], r["promoteToCode"], r["for"]),
-                         (["T1", "T2"], 2, True, "cto"))
-        self.assertIn("Promote-to-code candidates for the CTO", out)
+                         (["T1", "T2"], 2, True, "owner"))
+        self.assertIn("Promote-to-code candidates for the owner", out)
 
     def test_overridden_flags_still_count_toward_promotion(self):
         for wo in ("T1", "T2"):

@@ -8,7 +8,7 @@ kinds share one decision id:
   ask      the question, options, recommendation, confidence, evidence, blind, autonomous
   answer   the owner's choice and whether it agreed with the recommendation
 An ask may name its approving option (--approves): the one choice that approves an exception to
-`predict-gate.sh close`. Agreeing with the recommendation is not approval (review A2).
+`predict-gate.sh close`. Agreeing with the recommendation is not approval.
   outcome  later evidence that the decision held, was reversed, or was refined
 Config: runtime/decision-config.json, overridden per stream by <stream>/decisions/config.json.
 Human view: <stream>/DECISIONS.md, regenerated from the ledger after every write (never edited by

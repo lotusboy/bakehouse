@@ -139,7 +139,7 @@ command that is the same for every repo, and asks you to read its output. A copi
         the window is the default and that the start date is the owner's to set in the binding.
      2. Each open flag in one line: the work order, the rule, what is missing, and its owner.
         Then each rule's next step, once.
-     3. Each rule with `promoteToCode: true`: a promote-to-code candidate for the CTO, with its
+     3. Each rule with `promoteToCode: true`: a promote-to-code candidate for the owner, with its
         count of work orders.
    - The flags are their owner's to act on: the PM, for its own runs. This step never acts on one:
      it closes no work order, writes no artefact and records no override.

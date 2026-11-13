@@ -699,11 +699,11 @@ def first_prompt(path):
 
 
 def unsealed_moves(folders, where, kind):
-    """The top-level moves files of the record folders whose bytes no seal in their stream's ops ledger names
-    (Step 2b): the stream holding a stream-held record, else the stream registered for `where`, the path the
+    """The top-level moves files of the record folders whose bytes no seal in their stream's ops ledger names:
+    the stream holding a stream-held record, else the stream registered for `where`, the path the
     hook's binding lookup used (the cwd as given, or the record line's repository). Not git's resolved
-    toplevel: the registry matches paths by their text, so a path through a symlink must be read as given
-    (Step 2b review F1). Fail-open, like the rest of this hook: an error reads as sealed, and says so."""
+    toplevel: the registry matches paths by their text, so a path through a symlink must be read as given.
+    Fail-open, like the rest of this hook: an error reads as sealed, and says so."""
     try:
         gate = predict_gate()
         if kind == "stream" and folders:
@@ -954,7 +954,7 @@ def subagent_stop(d):
         if not folder:
             log(f"RUN-RECORD check skipped for {d.get('agent_type')}: binding {why}")
         elif kind == "repo" and line[4]:
-            # decided at dispatch: that folder alone, never another work order's under the same reviews (H5)
+            # decided at dispatch: that folder alone, never another work order's under the same reviews
             named, rf = line[3], rroot / line[2]
             checks.append((rroot, line[2], rbind))
             # written when a new file at any depth matches the job's marks, as a stream record
@@ -1019,7 +1019,7 @@ def check_new(cwd):
     # upstream. Said every session until the table is fixed. A plugin that is not installed at all is
     # the normal case for someone without it, so that stays silent.
     # A missing shipped agent is said only in a repository with a binding: someone who does not use
-    # the team may have removed the agents on purpose (review L1).
+    # the team may have removed the agents on purpose.
     plugins = {n.split(":")[0] for n in have if ":" in n}
     bound = bool(team_roles.load_binding(PERMA, cwd, log))
     gone = [(rn, p) for rn, r in entries for p in team_roles.providers(r)
