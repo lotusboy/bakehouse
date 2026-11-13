@@ -199,10 +199,10 @@ def entry(reg, f, sentence):
     )
 
 
-# The register is the template's own: its CI sets PERMA_RULES_REGISTER=1. In a user's install the
+# The register is the template's own: its CI sets BAKEHOUSE_RULES_REGISTER=1. In a user's install the
 # prompts are theirs to edit, so the two classes that read the real prompts are skipped there.
 TEMPLATE_ONLY = unittest.skipUnless(
-    os.environ.get("PERMA_RULES_REGISTER") == "1", "the rule register is checked in the template's CI only"
+    os.environ.get("BAKEHOUSE_RULES_REGISTER") == "1", "the rule register is checked in the template's CI only"
 )
 
 
@@ -478,8 +478,8 @@ class TestTheCheckBites(unittest.TestCase):
         )
 
     def test_files_may_list_only_process_prompts(self):
-        f = "runtime/commands/perma-help.md"
-        shutil.copyfile(ROOT / f, self.root / f)
+        f = "runtime/commands/help.md"
+        self.write(f, "Lists the commands.\n")
         self.reg["files"].append(f)
         self.save()
         self.assertIn(

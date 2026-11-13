@@ -74,9 +74,9 @@ Write it in plain logic-level sentences, one idea per sentence:
   - the chain's own count: `git log --since=<chain start> --oneline -- <file> | wc -l` for each
     file the rounds touched. Count every commit, not only `fix`-prefixed ones: commits named by a
     work-order id are invisible to a health signal that counts fix commits;
-  - the repo's health signal, where its binding names one: run `/perma-health`, which reads the
+  - the repo's health signal, where its binding names one: run `/bakehouse:health`, which reads the
     signal and lists the parts that are `ready` or `ready-again`.
-  Give the figures, then offer `/perma-refactor <part>`: the architect lays out restructure or
+  Give the figures, then offer `/bakehouse:refactor <part>`: the architect lays out restructure or
   accept, and the owner decides. Never start a refactor from a step back.
   - **When the Compensation pile signal fired, offer the architect in REDESIGN mode.** Fix commits
     will not show this problem, because it lives in correction files and in a step's method. Give
@@ -91,7 +91,7 @@ State the recommendation outright: "do X". Ask one question. Do not dispatch the
 the owner answers, unless the owner has already said to keep going for this item; then say which
 signals fired and carry on with the Seesaw or the render first, not another fix round.
 
-Where the owner keeps the decision ledger, record the question with `~/permanence/runtime/decision.sh
+Where the owner keeps the decision ledger, record the question with `${CLAUDE_PLUGIN_ROOT}/runtime/decision.sh
 ask` before sending it (category, the options, the recommendation and your confidence), and record the
 owner's reply with `decision.sh answer`. The tool also asks for the evidence you read (`--read`) and,
 for a fix, what feeds the failing step (`--upstream`); the PM role's records section
@@ -108,6 +108,6 @@ option chosen. A step-back that is not recorded did not happen, as far as those 
   or a park.
 - After a step-back, brief every engineer and reviewer on that item to run Seesaw and render the raw
   input before any fix — the same rule as the live-prism skill. Where a command supplies the brief
-  (`/perma-change`, `/perma-refactor`), its template wins: say it in the PM's own message, not in the
+  (`/bakehouse:change`, `/bakehouse:refactor`), its template wins: say it in the PM's own message, not in the
   template.
 - Report the signals honestly, including your own estimating misses.

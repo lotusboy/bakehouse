@@ -205,7 +205,7 @@ class TestGate(Fixture):
         self.assertEqual(self.dispatch("role:architect"), "DENY")
         self.assertEqual(self.dispatch("role:tester"), "DENY")
         self.assertEqual(self.dispatch("role:no-such-role"), "DENY")
-        self.assertIn("DENY Permanence agent-roles: role 'architect' is unresolved", self.log())
+        self.assertIn("DENY bakehouse agent-roles: role 'architect' is unresolved", self.log())
 
 
 class TestRules(Fixture):
@@ -268,7 +268,7 @@ class TestReview(Fixture):
     def test_m22_prompt_append_added_once(self):
         self.personal({"code-review": {"providers": ["design-author"], "prompt_append": "EXTRA"}})
         out = self.dispatch("design-author", tool_input={"subagent_type": "design-author",
-                                                          "prompt": "p\n\n[perma:agent-roles]\nEXTRA"})
+                                                          "prompt": "p\n\n[bakehouse:agent-roles]\nEXTRA"})
         self.assertIsNone(out)
         self.assertEqual(self.dispatch("design-author")["prompt"].count("EXTRA"), 1)
 
@@ -296,7 +296,7 @@ class TestReview(Fixture):
         self.binding({"engineer": "other-agent"})
         out = self.dispatch("role:refactor:engineer")
         self.assertEqual((out["subagent_type"], out["model"]), ("other-agent", "opus"))
-        self.assertNotIn("[perma:agent-roles]", out["prompt"])
+        self.assertNotIn("[bakehouse:agent-roles]", out["prompt"])
 
     def test_binding_table_form_entry_sets_the_model(self):
         self.install("other-agent")
@@ -362,12 +362,12 @@ class TestPredictionRecord(Fixture):
         return self.dispatch_brief("role:change:engineer")["hookSpecificOutput"]["updatedInput"]["prompt"]
 
     def test_prediction_record_marks_only_the_change_engineer(self):
-        self.assertIn("[perma:prediction-record]", self.marked())
+        self.assertIn("[bakehouse:prediction-record]", self.marked())
         self.assertIn("records/2026-01-02-T7-step1-review/ must hold the prediction as moves.prediction.json",
                       self.marked())
         self.assertIn("under records/ must hold the prediction", self.dispatch("role:change:engineer")["prompt"])
-        self.assertNotIn("[perma:prediction-record]", self.dispatch("role:refactor:engineer")["prompt"])
-        self.assertNotIn("[perma:prediction-record]", self.dispatch("role:engineer")["prompt"])
+        self.assertNotIn("[bakehouse:prediction-record]", self.dispatch("role:refactor:engineer")["prompt"])
+        self.assertNotIn("[bakehouse:prediction-record]", self.dispatch("role:engineer")["prompt"])
 
     def test_prediction_record_survives_a_provider_override(self):
         self.install("other-agent")
@@ -375,7 +375,7 @@ class TestPredictionRecord(Fixture):
         self.personal({"change:engineer": {"providers": ["other-agent"]}})
         out = self.dispatch("role:change:engineer")
         self.assertEqual(out["subagent_type"], "other-agent")
-        self.assertIn("[perma:prediction-record]", out["prompt"])
+        self.assertIn("[bakehouse:prediction-record]", out["prompt"])
 
     def test_prediction_record_stop_blocks_a_prose_only_folder(self):
         out = self.engineer_stop(self.marked(), files={"prediction.md": "moves, in prose"})
@@ -470,7 +470,7 @@ class TestPredictionStop(TestPredictionRecord):
 
     def test_a_plain_name_dispatch_with_a_work_order_is_marked_and_checked(self):
         out = self.dispatch_brief("refactor-engineer")["hookSpecificOutput"]["updatedInput"]["prompt"]
-        self.assertEqual(out.splitlines()[-1], "[perma:prediction-record]")
+        self.assertEqual(out.splitlines()[-1], "[bakehouse:prediction-record]")
         self.assertIn('"decision": "block"', self.engineer_stop(out, files={"prediction.md": "prose"}))
 
     def test_a_refactor_job_with_a_work_order_line_is_not_checked(self):
@@ -478,7 +478,7 @@ class TestPredictionStop(TestPredictionRecord):
                 "Record folder: records/2026-01-02-T7-step1-review/."
         out = self.dispatch_brief("role:refactor:engineer", brief)
         sent = out["hookSpecificOutput"]["updatedInput"]["prompt"] if out else brief
-        self.assertNotIn("[perma:prediction-record]", sent)
+        self.assertNotIn("[bakehouse:prediction-record]", sent)
         for prompt in (sent, brief):  # the transcript holds the prompt after the rewrite, or before it
             with self.subTest(prompt=prompt[-30:]):
                 self.assertEqual(self.engineer_stop(prompt, files={"result.md": "refactor done"}), "")
@@ -499,7 +499,7 @@ class TestPredictionStop(TestPredictionRecord):
     def test_a_plain_name_dispatch_without_a_work_order_warns(self):
         out = self.dispatch_brief("refactor-engineer", "Refactor part X.")
         self.assertIn("predict-gate.sh close` is the hard gate", out["systemMessage"])
-        self.assertNotIn("[perma:prediction-record]", json.dumps(out))
+        self.assertNotIn("[bakehouse:prediction-record]", json.dumps(out))
         self.assertIn("WARN", self.log())
 
     def test_no_binding_no_mark_and_no_warning(self):
@@ -517,7 +517,7 @@ class TestPredictionStop(TestPredictionRecord):
 
     def test_the_marked_prompt_logs_that_line_1_was_rewritten(self):
         self.engineer_stop(self.marked(), files={"moves.prediction.json": self.OK})
-        self.assertIn("PROMPT-SOURCE refactor-engineer: transcript line 1 ends with [perma:prediction-record]",
+        self.assertIn("PROMPT-SOURCE refactor-engineer: transcript line 1 ends with [bakehouse:prediction-record]",
                       self.log())
 
     def test_only_the_engineers_own_folder_counts(self):
@@ -540,11 +540,11 @@ class TestPredictionStop(TestPredictionRecord):
         self.assertIn("moves.prediction.json names no move", out)
 
     def test_a_marker_quoted_mid_prompt_does_not_mark(self):
-        out = self.engineer_stop("Look at [perma:prediction-record] in the hook.", files={"prediction.md": "prose"})
+        out = self.engineer_stop("Look at [bakehouse:prediction-record] in the hook.", files={"prediction.md": "prose"})
         self.assertEqual(out, "")
 
     def test_a_non_engineer_is_never_blocked_and_its_run_record_check_runs(self):
-        quote = "Review T7.\n[perma:prediction-record]"
+        quote = "Review T7.\n[bakehouse:prediction-record]"
         self.assertNotIn("machine prediction", self.stop_as("refactor-reviewer", quote))
         self.assertIn("requires a run record", self.stop_as("refactor-reviewer", quote))
         rec = self.repo / "records" / "2026-01-03-T7-review"
@@ -1390,7 +1390,7 @@ class TestB2UnreadableInput(DecisionFixture):
 
     def test_b2_a_stop_still_fails_open_on_an_unreadable_binding(self):
         self.bpath.write_text('{"owned": true,')
-        engineer = f"Work order T7: x\n{self.line}\n\n[perma:prediction-record]"
+        engineer = f"Work order T7: x\n{self.line}\n\n[bakehouse:prediction-record]"
         self.assertEqual(self.stop_in(engineer, {}, cwd=self.repo, agent="refactor-engineer"), "")
         self.assertEqual(self.stop_in(f"Review T7.\n{self.line}\n", {}, cwd=self.repo), "")
         self.assertIn("UNREADABLE binding for", self.log())

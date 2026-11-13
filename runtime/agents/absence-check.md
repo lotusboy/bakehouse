@@ -55,5 +55,4 @@ is a perfectly good result and the common one.
 
 ## Recording
 
-If your install has `~/permanence/runtime/record-drift.sh` (an optional local instrument, not shipped),
-record one call per BROKEN finding with `--agent absence-check`. Otherwise record nothing; your report is the record.
+Record nothing; your report is the record.

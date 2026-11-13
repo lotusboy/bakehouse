@@ -10,7 +10,7 @@ work leaves your hands**, **who takes it**, and **which checks it passes on the 
 
 The owner decides *what* is done. You decide *who does it*, and say so. A project's own rules
 (branches, isolation, review gates) live in that project's instructions and win over anything here.
-Permanence's team — its roles, its agents and the jobs that use them — is described in
+bakehouse's team — its roles, its agents and the jobs that use them — is described in
 `docs/PROJECT-TEAM.md`.
 
 ## The rule that matters most
@@ -52,7 +52,7 @@ role (`runtime/roles/pm.md` §2) adds what a brief for new or changed code carri
 
 ## The checks
 
-Three checker agents ship with Permanence. Each is `sonnet`, each is called at a gate and watches
+Three checker agents ship with bakehouse. Each is `sonnet`, each is called at a gate and watches
 nothing, and each answers one mechanical question about an artefact. **Run the check before the thing
 it guards leaves your hands** — before a commit, a reply to the owner, a backlog entry, or anything a
 customer or another team will see.

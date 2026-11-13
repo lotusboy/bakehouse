@@ -1,9 +1,9 @@
 ---
-description: "Make the current repo's tool do something new, or fix a defect, from one work order — preflight, the work order as the decision, then one engineer step behind the binding's predicted-moves gates, a reviewer the PM dispatches, a fix round and one pull request. The engineer writes every expected output move before its first edit; any move not predicted stops the job. Every repo fact comes from the repo's binding and the work order. Usage: /perma-change <work-order id> [--dry-run [--from <file>]], where the id is the tracker item that holds the work order. Trigger phrases: \"make the change in <id>\", \"run work order <id>\", the owner approving a work order."
-harness: claude-code, antigravity
+description: "Make the current repo's tool do something new, or fix a defect, from one work order — preflight, the work order as the decision, then one engineer step behind the binding's predicted-moves gates, a reviewer the PM dispatches, a fix round and one pull request. The engineer writes every expected output move before its first edit; any move not predicted stops the job. Every repo fact comes from the repo's binding and the work order. Usage: /bakehouse:change <work-order id> [--dry-run [--from <file>]], where the id is the tracker item that holds the work order. Trigger phrases: \"make the change in <id>\", \"run work order <id>\", the owner approving a work order."
+harness: claude-code
 ---
 
-# Permanence — Change
+# bakehouse — Change
 
 The `change` job for *this* repo, on one work order. You are the PM. Agents do the building and the
 reviewing. The owner takes every decision.
@@ -11,14 +11,14 @@ reviewing. The owner takes every decision.
 A change makes the tool do something new, or fixes a defect. Its behaviour changes on purpose. So its
 gate is **predicted moves**: the engineer writes every expected output move before its first edit,
 and any move it did not predict stops the job. A restructure that changes no output is not a change;
-it is `/perma-refactor`.
+it is `/bakehouse:refactor`.
 
 **The work order is the decision.** It lives in the repo's tracker item. Someone wrote it before this
 job starts: the owner, or a repo procedure that found the tool must change. Its eight fields are
 below. This job never invents a field. If a field is missing, stop and name it.
 
 **Facts come from the binding and the work order.** Every repo path, command, gate, branch form,
-tracker, record folder and owner rule comes from the repo's binding, `<stream>/repo/binding.json`,
+tracker, record folder and owner rule comes from the repo's binding, `.team/binding.json`,
 from the repo files its pointers name, or from the tracker item. Never use a path, command, gate or
 figure from anywhere else. A copied fact would bind every repo to the one it came from. If a step
 needs a fact that none of these gives, stop and name the missing field.
@@ -55,14 +55,16 @@ writes this line; the job never fills it.
 
 The job writes back to the same item, on that branch: `BASE`, the record folder, the prediction file,
 the owner's go on the prediction, each gate's result, the commits and the pull request. The item is
-the job's re-entry state. The stream holds only a pointer to it, in `WIP.md`.
+the job's re-entry state.
 
 ## Words used below
 
-- **`{root}`**: the repo root, `git rev-parse --show-toplevel`. Stay in it. Run every Permanence git
-  command as `git -C ~/permanence …`; never `cd` away from the repo.
-- **The binding**: `~/permanence/<stream>/repo/binding.json`. `<stream>` comes from
-  `~/permanence/runtime/resolve-stream.sh {root}`.
+- **`{root}`**: the repo root, `git rev-parse --show-toplevel`. Stay in it. Run every git command
+  in the records folder as `git -C {records} …`; never `cd` away from the repo.
+- **`{records}`**: the project's records folder, where the ops ledger and the other team records
+  live: `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/locator.py" records`.
+- **The binding**: `{root}/.team/binding.json`, or, for a repo another party owns, the one in its
+  sidecar folder: `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/locator.py" binding` prints its path.
 - **The default branch**: run `git fetch` first. Then `git rev-parse --abbrev-ref origin/HEAD` gives
   `origin/<default>`. Every "merged" and every "on the default branch" below means on
   `origin/<default>`, never a local branch. If `origin/HEAD` is not set, ask the owner which branch
@@ -112,17 +114,17 @@ the job's re-entry state. The stream holds only a pointer to it, in `WIP.md`.
   `git mv` and committed. Close lists `history/` and checks none of it. A commit that touches
   `history/` in or after the commit of the record's first measurement needs the owner's decision,
   cited on that commit as `Prediction-approved: <decision id>` (see step 6.2). Any other top-level
-  `moves.measured*` file with no prediction of its round makes close refuse (Permanence
+  `moves.measured*` file with no prediction of its round makes close refuse (bakehouse
   `docs/PREDICT-GATE.md`, "Closing a work order").
 - **Commit trailer.** Every commit this job makes or asks for ends with the session's own
   `Co-Authored-By` line, taken from its attribution instructions. Never hardcode a model.
 
 ## Dry run
 
-`/perma-change <id> --dry-run` runs steps 1 to 4 as reads only, then fills the
+`/bakehouse:change <id> --dry-run` runs steps 1 to 4 as reads only, then fills the
 [engineer brief](#engineer-brief) and the [reviewer brief](#reviewer-brief) as far as they can be
 filled before any work exists. It writes the briefs into a scratch folder outside the repo and shows
-them. It opens no branch, commits nothing, writes nothing to the repo or the stream, records no ops
+them. It opens no branch, commits nothing, writes nothing to the repo or the records, records no ops
 event and dispatches nothing. It reports what step 3 finds and carries on to step 4 whatever that
 is, so a finished work order can be dry-run. A field that only exists after the engineer runs (its report, the
 diff) is left as `[after the engineer]`. Every other `{…}` and `[…]` must be filled; any left is a
@@ -140,7 +142,7 @@ Each step says who does it. "PM" is this session.
 From the repo root, run:
 
 ```
-python3 ~/permanence/runtime/team-preflight.py change <id> --repo "$(git rev-parse --show-toplevel)"
+python3 "${CLAUDE_PLUGIN_ROOT}/runtime/team-preflight.py" change <id> --repo "$(git rev-parse --show-toplevel)"
 ```
 
 - It exits non-zero: show its output and stop. Change nothing. A missing binding means the team does
@@ -160,9 +162,9 @@ Read `binding.owned`.
 
 - **`true`**: carry on.
 - **`false`**: stop after this step. Say this to the owner:
-  - preflight check 6 has confirmed an unconsumed approval in `<stream>/repo/approvals.json` whose
+  - preflight check 6 has confirmed an unconsumed approval in `approvals.json` beside the binding whose
     scope is exactly `{"workOrder": "<id>"}`. Without one, preflight failed: offer to draft a
-    proposal for `binding.approver`, as `/perma-health` step 6 does, naming the approver by role,
+    proposal for `binding.approver`, as `/bakehouse:health` step 6 does, naming the approver by role,
     never by a person's name;
   - the blocker is design question Q8: where a job in another party's repo keeps its work order and
     step state is not yet decided. This job reads and writes the work order in the repo's tracker,
@@ -231,9 +233,7 @@ Find where this work order stands before doing anything else. Run `git fetch` fi
    outputs; the `serves` line and its count; the branch the job will work on (the `branch:` line, or the one it will open); the size in hours and tokens; one question: go or not. A
    work order from a repo procedure was already decided there; the go here is the go on the spend
    and the branch.
-4. **Record the pointer.** On the owner's go, add one pointer line to the stream's `WIP.md`: the id
-   and "re-entry: the tracker item". Commit `WIP.md` by its path, with `git -C ~/permanence`.
-   A dry run stops here and fills the briefs.
+4. **A dry run stops here** and fills the briefs.
 
 ### 5. The branch (PM)
 
@@ -256,18 +256,17 @@ branch), `BASE` and the record folder. Commit by path, with the trailer. Fill th
    estimate and wait for the owner's go. Dispatch it with `subagent_type: "role:change:engineer"`,
    on the branch. The engineer writes the prediction file and commits it by its path before its
    first code edit, then stops and reports. Close refuses a code commit of the work order that no
-   round's prediction commit comes before (by commit time; Permanence `docs/PREDICT-GATE.md`). The role hook sends it back once if the record folder its brief names holds no
+   round's prediction commit comes before (by commit time; bakehouse `docs/PREDICT-GATE.md`). The role hook sends it back once if the record folder its brief names holds no
    prediction file that parses and names a move. A dispatch by the agent's plain name is checked
    only when the brief keeps its `Work order {id}:` line; otherwise the hook warns. Either way,
    step 9's close is the hard gate.
 
-   **Seals (Permanence `docs/PREDICT-GATE.md`, "Sealing").** Whoever commits a prediction or a
+   **Seals (bakehouse `docs/PREDICT-GATE.md`, "Sealing").** Whoever commits a prediction or a
    baseline seals it at that commit: `predict-gate.sh seal {id} <round> <file>`, `<round>` being
-   `first` or the round label. When the PM commits it in the main checkout, the stream resolves from
-   the registry. The engineer seals each measured file the moment it writes it, with the measure
+   `first` or the round label. When the PM commits it in the main checkout, the project is found
+   from the file's repository. The engineer seals each measured file the moment it writes it, with the measure
    report: `predict-gate.sh seal {id} <round> <measured file> --report <measure report>`. In a lane
-   clone, which is not a registered stream, set `OPS_STREAM=<stream>` or give `--stream`; the seal
-   refuses with neither. Never set `OPS_TS` or `OPS_COMMIT` for a seal: it refuses them.
+   clone with no records pointer, give `--repo <the main clone>`; the seal refuses without it. Never set `OPS_TS` or `OPS_COMMIT` for a seal: it refuses them.
    The engineer commits each round's first code through `predict-gate.sh seal-code {id} <round> --
    <git commit args>`, which commits the staged code and seals that commit in one step; close compares
    that seal with the round's prediction seal. That commit is not amended or rebased afterwards; a later
@@ -303,7 +302,7 @@ branch), `BASE` and the record folder. Commit by path, with the trailer. Fill th
    waits.
 5. The engineer cannot start agents. Never ask it to start the reviewer.
 6. Record each run (owned repos only), with `{id}` as the task:
-   `~/permanence/runtime/ops-event.sh agent-run - "engineer: <id>" <model> - - <tokens> <seconds> <outcome>`.
+   `${CLAUDE_PLUGIN_ROOT}/runtime/ops-event.sh agent-run - "engineer: <id>" <model> - - <tokens> <seconds> <outcome>`.
 
 ### 7. Review (PM, then `role:change:reviewer`)
 
@@ -351,7 +350,7 @@ fresh `role:change:engineer` with the findings, the branch and the brief.
    Then run, from the repo root:
 
    ```
-   ~/permanence/runtime/predict-gate.sh close <id>
+   "${CLAUDE_PLUGIN_ROOT}/runtime/predict-gate.sh" close <id>
    ```
 
    Commit the whole record folder first: close reads it from git at `HEAD`, and an untracked or
@@ -359,10 +358,10 @@ fresh `role:change:engineer` with the findings, the branch and the brief.
    top-level prediction file against its own round's measured file. It exits 0 only when every
    check passes and every top-level measured file belongs to a pair, and then writes one
    `work-order-closed` line to the ops ledger with each file's sha256 and each prediction's commits.
-   A non-zero exit stops the job here: no pull request. Every refusal reason is listed in Permanence
+   A non-zero exit stops the job here: no pull request. Every refusal reason is listed in bakehouse
    `docs/PREDICT-GATE.md`, "Closing a work order". The pass is the command's exit 0, never a reading.
    The owner's exception only:
-   `PREDICT_GATE_CLOSE_OVERRIDE="<reason>" ~/permanence/runtime/predict-gate.sh close <id>`, which is
+   `PREDICT_GATE_CLOSE_OVERRIDE="<reason>" "${CLAUDE_PLUGIN_ROOT}/runtime/predict-gate.sh" close <id>`, which is
    recorded in the ops ledger. Close needs an owned repository: the ops ledger exists only there. In
    another party's repository close cannot record a pass, so a change job there stops at this step
    until the owner decides how such a job closes.
@@ -390,8 +389,7 @@ After the pull request that carries the job's branch **has merged**:
   step 9's `work-order-closed` line. It does not re-run the history, trailer or named-baseline checks,
   so a squash merge closes too. With no step-9 line, it says so and refuses. It writes a `note` line,
   not a second close. The work order is not done until it exits 0.
-- Replace the stream's `WIP.md` pointer line with one line: the id, done. Commit `WIP.md`, and the
-  ops ledger when it changed, each by its path, with `git -C ~/permanence`.
+- Commit the ops ledger when it changed, by its path, with `git -C {records}`.
 
 ## The predicted-moves gate
 
@@ -410,10 +408,10 @@ not a gate.
    for equality.
 3. The prediction goes to the owner before any site is switched (step 6.2).
 4. Then measure into `moves.measured.json` (the binding's measurement, flat key → value), with
-   `moves.baseline.json` measured on BASE, and run `~/permanence/runtime/predict-gate.sh check
+   `moves.baseline.json` measured on BASE, and run `"${CLAUDE_PLUGIN_ROOT}/runtime/predict-gate.sh" check
    --measured <record>/moves.measured.json`; the prediction and baseline beside it are found from its
    round. A non-zero exit is an andon. The pass is the gate's exit 0, not the engineer's reading. The
-   prediction file is `moves.prediction.json` (format: Permanence `docs/PREDICT-GATE.md`); each
+   prediction file is `moves.prediction.json` (format: bakehouse `docs/PREDICT-GATE.md`); each
    `expected` and `mustNotMove` entry of the work order appears in it by key. A prose prediction may
    sit beside it; it is not the prediction.
 5. An unpredicted move stops the job. It goes to the owner, not into a test fix. Never edit a test or
@@ -502,12 +500,12 @@ command, pass and when]. The gates that prove the need: [work order: gates].
   until the PM says go. Afterwards read it back exactly; stop on any unpredicted move. Never edit a
   test or an output to make a gate pass.
   The record folder holds, before close: the prediction, moves.baseline.json, moves.measured.json
-  (one of each per round) and result.md. /perma-health flags the record folder when it lacks one or
+  (one of each per round) and result.md. /bakehouse:health flags the record folder when it lacks one or
   holds one empty: the folder named above, and any other folder of the work order that holds a
   prediction or a result.md (a design folder's flags clear when the work order closes cleanly).
   Every commit subject, a fix round's included, starts with the work-order id: a commit that names
   no id belongs to no work order.
-  Mutation testing: run `~/permanence/runtime/mutate.sh` with `--by engineer`; it writes
+  Mutation testing: run `${CLAUDE_PLUGIN_ROOT}/runtime/mutate.sh` with `--by engineer`; it writes
   engineer-mutations.json (engineer-mutations-fix<N>.json for fix round N) in the record folder.
 Run BASE against BASE first. Scratch dir: [PM: a folder under the system temp directory, outside
 the repo, named by the work order id, never by the user's name].
@@ -563,10 +561,9 @@ Turn budget: [PM: turns] of your cap. Leave 15 turns to write findings.md.
 - **Behaviour changes only as predicted.** Any output move not predicted stops the job.
 - **The reviewer did not do the work.** The PM dispatches it; the engineer never does; the session
   that built the change never reviews it.
-- **One-way flow.** The approval record, the pointer and the ops ledger live in the stream. Never
-  write a Permanence path or name into the repo's files, branches, commits or review records.
-- **Commit by path.** In `~/permanence`, add only the files this job changed, each by its path, with
-  `git -C ~/permanence`. Never `git add -A`: other sessions may have writes in flight.
+- **Commit by path.** In the records folder, add only the files this job changed, each by its path,
+  with `git -C {records}`. Never `git add -A`: other sessions may have writes in flight.
 - **Plain report.** Counts, not adjectives. Say what holds, what is next, and why.
 
-If `~/permanence` is missing or this workspace has no stream, say so plainly rather than inventing content.
+If this repo has no team (no binding), or the locator says setup is needed, say so plainly rather than
+inventing content.

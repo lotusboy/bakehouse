@@ -1,15 +1,15 @@
 ---
-description: "Health watch for the current repo — run preflight, rewrite the repo's health register in its Permanence stream from the binding's signal, list the parts that are ready, check each work order's record against the process, then offer a refactor (a repo you own) or draft a proposal for the repo's approver (a repo another party owns). It never starts work. Trigger phrases: \"health check this repo\", \"what is ready to refactor\"."
-harness: claude-code, antigravity
+description: "Health watch for the current repo — run preflight, rewrite the repo's health register in its records folder from the binding's signal, list the parts that are ready, check each work order's record against the process, then offer a refactor (a repo you own) or draft a proposal for the repo's approver (a repo another party owns). It never starts work. Trigger phrases: \"health check this repo\", \"what is ready to refactor\"."
+harness: claude-code
 ---
 
-# Permanence — Health
+# bakehouse — Health
 
 The health watch for *this* repo. It says where to look. It never starts work.
 
 Steps 1 to 7 and step 9 are deterministic and cost no AI spend: they run one command and read one
 file. Every repo fact — the register's name, the signal, who owns the repo, who approves — comes from the repo's
-binding, `<stream>/repo/binding.json`. Never use a path, command, threshold or part name that the
+binding, `.team/binding.json`. Never use a path, command, threshold or part name that the
 binding and the register do not give you. The exceptions are steps 8 and 9: each runs one fixed
 command that is the same for every repo, and asks you to read its output. A copied fact would bind every repo to the one it came from.
 
@@ -18,7 +18,7 @@ command that is the same for every repo, and asks you to read its output. A copi
 1. **Preflight.** From the repo root, run:
 
    ```
-   python3 ~/permanence/runtime/team-preflight.py health --repo "$(git rev-parse --show-toplevel)"
+   python3 "${CLAUDE_PLUGIN_ROOT}/runtime/team-preflight.py" health --repo "$(git rev-parse --show-toplevel)"
    ```
 
    - It exits non-zero: show its output and stop. Change nothing. A missing binding means the team
@@ -26,12 +26,11 @@ command that is the same for every repo, and asks you to read its output. A copi
    - It exits 0: carry on. A `note` line is not a failure. Keep a note that the generic signal
      script is not installed yet: step 3 needs it.
 
-2. **Find the stream and read the binding.**
-   - Run `~/permanence/runtime/resolve-stream.sh "$(pwd -P)"`. The stream folder is
-     `~/permanence/<stream>/`.
-   - Read `~/permanence/<stream>/repo/binding.json`. Keep `owned`, `approver`, `register` and
-     `signal`.
-   - The register's full path is `~/permanence/<stream>/repo/<register>`, with `~` expanded. This is
+2. **Find the records folder and read the binding.**
+   - Run `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/locator.py" records`. It prints the project's
+     records folder, `{records}`. Run it with `binding` in place of `records` for the binding's path.
+   - Read the binding. Keep `owned`, `approver`, `register` and `signal`.
+   - The register's full path is `{records}/registers/<register>`. This is
      the value of `{register}`. The value of `{root}` is the repo root from step 1. The value of
      `{date}` is today, as `YYYY-MM-DD`.
 
@@ -41,9 +40,9 @@ command that is the same for every repo, and asks you to read its output. A copi
      `key` whose `id` is `id`. Its `command` is the signal command. A pointer that does not lead to
      exactly one command: stop and say so.
    - **Rules for the generic script** (an object with `script`): the command is
-     `python3 ~/permanence/runtime/<script>.py --binding <the binding's path> --register {register}
-     --repo {root}`. If preflight noted that the script is not installed, or
-     `~/permanence/runtime/<script>.py` does not exist, stop here and say "the generic signal script
+     `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/<script>.py" --binding <the binding's path> --register
+     {register} --repo {root}`. If preflight noted that the script is not installed, or
+     `${CLAUDE_PLUGIN_ROOT}/runtime/<script>.py` does not exist, stop here and say "the generic signal script
      is not installed yet". Run nothing, write nothing, and skip steps 4 to 7. This is a clean stop,
      not an error.
 
@@ -52,7 +51,7 @@ command that is the same for every repo, and asks you to read its output. A copi
 
 4. **Run the signal.** Run the filled command from the repo root, once. Show its printed output.
    - It exits non-zero: show the error and stop. Do not retry with other arguments.
-   - It rewrites the register in the stream and nothing in the repo. The signal never overwrites a
+   - It rewrites the register in the records folder and nothing in the repo. The signal never overwrites a
      part's `decision`. Neither does this command.
 
 5. **List the ready parts.** Read the register. List every part under `parts` whose `state` is
@@ -66,19 +65,19 @@ command that is the same for every repo, and asks you to read its output. A copi
 
 6. **Offer or propose, by ownership.** A ready part is an offer, never an order.
    - **`owned` is true.** Offer the owner one refactor per ready part, in one line each:
-     `/perma-refactor <part>`, and that it starts only when the owner says so. If `/perma-refactor`
+     `/bakehouse:refactor <part>`, and that it starts only when the owner says so. If `/bakehouse:refactor`
      is not installed, say so; the decision is still the owner's: restructure or accept. Do not start
      the refactor, write a decision, open a branch or brief an agent.
    - **`owned` is false.** Draft a proposal for the owner to take to the binding's `approver` — name
      the approver by that role, never by a person's name. For each ready part, the proposal states:
      the part id; the figures from step 5; what a refactor would do (restructure the part, behaviour
      unchanged, output only a pull request); and the approval it needs, a scope of exactly
-     `{"part": "<part id>"}`. Show it in chat. When the owner says to keep it, add it to the stream's
-     `WIP.md` as one row under a short proposal id: an approval later cites that id. Nothing is
+     `{"part": "<part id>"}`. Show it in chat, under a short proposal id: an approval later cites that id. Nothing is
      started. Nothing is written to the repo, its tracker or its branches.
 
-7. **Commit the register.** In `~/permanence`, if the register changed, `git add` that one file by
-   its path and commit it: `health(<stream>): register as of <computed.asOf>`. Never `git add -A`:
+7. **Commit the register.** In `{records}`, if the register changed, `git add` that one file by
+   its path and commit it: `health(<repo>): register as of <computed.asOf>`, where `<repo>` is the
+   repo folder's name. Never `git add -A`:
    other sessions may have writes in flight. Nothing changed: say so; make no empty commit. Never
    push.
 
@@ -117,19 +116,13 @@ command that is the same for every repo, and asks you to read its output. A copi
 
 9. **Check the records against the process.** This step runs whenever step 1 passed, after step 8,
    even when step 8, step 3 or step 4 stopped.
-   It reads the repo at one ref and the stream's ops ledger, and rewrites one file in the stream,
-   `<stream>/repo/records.json`. The rules are in Permanence `docs/PROJECT-TEAM.md`, "Records against
-   the process". From the repo root, run:
+   It reads the repo at one ref and the project's ops ledger, and rewrites one file in the records
+   folder, `{records}/registers/records.json`. The rules are in bakehouse `docs/PROJECT-TEAM.md`,
+   "Records against the process". From the repo root, run:
 
    ```bash
-   python3 ~/permanence/runtime/records-check.py --binding ~/permanence/<stream>/repo/binding.json \
-       --repo "$(git rev-parse --show-toplevel)"
-   python3 ~/permanence/runtime/records-check.py --stream <stream>
+   python3 "${CLAUDE_PLUGIN_ROOT}/runtime/records-check.py" --repo "$(git rev-parse --show-toplevel)"
    ```
-
-   The second command reads the stream's own record folders (work whose record sits in the stream,
-   not in the repo) and rewrites `<stream>/repo/records-stream.json`. Report its first line and each
-   open flag the same way; commit its register with `records.json`.
 
    - Exit 2: show the error and stop. It names the binding field or the input that is wrong.
    - Exit 0: show its printed block, then report:
@@ -143,7 +136,7 @@ command that is the same for every repo, and asks you to read its output. A copi
         count of work orders.
    - The flags are their owner's to act on: the PM, for its own runs. This step never acts on one:
      it closes no work order, writes no artefact and records no override.
-   - Commit `records.json` as in step 7, by its path: `records(<stream>): as of <today>, <repo>
+   - Commit `records.json` as in step 7, by its path: `records(<repo>): as of <today>, <repo>
      at <head>`, where `<head>` is the short commit the printed block's first line names: the
      product-repo commit the register describes. The register holds no date or head, so it changes
      only when the findings do. Nothing changed: say
@@ -156,10 +149,9 @@ command that is the same for every repo, and asks you to read its output. A copi
 - **Facts from the binding.** Every repo path, command and owner rule comes from the binding or the
   register; the fixed commands of steps 8 and 9 are the only exceptions. If the binding lacks something this procedure needs, stop and say which field.
 - **A repo another party owns is read-only.** The checkout is never written: no file, branch, hook,
-  tracker item or commit. The only output is a proposal, which stays in the stream.
-- **One-way flow.** The register lives in the stream. Never write a Permanence path or name into the
-  repo's files.
+  tracker item or commit. The only output is a proposal, shown in chat.
 - **Plain report.** Counts, not adjectives. State the result outright: how many parts are ready, and
   what the owner can decide.
 
-If `~/permanence` is missing or this workspace has no stream, say so plainly rather than inventing content.
+If this repo has no team (no binding), or the locator says setup is needed, say so plainly rather than
+inventing content.

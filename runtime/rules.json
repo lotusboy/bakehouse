@@ -67,7 +67,7 @@
    "id": "pm-06",
    "file": "runtime/roles/pm.md",
    "sentences": [
-    "The table in `runtime/agent-roles.json` names which installed agent fills each role and how it must run, and a hook enforces that on every dispatch."
+    "The table in `${CLAUDE_PLUGIN_ROOT}/runtime/agent-roles.json` names which installed agent fills each role and how it must run, and a hook enforces that on every dispatch."
    ],
    "enforcer": "code",
    "proof": "test_team_roles.TestRules.test_direct_dispatch_keeps_role_rules"
@@ -76,7 +76,7 @@
    "id": "pm-07",
    "file": "runtime/roles/pm.md",
    "sentences": [
-    "- **Never start a second thing without parking the first.** Parking means a row in `WIP.md` with the reason."
+    "- **Never start a second thing without parking the first.** Park it with the reason."
    ],
    "enforcer": "prompt",
    "proof": "prompt only: no tool, hook or review brief checks it"
@@ -130,7 +130,7 @@
    "id": "pm-13",
    "file": "runtime/roles/pm.md",
    "sentences": [
-    "- **Offer a refactor, never start one.** When the owner asks to refactor a part, or the health watch shows a part ready, offer `/perma-refactor <part>`; it starts only on the owner's decision."
+    "- **Offer a refactor, never start one.** When the owner asks to refactor a part, or the health watch shows a part ready, offer `/bakehouse:refactor <part>`; it starts only on the owner's decision."
    ],
    "enforcer": "prompt",
    "proof": "prompt only: no tool, hook or review brief checks it"
@@ -145,20 +145,10 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "pm-15",
-   "file": "runtime/roles/pm.md",
-   "sentences": [
-    "- ⛔ **Never write Permanence content or paths into a project repo.** The pointer is one-way."
-   ],
-   "enforcer": "prompt",
-   "proof": "prompt only: no tool, hook or review brief checks it",
-   "note": "the pre-push guard (.githooks/pre-push) reads Permanence's own pushes, not a project repo"
-  },
-  {
    "id": "pm-16",
    "file": "runtime/roles/pm.md",
    "sentences": [
-    "**Each rule below applies where the owner uses that tool; none is required.** A stream that has never used one has no file for it, and the PM does not start one unasked — offer it once when the need first shows."
+    "**Each rule below applies where the owner uses that tool; none is required.** A project that has never used one has no file for it, and the PM does not start one unasked — offer it once when the need first shows."
    ],
    "enforcer": "prompt",
    "proof": "prompt only: no tool, hook or review brief checks it"
@@ -197,7 +187,7 @@
    "id": "pm-20",
    "file": "runtime/roles/pm.md",
    "sentences": [
-    "`spend.sh record` refuses a first record without `--kind` (a role from `runtime/agent-roles.json`: one of its `roles`, or a `spend_kinds` entry open to new records), `--why`, `--predicted`, `--predicted-tokens`, `--result` and `--outcome`; a run that went worse or failed, or whose tokens are off by more than half, gets a lesson stub in `TOOLS.md`."
+    "`spend.sh record` refuses a first record without `--kind` (a role from `${CLAUDE_PLUGIN_ROOT}/runtime/agent-roles.json`: one of its `roles`, or a `spend_kinds` entry open to new records), `--why`, `--predicted`, `--predicted-tokens`, `--result` and `--outcome`; a run that went worse or failed, or whose tokens are off by more than half, gets a lesson stub in `TOOLS.md`."
    ],
    "enforcer": "code",
    "proof": "test_spend_and_save_report.Spend.test_a_first_record_states_the_tools_result_not_only_its_cost",
@@ -207,7 +197,7 @@
    "id": "pm-21",
    "file": "runtime/roles/pm.md",
    "sentences": [
-    "- **Spend is measured, not estimated.** When an agent finishes, record the token count the harness reported with `runtime/spend.sh record` — the harness's figure, never the agent's own estimate."
+    "- **Spend is measured, not estimated.** When an agent finishes, record the token count the harness reported with `${CLAUDE_PLUGIN_ROOT}/runtime/spend.sh record` — the harness's figure, never the agent's own estimate."
    ],
    "enforcer": "prompt",
    "proof": "prompt only: no tool, hook or review brief checks it",
@@ -217,7 +207,7 @@
    "id": "pm-22",
    "file": "runtime/roles/pm.md",
    "sentences": [
-    "- **Reports are saved, never re-typed.** When an agent's report must live in a file, pipe its text exactly as returned into `runtime/save-report.sh`."
+    "- **Reports are saved, never re-typed.** When an agent's report must live in a file, pipe its text exactly as returned into `${CLAUDE_PLUGIN_ROOT}/runtime/save-report.sh`."
    ],
    "enforcer": "prompt",
    "proof": "prompt only: no tool, hook or review brief checks it",
@@ -283,7 +273,7 @@
    "id": "perma-change-06",
    "file": "runtime/commands/perma-change.md",
    "sentences": [
-    "Run every Permanence git command as `git -C ~/permanence …`; never `cd` away from the repo."
+    "Run every git command in the records folder as `git -C {records} …`; never `cd` away from the repo."
    ],
    "enforcer": "prompt",
    "proof": "prompt only: no tool, hook or review brief checks it"
@@ -356,7 +346,7 @@
    "id": "perma-change-13",
    "file": "runtime/commands/perma-change.md",
    "sentences": [
-    "Any other top-level `moves.measured*` file with no prediction of its round makes close refuse (Permanence `docs/PREDICT-GATE.md`, \"Closing a work order\")."
+    "Any other top-level `moves.measured*` file with no prediction of its round makes close refuse (bakehouse `docs/PREDICT-GATE.md`, \"Closing a work order\")."
    ],
    "enforcer": "code",
    "proof": "test_predict_gate.Close.test_close_names_a_rounds_missing_measured_file_and_refuses_an_unpaired_measurement"
@@ -412,7 +402,7 @@
    "id": "perma-change-19",
    "file": "runtime/commands/perma-change.md",
    "sentences": [
-    "Without one, preflight failed: offer to draft a proposal for `binding.approver`, as `/perma-health` step 6 does, naming the approver by role, never by a person's name;"
+    "Without one, preflight failed: offer to draft a proposal for `binding.approver`, as `/bakehouse:health` step 6 does, naming the approver by role, never by a person's name;"
    ],
    "enforcer": "code",
    "proof": "test_team_preflight.TestApproval.test_no_matching_record_fails",
@@ -422,7 +412,7 @@
    "id": "perma-change-20",
    "file": "runtime/commands/perma-change.md",
    "sentences": [
-    "Without one, preflight failed: offer to draft a proposal for `binding.approver`, as `/perma-health` step 6 does, naming the approver by role, never by a person's name;"
+    "Without one, preflight failed: offer to draft a proposal for `binding.approver`, as `/bakehouse:health` step 6 does, naming the approver by role, never by a person's name;"
    ],
    "enforcer": "prompt",
    "proof": "prompt only: no tool, hook or review brief checks it",
@@ -537,7 +527,7 @@
     "Never ask it to start the reviewer."
    ],
    "enforcer": "prompt",
-   "proof": "code exists, no proof test: runtime/agents/refactor-engineer.md (its tools: line names no agent tool; the harness, not Permanence, enforces it)"
+   "proof": "code exists, no proof test: runtime/agents/refactor-engineer.md (its tools: line names no agent tool; the harness, not bakehouse, enforces it)"
   },
   {
    "id": "perma-change-33",
@@ -704,15 +694,6 @@
    "note": "code covers only role resolution (test_team_roles.TestGate.test_reviewer_falls_back_to_general_purpose); nothing stops the session reviewing its own work"
   },
   {
-   "id": "perma-change-49",
-   "file": "runtime/commands/perma-change.md",
-   "sentences": [
-    "Never write a Permanence path or name into the repo's files, branches, commits or review records."
-   ],
-   "enforcer": "prompt",
-   "proof": "prompt only: no tool, hook or review brief checks it"
-  },
-  {
    "id": "perma-change-50",
    "file": "runtime/commands/perma-change.md",
    "sentences": [
@@ -850,15 +831,6 @@
    "note": "the tools leave a repo alone (test_health_signal.TestRefusals.test_the_repository_is_left_unchanged; repo-hooks writes a hook only into an owned repo), but nothing stops the session writing"
   },
   {
-   "id": "perma-health-15",
-   "file": "runtime/commands/perma-health.md",
-   "sentences": [
-    "Never write a Permanence path or name into the repo's files."
-   ],
-   "enforcer": "prompt",
-   "proof": "prompt only: no tool, hook or review brief checks it"
-  },
-  {
    "id": "perma-refactor-01",
    "file": "runtime/commands/perma-refactor.md",
    "sentences": [
@@ -871,7 +843,7 @@
    "id": "perma-refactor-02",
    "file": "runtime/commands/perma-refactor.md",
    "sentences": [
-    "**A ready part is an offer, never an order.** This command starts only when the owner has said `/perma-refactor <part>`, or has asked for the part to be refactored."
+    "**A ready part is an offer, never an order.** This command starts only when the owner has said `/bakehouse:refactor <part>`, or has asked for the part to be refactored."
    ],
    "enforcer": "prompt",
    "proof": "prompt only: no tool, hook or review brief checks it"
@@ -880,7 +852,7 @@
    "id": "perma-refactor-03",
    "file": "runtime/commands/perma-refactor.md",
    "sentences": [
-    "Run every Permanence git command as `git -C ~/permanence …`; never `cd` away from the repo."
+    "Run every git command in the records folder as `git -C {records} …`; never `cd` away from the repo."
    ],
    "enforcer": "prompt",
    "proof": "prompt only: no tool, hook or review brief checks it"
@@ -972,7 +944,7 @@
    "id": "perma-refactor-12",
    "file": "runtime/commands/perma-refactor.md",
    "sentences": [
-    "Without one, preflight failed: offer to draft a proposal for `binding.approver`, as `/perma-health` step 6 does, naming the approver by role, never by a person's name;"
+    "Without one, preflight failed: offer to draft a proposal for `binding.approver`, as `/bakehouse:health` step 6 does, naming the approver by role, never by a person's name;"
    ],
    "enforcer": "code",
    "proof": "test_team_preflight.TestApproval.test_no_matching_record_fails",
@@ -982,7 +954,7 @@
    "id": "perma-refactor-13",
    "file": "runtime/commands/perma-refactor.md",
    "sentences": [
-    "Without one, preflight failed: offer to draft a proposal for `binding.approver`, as `/perma-health` step 6 does, naming the approver by role, never by a person's name;"
+    "Without one, preflight failed: offer to draft a proposal for `binding.approver`, as `/bakehouse:health` step 6 does, naming the approver by role, never by a person's name;"
    ],
    "enforcer": "prompt",
    "proof": "prompt only: no tool, hook or review brief checks it",
@@ -1087,7 +1059,7 @@
     "Never ask it to start the reviewer."
    ],
    "enforcer": "prompt",
-   "proof": "code exists, no proof test: runtime/agents/refactor-engineer.md (its tools: line names no agent tool; the harness, not Permanence, enforces it)"
+   "proof": "code exists, no proof test: runtime/agents/refactor-engineer.md (its tools: line names no agent tool; the harness, not bakehouse, enforces it)"
   },
   {
    "id": "perma-refactor-25",
@@ -1203,15 +1175,6 @@
    "enforcer": "prompt",
    "proof": "prompt only: no tool, hook or review brief checks it",
    "note": "code covers only role resolution (test_team_roles.TestGate.test_reviewer_falls_back_to_general_purpose); nothing stops the session reviewing its own work"
-  },
-  {
-   "id": "perma-refactor-37",
-   "file": "runtime/commands/perma-refactor.md",
-   "sentences": [
-    "Never write a Permanence path or name into the repo's files, branches, commits or review records."
-   ],
-   "enforcer": "prompt",
-   "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
    "id": "perma-refactor-38",
@@ -1468,7 +1431,7 @@
     "- You never edit a file, commit, push, or start another agent."
    ],
    "enforcer": "prompt",
-   "proof": "code exists, no proof test: runtime/agents/human-expert.md (its tools: line names no agent tool; the harness, not Permanence, enforces it)",
+   "proof": "code exists, no proof test: runtime/agents/human-expert.md (its tools: line names no agent tool; the harness, not bakehouse, enforces it)",
    "note": "covers 'start another agent' only; Bash can still edit, commit and push"
   },
   {
@@ -1698,7 +1661,7 @@
    "id": "perma-change-66",
    "file": "runtime/commands/perma-change.md",
    "sentences": [
-    "Close refuses a code commit of the work order that no round's prediction commit comes before (by commit time; Permanence `docs/PREDICT-GATE.md`)."
+    "Close refuses a code commit of the work order that no round's prediction commit comes before (by commit time; bakehouse `docs/PREDICT-GATE.md`)."
    ],
    "enforcer": "code",
    "proof": "test_predict_gate.CloseOrder.test_a_prediction_committed_with_or_after_the_code_refuses",
@@ -1717,10 +1680,10 @@
    "id": "perma-change-62",
    "file": "runtime/commands/perma-change.md",
    "sentences": [
-    "In a lane clone, which is not a registered stream, set `OPS_STREAM=<stream>` or give `--stream`; the seal refuses with neither."
+    "In a lane clone with no records pointer, give `--repo <the main clone>`; the seal refuses without it."
    ],
    "enforcer": "code",
-   "proof": "test_seal.SealTest.test_refuses_when_no_stream_resolves_and_takes_stream_or_ops_stream"
+   "proof": "test_seal.SealTest.test_refuses_when_no_project_is_found_and_takes_repo"
   },
   {
    "id": "perma-change-63",
@@ -1929,7 +1892,7 @@
    "sentence": "It never starts work.",
    "under": [
     "(top)",
-    "Permanence — Health"
+    "bakehouse — Health"
    ]
   },
   {

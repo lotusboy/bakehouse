@@ -70,5 +70,4 @@ the work, or the session. If every number reconciles, say so in one line — tha
 
 ## Recording
 
-If your install has `~/permanence/runtime/record-drift.sh` (an optional local instrument, not shipped),
-record one call per BROKEN finding with `--agent count-check`. Otherwise record nothing; your report is the record.
+Record nothing; your report is the record.

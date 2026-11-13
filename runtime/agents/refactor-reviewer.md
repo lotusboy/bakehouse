@@ -42,7 +42,7 @@ what the old one let through". Test both halves.
   each one that passes, with the exact reorder or edit.
 - Pick at least 5 of the engineer's mutation tests and perform the mutation yourself. Write your
   mutants and those as a JSON list of `{id, file, find, replace, note}` and run them through
-  `~/permanence/runtime/mutate.sh --mutants <list> --record <your run directory> --round <your
+  `${CLAUDE_PLUGIN_ROOT}/runtime/mutate.sh --mutants <list> --record <your run directory> --round <your
   round>` (docs/PROJECT-TEAM.md, "The mutation runner"): it plants each in a clean copy of the
   commit, runs the tests the binding names, and writes the rows. Do not write your own harness. A
   mutant that needs more than one edit, or a repository whose binding has no `mutation` block (the

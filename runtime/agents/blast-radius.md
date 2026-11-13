@@ -73,5 +73,4 @@ what you searched for so the claim can be judged.
 
 ## Recording
 
-If your install has `~/permanence/runtime/record-drift.sh` (an optional local instrument, not shipped),
-record one call per BROKEN finding with `--agent blast-radius`. Otherwise record nothing; your report is the record.
+Record nothing; your report is the record.

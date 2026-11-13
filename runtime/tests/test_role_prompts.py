@@ -39,7 +39,7 @@ class TestPmReplyShape(unittest.TestCase):
             self.shape,
         )
         self.assertIn(
-            "the session-start hand-back (§3, step 5, and `/perma-startup`)", self.shape
+            "the session-start hand-back (§3, step 2)", self.shape
         )
         self.assertIn("**Say when a run starts.**", self.pm)
         self.assertNotIn("Every update and every question", self.pm)

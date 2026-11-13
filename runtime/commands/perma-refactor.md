@@ -1,9 +1,9 @@
 ---
-description: "Refactor one part of the current repo — preflight, the architect's restructure-or-accept decision for the owner, then one engineer step at a time behind the binding's gates, a reviewer the PM dispatches, a fix round and one pull request per step. Steps are byte-identical, except meaning changes the owner named in the decision, which are gated by predicted moves. Every repo fact comes from the repo's binding. Usage: /perma-refactor <part>, where <part> is a part id from the repo's health register. Trigger phrases: \"refactor <part>\", \"restructure <part>\", the owner accepting a ready part from /perma-health."
-harness: claude-code, antigravity
+description: "Refactor one part of the current repo — preflight, the architect's restructure-or-accept decision for the owner, then one engineer step at a time behind the binding's gates, a reviewer the PM dispatches, a fix round and one pull request per step. Steps are byte-identical, except meaning changes the owner named in the decision, which are gated by predicted moves. Every repo fact comes from the repo's binding. Usage: /bakehouse:refactor <part>, where <part> is a part id from the repo's health register. Trigger phrases: \"refactor <part>\", \"restructure <part>\", the owner accepting a ready part from /bakehouse:health."
+harness: claude-code
 ---
 
-# Permanence — Refactor
+# bakehouse — Refactor
 
 The `refactor` job for *this* repo, on one part. You are the PM. Agents do the building and the
 reviewing. The owner takes every decision.
@@ -17,13 +17,13 @@ A refactor has two kinds of step:
 A part's shape changes as more of the problem is uncovered. A refactor is growth, not failure.
 
 **Facts come from the binding.** Every repo path, command, gate, branch form, tracker, record folder
-and owner rule comes from the repo's binding, `<stream>/repo/binding.json`, from the repo files its
+and owner rule comes from the repo's binding, `.team/binding.json`, from the repo files its
 pointers name, from the health register, or from the tracker item. Never use a path, command,
 threshold, gate or part name from anywhere else. A copied fact would bind every repo to the one it
 came from. If a step needs a fact that none of these gives, stop and name the missing field.
 
 **A ready part is an offer, never an order.** This command starts only when the owner has said
-`/perma-refactor <part>`, or has asked for the part to be refactored. Nothing here runs on the
+`/bakehouse:refactor <part>`, or has asked for the part to be refactored. Nothing here runs on the
 signal alone.
 
 **No dispatch without the owner's go on the spend.** Before each agent dispatch, state the estimated
@@ -31,11 +31,13 @@ tokens and wait for the owner's go.
 
 ## Words used below
 
-- **`{root}`**: the repo root, `git rev-parse --show-toplevel`. Stay in it. Run every Permanence git
-  command as `git -C ~/permanence …`; never `cd` away from the repo.
-- **The binding**: `~/permanence/<stream>/repo/binding.json`. `<stream>` comes from
-  `~/permanence/runtime/resolve-stream.sh {root}`.
-- **The register**: `~/permanence/<stream>/repo/<binding.register>`.
+- **`{root}`**: the repo root, `git rev-parse --show-toplevel`. Stay in it. Run every git command
+  in the records folder as `git -C {records} …`; never `cd` away from the repo.
+- **`{records}`**: the project's records folder, where the register, the ops ledger and the other
+  team records live: `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/locator.py" records`.
+- **The binding**: `{root}/.team/binding.json`, or, for a repo another party owns, the one in its
+  sidecar folder: `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/locator.py" binding` prints its path.
+- **The register**: `{records}/registers/<binding.register>`.
 - **The default branch**: run `git fetch` first. Then `git rev-parse --abbrev-ref origin/HEAD` gives
   `origin/<default>`. Every "merged" and every "on the default branch" below means on
   `origin/<default>`, never a local branch. If `origin/HEAD` is not set, ask the owner which branch
@@ -44,7 +46,7 @@ tokens and wait for the owner's go.
   and equals the part's `decision.backlogId` in the register. It is the job's re-entry state. It holds
   the plan: each step's kind, target and gate type; for a meaning-change step, the meaning and the
   expected moves. Each step's entry records its record folder, its commits, each gate's result and
-  its done-mark. The stream holds only a pointer to it, in `WIP.md`.
+  its done-mark.
 - **`BASE`** of a step: the head of `origin/<default>` when the step's branch is opened. Record it in
   the step's entry. Later, recompute it as `git merge-base origin/<default> <step branch>`.
 - **A pointer** (`file#key` or `file#key.id`): open `file` in the repo root. `file#key` means the
@@ -77,7 +79,7 @@ Each step says who does it. "PM" is this session.
 From the repo root, run:
 
 ```
-python3 ~/permanence/runtime/team-preflight.py refactor <part> --repo "$(git rev-parse --show-toplevel)"
+python3 "${CLAUDE_PLUGIN_ROOT}/runtime/team-preflight.py" refactor <part> --repo "$(git rev-parse --show-toplevel)"
 ```
 
 - It exits non-zero: show its output and stop. Change nothing. A missing binding means the team does
@@ -97,9 +99,9 @@ Read `binding.owned`.
 
 - **`true`**: carry on.
 - **`false`**: say this to the owner first, before any work:
-  - preflight check 6 has confirmed an unconsumed approval in `<stream>/repo/approvals.json` whose
+  - preflight check 6 has confirmed an unconsumed approval in `approvals.json` beside the binding whose
     scope is exactly `{"part": "<part>"}`. Without one, preflight failed: offer to draft a proposal
-    for `binding.approver`, as `/perma-health` step 6 does, naming the approver by role, never by a
+    for `binding.approver`, as `/bakehouse:health` step 6 does, naming the approver by role, never by a
     person's name;
   - the job can run steps 3 to 5 (re-entry, architect, decision). It stops before step 6, because
     step 6 writes the tracker item, and where a job in another party's repo keeps its plan and step
@@ -152,10 +154,11 @@ Find where this part's job stands before doing anything else. Run `git fetch` fi
 
 ### 4. Signal and architect (PM, then `role:refactor:architect`)
 
-1. **Signal.** Refresh the register exactly as `/perma-health` steps 3 and 4 do: get the command
+1. **Signal.** Refresh the register exactly as `/bakehouse:health` steps 3 and 4 do: get the command
    from `binding.signal`, fill it, run it once from the repo root, and show its output. Commit the
-   register: `git -C ~/permanence add <register path>`, then
-   `git -C ~/permanence commit -m "health(<stream>): register as of <computed.asOf>" -- <register path>`.
+   register: `git -C {records} add <register path>`, then
+   `git -C {records} commit -m "health(<repo>): register as of <computed.asOf>" -- <register path>`,
+   where `<repo>` is the repo folder's name.
    Never `git add -A`. If the part is now `settled`, say so and ask the owner whether to go on.
 2. **Architect.** Fill the [architect brief](#architect-brief). Check that no `{…}` and no `[…]`
    field is left. Name the mode in the brief: `RESTRUCTURE` when the part was flagged by fix
@@ -164,7 +167,7 @@ Find where this part's job stands before doing anything else. Run `git fetch` fi
    Dispatch it with
    `subagent_type: "role:refactor:architect"`. The architect reads and measures only.
 3. Record the run (owned repos only):
-   `~/permanence/runtime/ops-event.sh agent-run - "architect: <part>" <model> - - <tokens> <seconds> <outcome>`.
+   `${CLAUDE_PLUGIN_ROOT}/runtime/ops-event.sh agent-run - "architect: <part>" <model> - - <tokens> <seconds> <outcome>`.
 
 ### 5. The decision (PM → owner)
 
@@ -194,7 +197,7 @@ When the owner answers, record it:
 - **Register.** Write `parts.<part>.decision` as
   `{date: <today>, decision: restructure | redesign | accept, reason: "<the owner's own words>", backlogId: <id>}`.
   Leave `signalAtDecision` to the signal script. Commit the register by its path, with `git -C
-  ~/permanence`.
+  {records}`.
 - **`accept`**: `backlogId` is empty unless the owner names an item. When `owned` is false, write
   `"accepted <today>"` into the approval's `consumed` field and commit `approvals.json` by its path.
   Stop here, and say what was recorded.
@@ -204,13 +207,12 @@ When the owner answers, record it:
   `binding.tracker.id` in `<binding.tracker.file>` on `origin/<default>` and on every branch
   (`git for-each-ref --format='%(refname)' refs/heads refs/remotes`, then `git grep -E` per ref),
   and in every branch name. Take the next one in that sequence. If the form does not make the next
-  id obvious, ask the owner. Add one pointer line to the stream's `WIP.md`: the part, the id, and
-  "re-entry: the tracker item". Commit `WIP.md` by its path, with `git -C ~/permanence`.
+  id obvious, ask the owner.
 - **`redesign`**: a redesign changes a step's method, so its outputs move on purpose. That is a
-  change, not a restructure. Its route is `/perma-change`, not steps 6 to 11 here. Write the
+  change, not a restructure. Its route is `/bakehouse:change`, not steps 6 to 11 here. Write the
   architect's redesign option into the tracker as a work order: the step it changes, the small-slice
   proof as the first gate, and the corrections it should make unnecessary as the predicted moves.
-  Record its id as `backlogId`. Then stop here, and offer `/perma-change <id>`. The owner's go on the
+  Record its id as `backlogId`. Then stop here, and offer `/bakehouse:change <id>`. The owner's go on the
   work order is a separate go.
 
 Order the steps by kind. Each step is merged alone before the next starts.
@@ -295,8 +297,7 @@ After the last step's pull request **has merged**:
   a job again.
 - **The owner's repo**: the last step's entry, written by the engineer, marks the whole tracker item
   done. Check that it is there on `origin/<default>`.
-- Replace the stream's `WIP.md` pointer line with one line: the part, the tracker id, done. Commit
-  `WIP.md`, and the ops ledger when it changed, each by its path, with `git -C ~/permanence`.
+- Commit the ops ledger when it changed, by its path, with `git -C {records}`.
 
 ## The two gate types
 
@@ -402,7 +403,7 @@ command, pass and when].
   Move code verbatim. Stop on any output change. Never edit a test or an output to make a gate
   pass. Any "predicted", "intended" or "named" allowance in a gate's pass text does not apply:
   0 moves, 0 transitions, 0 flips. Write each gate's result, BASE against BASE and the step
-  against BASE, to the record folder as byte-identical.txt. /perma-health flags a step record
+  against BASE, to the record folder as byte-identical.txt. /bakehouse:health flags a step record
   folder with no prediction that lacks it, or holds it empty, as a missing refactor proof, once any
   folder of the work order with no prediction holds one; a work order whose steps hold no proof at
   all reads as a change with no prediction. It also flags a code commit of the work order that comes
@@ -469,10 +470,9 @@ Turn budget: [PM: turns] of your cap. Leave 15 turns to write findings.md.
   the step.
 - **The reviewer did not do the work.** The PM dispatches it; the engineer never does; the session
   that built the step never reviews it.
-- **One-way flow.** The register, the approval record and the ops ledger live in the stream. Never
-  write a Permanence path or name into the repo's files, branches, commits or review records.
-- **Commit by path.** In `~/permanence`, add only the files this job changed, each by its path, with
-  `git -C ~/permanence`. Never `git add -A`: other sessions may have writes in flight.
+- **Commit by path.** In the records folder, add only the files this job changed, each by its path,
+  with `git -C {records}`. Never `git add -A`: other sessions may have writes in flight.
 - **Plain report.** Counts, not adjectives. Say what holds, what is next, and why.
 
-If `~/permanence` is missing or this workspace has no stream, say so plainly rather than inventing content.
+If this repo has no team (no binding), or the locator says setup is needed, say so plainly rather than
+inventing content.

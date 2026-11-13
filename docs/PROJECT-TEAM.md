@@ -1,16 +1,18 @@
 # The project team (experimental)
 
-> **Status: experimental, added in v1.6.0.** Built and used on one repository so far. The file
+> **Status: experimental.** Built and used on one repository so far. The file
 > shapes below may change in a later release; a change that affects an existing file will carry a
 > **Migration notes** section in `CHANGELOG.md`.
 >
-> **Claude Code, and Antigravity in part.** The team was built on Claude Code, where all of it runs.
-> v1.8.0 carries it to Antigravity with two enforcements missing (see "On Antigravity" below). The
-> Devin and Cursor bindings get neither the agents nor the role enforcement. Everything else in
-> Permanence works on those tools as before.
+> **Claude Code only.** bakehouse is a Claude Code plugin. It works with or without Permanence
+> installed, and it never reads or writes Permanence's files.
 >
-> **Opt-in by file.** A repository takes part only when its stream holds a `binding.json`. With no
-> binding, the team commands stop and say so, and nothing else in Permanence changes.
+> **Opt-in by file.** A repository takes part only when it holds `.team/binding.json` (a repository
+> another party owns: its sidecar folder holds the binding). With no binding, the team commands stop
+> and say so.
+>
+> Script paths on this page, `runtime/<script>`, are in the plugin's folder (`${CLAUDE_PLUGIN_ROOT}`
+> in a command or agent body).
 
 ## What it is
 
@@ -22,27 +24,34 @@ finding or a change ships.
 
 | Command | What it does |
 |---|---|
-| `/perma-health` | Rewrites the repo's health register and lists the parts that are ready for a refactor. Also lists the `shortcut:` markers it finds in the code. It never starts work. |
-| `/perma-refactor <part>` | Restructures one part. Every step must leave outputs byte-identical, except a meaning change the owner named in advance. |
-| `/perma-change <work-order id>` | Makes the tool do something new, or fixes a defect. The engineer writes every expected output move before its first edit; any move not predicted stops the job. |
+| `/bakehouse:health` | Rewrites the repo's health register and lists the parts that are ready for a refactor. Also lists the `shortcut:` markers it finds in the code. It never starts work. |
+| `/bakehouse:refactor <part>` | Restructures one part. Every step must leave outputs byte-identical, except a meaning change the owner named in advance. |
+| `/bakehouse:change <work-order id>` | Makes the tool do something new, or fixes a defect. The engineer writes every expected output move before its first edit; any move not predicted stops the job. |
 
 Each command runs a preflight first and stops before any work if the binding is wrong.
 
-## The rule that shapes everything
+## Where the team's files live
 
-**No project may require Permanence.** A repository never names Permanence, its commands or its
-agents (SPEC §2 invariant 1). So everything the team needs to know about a repo lives in the owner's
-stream for that repo, under `<stream>/repo/`, and the team finds it by resolving the working
-directory through `_meta/REGISTRY.md`.
+One module, `runtime/locator.py`, finds every file. It takes the project folder from
+`CLAUDE_PROJECT_DIR`, else the working folder, and asks `git rev-parse --show-toplevel` for the
+repository. There is no registry. The files live in three places:
 
-| File in `<stream>/repo/` | Holds | Written by |
-|---|---|---|
-| `binding.json` | the repo's facts for the team | the owner, with the PM |
-| the register (the binding names its path) | each part's health signal, state and decision | the signal command; decisions by the owner |
-| the driver register (`drivers.register`, default `drivers.json`) | each driver family seen in 2 or more run folders, its coherence, state and decision | `runtime/driver-signal.py`; decisions by the owner |
-| `ops/events.jsonl`, `ops/OPERATIONS.md` | the ops ledger and its rules | `runtime/ops-event.sh` only |
-| `approvals.json` | approvals for work in a repo another party owns | the owner, with the PM |
-| `programme/` | a programme group's report, when it is the owner's own working file (SPEC §2 invariant 8) | the group's task doc |
+1. **Project facts**, committed with the project: `.team/` in the repository. A repository another
+   party owns keeps them in a sidecar folder instead, named by its git config `bakehouse.sidecar`.
+2. **Team records**: the records folder, a git worktree of an orphan branch of the project repository,
+   in a sibling folder. Its git config `bakehouse.records` names it; `bakehouse setup` makes it.
+3. **Machine state**: the machine folder, `$XDG_STATE_HOME/bakehouse`, else
+   `~/.local/state/bakehouse` (`BAKEHOUSE_MACHINE_DIR` replaces it). It holds the logs, the locks, the
+   seen-agents file, the personal role table and the role choice. It is never in git.
+
+| File | Where | Holds | Written by |
+|---|---|---|---|
+| `binding.json` | `.team/` | the repo's facts for the team | the owner, with the PM |
+| `OPERATIONS.md` | `.team/` | the ops ledger's rules | the owner, with the PM |
+| `approvals.json` | beside the binding | approvals for work in a repo another party owns | the owner, with the PM |
+| the register (`registers/<binding.register>`) | records | each part's health signal, state and decision | the signal command; decisions by the owner |
+| the driver register (`registers/<drivers.register>`, default `drivers.json`) | records | each driver family seen in 2 or more run folders, its coherence, state and decision | `runtime/driver-signal.py`; decisions by the owner |
+| `ops/events.jsonl` | records | the ops ledger | `runtime/ops-event.sh` only |
 
 ## Roles
 
@@ -63,64 +72,35 @@ Resolution checks these levels in order. At each level the key `<job>:<role>` is
 `<role>`. A level that names only agents that are not installed is skipped, and the skip is logged.
 
 1. The repo binding's `roles`.
-2. `_personal/agent-roles.json` — the owner's own table. Put an employer's or a private plugin's
-   agent here. `_personal/` is never part of the template, so an upgrade never overwrites it.
+2. `agent-roles.json` in the machine folder — the owner's own table. Put an employer's or a private
+   plugin's agent here. The machine folder is outside the plugin, so an update never overwrites it.
 3. The shipped table, `runtime/agent-roles.json`.
 
 A review role never falls to the session that did the work: with no match it goes to
 `general-purpose`. `runtime/team_roles.py` is the one implementation of these rules;
 `runtime/agent-roles.py` enforces them as hooks and logs every change to
-`runtime/logs/agent-roles.log`. The hook fails open, with one exception: a dispatch whose decision needs a
+`logs/agent-roles.log` in the machine folder. The hook fails open, with one exception: a dispatch whose decision needs a
 binding that cannot be read (binding.json does not parse, is not an object, cannot be read or is a
-dangling symlink; the registry row names a stream whose folder does not exist; the stream resolver cannot
-be run, missing or not executable, or does not answer in time) is refused, and the reason names that
+dangling symlink; the project needs setup, with the locator's message; the project locator cannot be
+run or does not answer in time) is refused, and the reason names that
 cause and the file or command to fix (`dispatch:binding-unreadable`). When the run's deadline was used up
 by earlier calls, the reason says so. A stop still fails open. The whole hook run has one deadline of 6
 seconds, counted from hook start; each path's binding is read once per run.
 
 Outside a repository with a binding, the shipped table acts only on a `role:` dispatch. It does not
 change a dispatch made by plain agent name, and it never sends an agent back for a run record. The
-owner's own table in `_personal/` is the owner's explicit choice and applies everywhere.
+owner's own table in the machine folder is the owner's explicit choice and applies everywhere.
 
 The shipped agents have plain names (`architect`, `design-author`, …). If the owner already has
 their own agent with one of those names, the install leaves theirs in place and says so; that role
 is then filled by the owner's agent.
 
-## On Antigravity
-
-Added in v1.8.0, checked against Antigravity CLI 1.2.2. `runtime/bindings/antigravity/wire` installs
-three things:
-
-- **The shipped agents**, translated into Antigravity's own agent files under
-  `~/.gemini/config/agents/<name>/agent.md`. Tool names are mapped to Antigravity's. A model name
-  becomes a tier: `fable` and `opus` are `pro`; `sonnet` and `haiku` are `flash`.
-- **The role hook**, on Antigravity's `invoke_subagent` tool. A dispatch with `TypeName:
-  "role:<job>:<role>"` is resolved by the same rules and tables as on Claude Code and replaced by the
-  agent that fills the role. A role nothing fills is refused. A role's `prompt_append` is added.
-- **The three team commands**, each with a short note at the top that says how to read its dispatch
-  steps on Antigravity.
-
-What is different there, because Antigravity gives a hook no way to do it:
-
-| On Claude Code | On Antigravity |
-|---|---|
-| The hook forces the role's model on every dispatch. | The model is fixed in each installed agent's file. A `model` in a binding's or the owner's role entry has no effect. |
-| The hook caps what a role's agent spawns itself (`nested_model`). | Not enforced. |
-| The hook sends an agent back once if its run record is missing (`run_record`). | Not enforced. The command's note tells the session running the job to check for the record itself. |
-| A review role with no agent falls to `general-purpose`. | It falls to `self`: a fresh conversation of Antigravity's default agent. |
-
-What has been run on Antigravity: a `role:` dispatch through the hook to a shipped agent, which did
-its work and reported back; and `/perma-health` from start to finish. `/perma-refactor` and
-`/perma-change` have not been run there end to end.
-
-A subagent's shell commands ask for permission like any other on Antigravity. In a session with no
-one to answer, they are refused.
-
 ## The binding
 
-`<stream>/repo/binding.json`. JSON, read with the standard library only. An `_about` key carries
-comments. Paths are relative to the repo root, except `register`, which is relative to
-`<stream>/repo/`.
+`.team/binding.json` in the repository (a repository another party owns: `binding.json` in its
+sidecar folder). JSON, read with the standard library only. An `_about` key carries comments. Paths
+are relative to the repo root, except `register`, which is relative to the records folder's
+`registers/`.
 
 Every gate and command is either a command, or a pointer to the repo file that holds it:
 `file#key`, or `file#key.id` for the list item under `key` whose `id` is `id`. Prose is not allowed
@@ -158,7 +138,7 @@ must name a JSON or YAML file; a Makefile target is written as the command that 
 
 ```json
 {
-  "_about": "Repository facts for the project team. Lives in the owner's stream, never in the repository.",
+  "_about": "Repository facts for the project team.",
   "owned": true,
   "register": "health.json",
   "signal": "python3 tools/health.py --register {register}",
@@ -177,17 +157,17 @@ must name a JSON or YAML file; a Makefile target is written as the command that 
 
 ## The signal
 
-`/perma-health` and `/perma-refactor` need something that writes the register: each part's fix
-pressure and state. `/perma-change` does not need the register to run. The binding's `signal` takes
+`/bakehouse:health` and `/bakehouse:refactor` need something that writes the register: each part's fix
+pressure and state. `/bakehouse:change` does not need the register to run. The binding's `signal` takes
 one of three forms:
 
 - **a command** the repo already has, such as `python3 tools/health.py --register {register}`;
 - **a pointer** to the repo file that holds that command (`file#key.id`);
-- **rules for the shipped script**, `runtime/health-signal.py` (added in v1.7.0). Use this when the
+- **rules for the shipped script**, `runtime/health-signal.py`. Use this when the
   repo has no signal command of its own, or belongs to another party so that none can be added.
 
 The shipped script uses the Python standard library only. It reads the repository with read-only
-git commands at one ref and writes one file, a JSON register in the stream.
+git commands at one ref and writes one file, a JSON register in the records folder.
 
 ```json
 "register": "health.json",
@@ -234,8 +214,8 @@ Run it by hand to try rules before trusting them; `--no-write` prints the block 
 register as it is:
 
 ```bash
-python3 ~/permanence/runtime/health-signal.py --binding <stream>/repo/binding.json \
-    --register health.json --repo <repo> --no-write
+python3 runtime/health-signal.py --repo <repo> --no-write
+# --binding and --register default to the project's binding and register
 ```
 
 ## The driver signal
@@ -248,7 +228,7 @@ counted that.
 **What it does.** `runtime/driver-signal.py` reads the driver scripts in the binding's `reviews`
 folder and finds two kinds of family. A family seen in enough run folders inside the window is raised
 as a build candidate. It uses the Python standard library only, reads files only, and writes one file:
-the driver register, in the stream beside the health register. It uses no AI and runs in seconds.
+the driver register, in the records folder beside the health register. It uses no AI and runs in seconds.
 
 **Which files it reads.** A driver is a `*.py` or `*.sh` file under a folder whose name starts with
 `drivers`, directly inside a run folder: `<reviews>/<run>/drivers*/`. With `nested: true` it also
@@ -430,7 +410,7 @@ decide afresh. The owner of the repository decides. The `owner` rule names the r
 **Run it.**
 
 ```bash
-~/permanence/runtime/driver-signal.sh --binding <stream>/repo/binding.json --repo <repo> [--no-write]
+runtime/driver-signal.sh --repo <repo> [--no-write]
 ```
 
 `--no-write` prints the block and leaves the register as it is, which is the way to try a threshold
@@ -443,9 +423,9 @@ not match any copy, and its name does not either.
 ## Records against the process
 
 A rule kept only in a prompt lapses. `runtime/records-check.py` checks each work order's record
-against what its job type must leave behind, by content. `/perma-health` runs it (step 9). It is
+against what its job type must leave behind, by content. `/bakehouse:health` runs it (step 9). It is
 deterministic, uses the standard library only, reads the repository with read-only git commands at
-one ref, and writes one file, `<stream>/repo/records.json`.
+one ref, and writes one file, `registers/records.json` in the records folder.
 
 **The record contracts.** `runtime/record-contracts.json` holds the shipped defaults. Per job type:
 
@@ -468,12 +448,10 @@ unknown job is refused. The check exits 2, and preflight check 2 fails.
 "records": {"since": "2026-01-01", "jobs": {"change": {"require": [{"id": "gates", "glob": "gates*.md"}]}}}
 ```
 
-**Stream record folders.** Some work keeps its record in a Permanence stream, not in a bound repo
-(work on Permanence itself, recorded in the stream that asked for it). Such a record is held to the same
-contracts, with no binding:
+**The record folder line.** A brief names its record folder; the dispatch hook and the stop check
+read that line:
 - **The record folder is decided at dispatch.** A brief names its record folder on one line, as a
-  full path: `Record folder: ~/<path>/` (a bound repo's: its root + `reviews` + the record's name; a
-  stream's: the stream folder). For a change job and for a role with `run_record` (the reviewer), the
+  full path: `Record folder: ~/<path>/` (the bound repo's root + `reviews` + the record's name). For a change job and for a role with `run_record` (the reviewer), the
   dispatch hook reads every line labelled as a record folder and refuses the dispatch, naming the line
   and where it resolves from the dispatching working directory, when a line is not in the reader's form
   (`Record folder:`, optionally bold, indented or a `-`/`*` list item, the path optionally in
@@ -484,43 +462,30 @@ contracts, with no binding:
   line itself), when the path holds a quote, a backtick, `*`, a format character such as a zero-width
   space, or whitespace other than a space inside its quotes (refused, never stripped), when the path is not
   full (it does not start with `/` or `~`), when it is
-  neither inside a registered stream's folder nor under the `reviews` folder of the bound repo the path
-  itself is in, or when two lines name different folders. Whether a dispatch is in the hook's care is
+  not under the `reviews` folder of the bound repo the path itself is in, or when two lines name
+  different folders. Whether a dispatch is in the hook's care is
   decided once, for every labelled line, before it is read: through the first path after the label, in any
   form the label takes. A relative line is refused because the PM's
-  working directory moves between the repo and the Permanence root, so the same line names a different
-  folder on each dispatch. A plain-name reviewer dispatch is decided only where the working directory
-  has a binding or is inside the Permanence root, or a line's path is (the opt-in rule); a refactor
-  job is not decided (its stop is not checked).
-- The decided folder is logged with the dispatch (`runtime/logs/prediction-dispatch.jsonl`, keyed by the
-  prompt's hash). The stop check uses that folder, whatever its own working directory, and never reads
-  the line again: a stream folder must hold what the run wrote and the reviewer's artefacts, or the
-  change engineer's prediction; a repo folder is checked in that folder alone, with the binding of the
+  working directory can move, so the same line names a different folder on each dispatch. A
+  plain-name reviewer dispatch is decided only where the working directory has a binding, or a line's
+  path is under a bound repo's `reviews` (the opt-in rule); a refactor job is not decided (its stop is
+  not checked).
+- The decided folder is logged with the dispatch (`logs/prediction-dispatch.jsonl` in the machine
+  folder, keyed by the prompt's hash). The stop check uses that folder, whatever its own working
+  directory, and never reads the line again: the folder is checked alone, with the binding of the
   repo it is in, so another work order's record under the same `reviews` neither satisfies nor blocks
-  the stop. Either kind of decided folder counts as written when a file under it, at any depth, is
+  the stop. A decided folder counts as written when a file under it, at any depth, is
   newer than the agent's start and matches one of the role's job marks in record-contracts.json
   (`findings*.md` for the reviewer), so a record kept in a subfolder of it (`review/`, a round's
   folder) counts, and a stray driver output, a contract or a report alone does not. One with no such
-  file is sent back, naming the folder and the mark. A role that is no job there counts any new file. A stream record still adds the bound repo's own
-  check when the stop's working directory has a binding.
+  file is sent back, naming the folder and the mark. A role that is no job there counts any new file.
 - With no dispatch decision (a plain-name dispatch the rule above does not cover, or a dispatch made
   before it), the stop reads the line from its own working directory (`~`, `..` and symlinks resolved;
   a relative path from the repository root). A line it cannot place there is reported to the user,
   never refused: the stop runs as if the brief had no line. A repo line read there is checked across
-  that repo's whole `reviews` folder, not only the folder it names. With no line and no binding, a reviewer
-  whose working directory is inside a registered stream has each folder it wrote checked (no folder is
-  demanded).
+  that repo's whole `reviews` folder, not only the folder it names.
 - A `role:` dispatch of the change engineer is logged with or without a binding, so a refactor job
-  whose record folder is in a stream is not asked for a machine prediction.
-- `records-check.py --stream <stream>` reads every folder of a registered stream at a ref, in the
-  repository that holds the stream, and checks each job a folder marks. The window is per record: a
-  job's record is history when every file that marks it was added before `--since`, default the
-  reviewer contract's `rounds.from`. The close rule does not apply (a stream record has no work
-  order), and every flag is open.
-- A stream has no binding, so no gate ids: a gate is a path in the repository holding the stream. The
-  test roots are the shipped ones; a test elsewhere is named `path::name`.
-- The stream is found from `_meta/REGISTRY.md`. A folder no registry row names is not a stream record:
-  a line naming one is refused at dispatch (above); a stop with no dispatch decision reports it.
+  is not asked for a machine prediction.
 
 **The work orders.** A work order is a tracker id (the binding's `tracker.id`) with at least one code
 commit in the window. A commit belongs to the first tracker id in its subject. A code commit touches
@@ -594,7 +559,7 @@ whatever its date.
 `findings.md` and `mutations.json`. The re-check of fix round N writes `findings-fix<N>.md` and
 `mutations-fix<N>.json`, beside the first review's files. The mutation runner's batch log for a round
 is declared beside them (`log`: `mutations.log.jsonl`, `mutations-fix<N>.log.jsonl`). These are the only names. The brief
-templates (`/perma-change`, `/perma-refactor`) and the reviewer's prompt state them literally, and a
+templates (`/bakehouse:change`, `/bakehouse:refactor`) and the reviewer's prompt state them literally, and a
 runtime test fails if any of them names another. A findings-like file is a `.md` whose name holds
 `findings`, `recheck`, `re-check` or `review-` (case ignored) and that no other job's marks claim (so
 `prediction-review-fix.md` is the change job's). One under an undeclared name is refused by the stop
@@ -637,8 +602,8 @@ JSON list of `{id, file, find, replace, note}` and runs them through the runner 
 harness:
 
 ```bash
-~/permanence/runtime/mutate.sh --mutants <list.json> --record <review folder> --round first \
-    [--repo <repo>] [--commit <rev>] [--binding <stream>/repo/binding.json] [--by reviewer|engineer]
+runtime/mutate.sh --mutants <list.json> --record <review folder> --round first \
+    [--repo <repo>] [--commit <rev>] [--binding <binding.json>] [--by reviewer|engineer]
 ```
 
 An engineer passes `--by engineer`: its rows go to `engineer-mutations.json` (a fix round:
@@ -740,27 +705,23 @@ file left in the step folder; and a close-purpose refusal followed by nothing, w
 hand-written override. One predict-gate function for the whole per-pair verdict, used by both,
 removes all three.
 
-**The stream-currency flag (`stream.currency`).** One flag for the stream, not for a work order
-(its work order reads `(stream)`), owner the PM, next step "refresh the stream's PROJECT.md state
-block". It is checked only for an owned repository, and it is raised when either holds:
-- the date on `PROJECT.md`'s first `Last updated YYYY-MM-DD` line is older than the date of the
-  latest `work-order-closed` event in the stream's ops ledger;
-- the post-commit hook's own drift check, `runtime/ops-gap.sh` at its default threshold (the 5 the
-  hook passes), warns that the ops ledger is behind the repository.
-A stream with no `PROJECT.md`, or no dated line, is not flagged on the first test. Why: a stream's
-`PROJECT.md` and `LOG.md` once fell a week and more behind nine closed work orders, and the hook's
-"commits behind" warning went unread for days. The ledgers stayed current because tools write them;
-the narrative relied on a prompt rule. The flag is not counted toward promote-to-code.
+**The ops-currency flag (`stream.currency`).** One flag for the project, not for a work order
+(its work order reads `(stream)`; the id and that label are kept from the earlier release, so
+registers compare equal), owner the PM, next step "bring the ops ledger up to date with the
+repository's commits". It is checked only for an owned repository, and it is raised when the
+post-commit hook's own drift check, `runtime/ops-gap.sh` at its default threshold (the 5 the hook
+passes), warns that the ops ledger is behind the repository. Why: the hook's "commits behind"
+warning once went unread for days. The flag is not counted toward promote-to-code.
 
 ```bash
-python3 ~/permanence/runtime/records-check.py --binding <stream>/repo/binding.json --repo <repo> \
+python3 runtime/records-check.py --repo <repo> [--binding <binding.json>] \
     [--since YYYY-MM-DD] [--as-of YYYY-MM-DD] [--ref REF] [--code-roots DIR ...] [--no-write]
 ```
 
 ## The rule register
 
 `runtime/rules.json` lists every rule sentence in the 13 process prompts (`runtime/roles/pm.md`, the
-`/perma-change`, `/perma-health` and `/perma-refactor` commands, and every file in `runtime/agents/`)
+`/bakehouse:change`, `/bakehouse:health` and `/bakehouse:refactor` commands, and every file in `runtime/agents/`)
 and says who enforces each one:
 
 | `enforcer` | Means | `proof` |
@@ -785,8 +746,8 @@ new agent or role file is missing from `files`; when a `code` proof names no tes
 `reviewer` proof names a file that is not a review brief, or a line that is not in it. Edit the
 prompt and the register together.
 
-The register checks the template's own prompts, so the test runs only where `PERMA_RULES_REGISTER=1`
-is set: the template repo's CI sets it. In your own install the prompts are yours to edit, and the
+The register checks bakehouse's own prompts, so the test runs only where `BAKEHOUSE_RULES_REGISTER=1`
+is set: bakehouse's own CI sets it. In your own install the prompts are yours to edit, and the
 test skips.
 
 The register is the input for promotion: a lapse of a `prompt` rule makes it a candidate for code,
@@ -811,9 +772,9 @@ Limits:
 
 ## Ownership
 
-- **`owned: true`** — jobs run, the ops ledger records them, and `wire` (through
-  `runtime/repo-hooks.sh`) writes a post-commit hook into the repo's local hooks folder, which git
-  never commits. A hook without Permanence's marker is never overwritten.
+- **`owned: true`** — jobs run, the ops ledger records them, and `runtime/repo-hooks.sh` writes a
+  post-commit hook into the repo's local hooks folder, which git never commits. A hook without the
+  team's marker is never overwritten.
 - **`owned: false`** — the repo belongs to another party. The health watch drafts a proposal for
   the `approver`; it offers no job. A job runs only inside a recorded approval of that exact scope
   in `approvals.json`, and its only output is a pull request. The ops ledger refuses the repo.
@@ -835,20 +796,21 @@ runs read-only git commands; it writes nothing. One line per failure; exit 1 on 
 5. Every role the job dispatches resolves.
 6. For a job when `owned` is false: an unconsumed approval of this exact scope exists.
 
-`/perma-startup` runs `startup` mode (checks 1 to 4) when it knows the repo folder, and carries any
-failure into its hand-back without stopping.
+`startup` mode runs checks 1 to 4, for a session start that knows the repo folder: it exits 0, and the
+session carries any failure into its hand-back without stopping.
 
 ## The ledgers
 
-All are append-only JSON lines in the stream. A wrong row is never edited; a correcting row follows
-it. `runtime/README.md` and each tool's header comment are the full reference.
+All are append-only JSON lines in the project's records folder. A wrong row is never edited; a
+correcting row follows it. `docs/TOOLS.md` lists the tools, and each tool's header comment is its full
+reference.
 
 | Ledger | Written by | What it is for |
 |---|---|---|
-| `<stream>/repo/ops/events.jsonl` | `ops-event.sh` | how the work was run: agent runs, fan-outs, loops, gates refused, decisions asked. `ops-gap.sh` reports how many commits it has fallen behind. |
-| `<stream>/decisions/ledger.jsonl` | `decision.sh` | every question put to the owner, the recommendation, the answer, and later the outcome. `DECISIONS.md` beside it is the generated view. Scores agreement per category. |
-| `<stream>/spend/ledger.jsonl` | `spend.sh` | measured tokens per agent, grouped into waves with a ceiling. |
-| `<stream>/ratifications/ledger.jsonl` | `ratify.sh` | which entries of a closed vocabulary two blind readers agreed are right. |
+| `ops/events.jsonl` | `ops-event.sh` | how the work was run: agent runs, fan-outs, loops, gates refused, decisions asked. `ops-gap.sh` reports how many commits it has fallen behind. |
+| `decisions/ledger.jsonl` | `decision.sh` | every question put to the owner, the recommendation, the answer, and later the outcome. `DECISIONS.md`, at the top of the records folder, is the generated view. Scores agreement per category. |
+| `spend/ledger.jsonl` | `spend.sh` | measured tokens per agent, grouped into waves with a ceiling. |
+| `ratifications/ledger.jsonl` | `ratify.sh` | which entries of a closed vocabulary two blind readers agreed are right. |
 
 `predict-gate.sh` and `save-report.sh` keep no ledger: the first compares a written prediction with
 measured outputs and refuses any move nobody predicted; the second saves an agent's report
@@ -865,7 +827,7 @@ the cap beside the token estimate, and splits or cuts a brief that does not fit.
 
 ### Gate refusals
 
-Each refusal by a Permanence gate writes one `gate-refused` event to the ops ledger, so runs and
+Each refusal by a team gate writes one `gate-refused` event to the ops ledger, so runs and
 refusals can be counted per tool and per check. The event is ops-event.sh's, with one more field,
 `gate`, written last and only on this kind:
 
@@ -879,18 +841,18 @@ refusals can be counted per tool and per check. The event is ops-event.sh's, wit
 - **One writer.** `runtime/gate_event.py` calls `ops-event.sh <kind> ... <note> <gate>`. `ops-event.sh`
   refuses a gate on any other kind, and a gate not of the form `<tool>:<check>` in lower case. An event
   without a gate keeps its old shape.
-- **Where it goes.** The tool's own stream when it knows it (decision.sh, spend.sh, `records-check
-  --stream`); else the registered stream whose folder holds the record (`OPS_STREAM`); else the
-  repository of the record or of the working directory. A stream with no `repo/` folder, or whose
-  binding does not say `"owned": true`, keeps no ledger, and the event is not written.
+- **Where it goes.** The project of the record's repository, when the tool knows the record's path;
+  else the project of the working directory's repository (`runtime/locator.py`, through `OPS_REPO`).
+  A repository with no team, or whose binding does not say `"owned": true`, keeps no ledger, and the
+  event is not written.
 - **Best effort.** The tool has refused already. A failed write changes neither its exit code nor what
-  it prints. The hooks log a failed write to `runtime/logs/agent-roles.log`.
+  it prints. The hooks log a failed write to `logs/agent-roles.log` in the machine folder.
 - **Overrides keep their events.** The owner's override of `predict-gate.sh check` or `close` writes
   its existing event, purpose and outcome `done` unchanged, now with the gate. records-check still
   matches an overridden close by that purpose. An override that cannot be recorded is refused, as
   before. Its own event is not written, but the refusal's event is, routed like any refusal.
 - **What is not a gate refusal**, so writes no event: argparse's own usage errors (a missing or unknown
-  flag, a value outside its choices); a refusal before any stream is found; the failure of the ledger
+  flag, a value outside its choices); a refusal before any project is found; the failure of the ledger
   write itself; a hook's second stop, which lets the agent go; the installers and wrappers. A
   records-check flag is a row in a register, not a refusal. Only its bad input (exit 2) is a refusal.
 - **Spend kinds.** `spend.sh record --kind` takes one closed list: the roles of
@@ -949,30 +911,19 @@ refusals can be counted per tool and per check. The event is ops-event.sh's, wit
 | `records-check:binding-records` | records-check.py | the binding's `records` object removes or replaces a contract artefact |
 | `records-check:input` | records-check.py | any other bad input, exit 2 |
 | `dispatch:role-unresolved` | agent-roles.py (PreToolUse) | a `role:` dispatch that no level resolves |
-| `dispatch:binding-unreadable` | agent-roles.py (PreToolUse) | a dispatch whose decision needs a binding that cannot be read: binding.json does not parse, is not an object, cannot be read or is a dangling symlink; the registry row names a stream whose folder does not exist; the stream resolver cannot be run or does not answer in time. The reason names the cause and what to fix. Its event goes to the stream a `Record folder:` line names; with none, or when the write to that stream fails (it keeps no ledger, the write is cut, any error), it is kept in `runtime/logs/agent-roles.log` (`GATE-EVENT ... kept in this log`, naming that write's error) with its cause, because the working folder's ledger is found through the input that failed |
+| `dispatch:binding-unreadable` | agent-roles.py (PreToolUse) | a dispatch whose decision needs a binding that cannot be read: binding.json does not parse, is not an object, cannot be read or is a dangling symlink; the project needs setup (the locator's message); the project locator cannot be run or does not answer in time. The reason names the cause and what to fix. Its event is kept in `logs/agent-roles.log` in the machine folder (`GATE-EVENT ... kept in this log`) with its cause, because the working folder's ledger is found through the input that failed |
 | `dispatch:record-folder` | agent-roles.py (PreToolUse) | a `Record folder:` line that cannot be decided |
 | `stop:prediction` | agent-roles.py (SubagentStop) | a change job stops with no machine prediction |
-| `stop:seal` | agent-roles.py (SubagentStop) | a change job stops with a moves file whose bytes no seal in its stream's ops ledger names (sent back once) |
+| `stop:seal` | agent-roles.py (SubagentStop) | a change job stops with a moves file whose bytes no seal in its project's ops ledger names (sent back once) |
 | `stop:run-record` | agent-roles.py (SubagentStop) | a role with `run_record` stops without writing its record |
 | `stop:record-artefacts` | agent-roles.py (SubagentStop) | a record folder lacks its job's artefacts |
 
 **Limits.**
-- An override of `predict-gate.sh check` on a record held in a stream's own folder still cannot be
-  recorded: the override keeps its route through the repository, and the Permanence root keeps no
-  ledger. A plain refusal of the same check is recorded.
 - `ops-gap.sh` reads the newest `ts` in the ledger, and an automated refusal event moves it. So a lapse
   in hand-written events can be hidden by refusals.
-- The runtime's own tests for records-check run without PERMA_DIR. Their bindings sit in temporary
-  folders no registered stream holds, so nothing is written.
-- The Antigravity binding's own role hook (runtime/bindings/antigravity/agent-roles-hook.py) denies an
-  unresolved role without writing an event, and the other runtime tools outside these five (mutate.sh,
-  driver-signal.sh and the rest) write none either.
+- The runtime tools outside these five (mutate.sh, driver-signal.sh and the rest) write no event.
 - A misspelt `--kind` is argparse's own error (exit 2), so it writes no event; only a missing kind or
   `agent` is counted.
-- predict-gate's own `ops_event` passes the environment on unchanged, so an exported `OPS_STREAM`
-  sends its override and work-order-closed events to that stream instead of the repository's.
-- A refused close routes its event by the repository, so a close of a record held in a stream folder of
-  the Permanence repository writes it nowhere.
 - spend.sh reads `runtime/agent-roles.json` when it starts, so that file not parsing stops every
   spend.sh command, not only `record`.
 - The event write waits at most 3 seconds (`gate_event.WAIT_S`), below the 10 seconds a hook is given; in
@@ -983,13 +934,6 @@ refusals can be counted per tool and per check. The event is ops-event.sh's, wit
   `fail()` without a gate, and it judges "next to an event write" by position: it does not catch
   `os._exit`, a bare `exit()`, an aliased `sys`, a return placed after a covered branch, or an exit code
   passed through a variable.
-
-## The working board
-
-`<stream>/WIP.md` is the PM's board, with four sections: **Now**, **Blocked**, **Parked**, **Done
-today**. It is the one file that answers "what was I doing?". A stream gains one the first time it
-needs one; when a role is set and the stream has none, session start says so, so the PM can offer
-it once.
 
 ## Known limits in this release
 

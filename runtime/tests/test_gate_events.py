@@ -684,7 +684,7 @@ class TestRefusalsWriteOneEvent(SpendScratch):
             ),
             self.stop(
                 "refactor-engineer",
-                f"Work order T7: x\nRecord folder: {rec}/\n\n[perma:prediction-record]",
+                f"Work order T7: x\nRecord folder: {rec}/\n\n[bakehouse:prediction-record]",
                 "e",
             ),
             self.stop("refactor-reviewer", "Review W1.\n", "r"),
@@ -1175,13 +1175,13 @@ SITE_GATES = [
     (
         "agent-roles.py",
         "subagent_stop",
-        "Permanence agent-roles:",
+        "bakehouse agent-roles:",
         "stop:record-artefacts",
     ),
     (
         "agent-roles.py",
         "subagent_stop",
-        "Permanence agent-roles: role '{}' requir",
+        "bakehouse agent-roles: role '{}' require",
         "stop:run-record",
     ),
     (
@@ -1524,7 +1524,7 @@ class TestGateIds(unittest.TestCase):
         }
         doc = (RUNTIME.parent / "docs" / "PROJECT-TEAM.md").read_text()
         section = doc[
-            doc.index("### Gate refusals") : doc.index("## The working board")
+            doc.index("### Gate refusals") : doc.index("## Known limits in this release")
         ]
         table = set(re.findall(rf"^\| `({self.ID})` \|", section, re.MULTILINE))
         self.assertEqual(sorted(code - table), [], "in code, not in the docs table")

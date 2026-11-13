@@ -95,8 +95,8 @@ LOG = MACHINE / "logs" / "agent-roles.log"
 DISPATCHES = MACHINE / "logs" / "prediction-dispatch.jsonl"
 # a lookup for a path a brief names asks that path's own repo, not $CLAUDE_PROJECT_DIR's
 NAMED_ENV = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"}
-MARKER = "[perma:agent-roles]"
-PREDICTION_MARKER = "[perma:prediction-record]"
+MARKER = "[bakehouse:agent-roles]"
+PREDICTION_MARKER = "[bakehouse:prediction-record]"
 APPROVED = "[model-approved]"
 DEFAULT_REVIEWS = "axis/runs/"
 WORK_ORDER = re.compile(r"^Work order (\S+?):", re.M)
@@ -436,7 +436,7 @@ def stop_line(prompt, cwd, binding):
         return rec, None
     line = record_line(prompt, cwd, binding)
     if line and line[0] == "refused":
-        return None, (f"Permanence agent-roles: {refusal(line)} (it resolves to {shown(line[4])}), so the record "
+        return None, (f"bakehouse agent-roles: {refusal(line)} (it resolves to {shown(line[4])}), so the record "
                       "it names was not checked. Its folder was not decided at dispatch (a dispatch by the agent's "
                       "plain name, or one from before that check); name it as a full path, "
                       "`Record folder: ~/<path>/`.")
@@ -501,7 +501,7 @@ def pre_tool_use(d):
             log(f"SKIP role:{spec}: {where} key '{key}' names {provs}, not installed")
         if not res["agent"]:
             what = "no installed agent fills it" if team_roles.known_role(spec, lvls) else "no level names it"
-            reason = (f"Permanence agent-roles: role '{spec}' is unresolved ({what}). "
+            reason = (f"bakehouse agent-roles: role '{spec}' is unresolved ({what}). "
                       f"Do the work in this session instead, behind the same gates.")
             log(f"DENY {reason}")
             refusal_event("dispatch:role-unresolved", reason, before, cwd)
@@ -521,7 +521,7 @@ def pre_tool_use(d):
             if work_order(ti.get("prompt"), b):
                 mark, binding = True, b
             else:
-                warn = (f"Permanence agent-roles: {st} was dispatched by its plain name with no `Work order <id>:` "
+                warn = (f"bakehouse agent-roles: {st} was dispatched by its plain name with no `Work order <id>:` "
                         "line, so the prediction stop check cannot tell whether this is a change job. A change "
                         "engineer is dispatched as role:change:engineer; `predict-gate.sh close` is the hard gate.")
                 log(f"WARN {warn}")
@@ -533,7 +533,7 @@ def pre_tool_use(d):
         bcwd = binding if binding is not None else bound(cwd)
         dec = dispatch_decision(before, cwd, mark or by_role or bool(bcwd))
         if dec and dec[0] == "refuse":
-            reason = (f"Permanence agent-roles: the stop check reads this agent's record folder from its brief's "
+            reason = (f"bakehouse agent-roles: the stop check reads this agent's record folder from its brief's "
                       f"`Record folder:` line, decided now, at dispatch: {dec[1]}. Write one line, the full path "
                       "of a folder under a bound repository's reviews folder (`Record folder: ~/<path>/`), and "
                       "dispatch again.")
@@ -610,7 +610,7 @@ def on_pre_tool_use(d):
     try:
         return pre_tool_use(d)
     except Unreadable as e:
-        reason = (f"Permanence agent-roles: this dispatch cannot be decided, because the hook cannot read its own "
+        reason = (f"bakehouse agent-roles: this dispatch cannot be decided, because the hook cannot read its own "
                   f"input: {e}. Nothing in the brief is the cause; fix that and dispatch again.")
         log(f"DENY {reason}")
         prompt = (d.get("tool_input") or {}).get("prompt") or ""
@@ -752,12 +752,12 @@ def prediction_stop(d):
                 f". Seal each one as you write it: predict-gate.sh seal {wo or '<work order>'} <round> <file>")
         if not d.get("stop_hook_active"):
             log(f"SEAL missing for {agent} — sent back: {what}")
-            out = with_note({"decision": "block", "reason": f"Permanence agent-roles: this change job has {what}, "
+            out = with_note({"decision": "block", "reason": f"bakehouse agent-roles: this change job has {what}, "
                                                             "then stop."}, note)
             refusal_event("stop:seal", out["reason"], prompt, folders[0] if folders else cwd)
             return out
         log(f"SEAL still missing for {agent} — let it stop, told the user")
-        return with_note({"systemMessage": f"Permanence agent-roles: {agent} stopped with {what}. The work order "
+        return with_note({"systemMessage": f"bakehouse agent-roles: {agent} stopped with {what}. The work order "
                                            "cannot close until they are sealed."}, note)
     if bad:
         what = "; ".join(bad)
@@ -768,14 +768,14 @@ def prediction_stop(d):
     if not d.get("stop_hook_active"):
         log(f"PREDICTION missing or bad for {agent} — sent back: {what}")
         out = with_note({"decision": "block",
-                         "reason": f"Permanence agent-roles: this change job needs a machine prediction before you "
+                         "reason": f"bakehouse agent-roles: this change job needs a machine prediction before you "
                                    f"stop: {what}. Write moves.prediction.json (a fix round: "
                                    f"moves.prediction.<round>.json) in the record folder your brief names, in the "
                                    f"format `predict-gate.sh check` reads, then stop."}, note)
         refusal_event("stop:prediction", out["reason"], prompt, folders[0] if folders else cwd)
         return out
     log(f"PREDICTION still missing or bad for {agent} — let it stop, told the user")
-    return with_note({"systemMessage": f"Permanence agent-roles: {agent} stopped without a machine "
+    return with_note({"systemMessage": f"bakehouse agent-roles: {agent} stopped without a machine "
                                        f"prediction: {what}. The work order cannot close until it has one."}, note)
 
 
@@ -927,17 +927,17 @@ def subagent_stop(d):
     if fresh or fresh is None:
         if not d.get("stop_hook_active"):
             log(f"RECORD-ARTEFACTS missing or bad for {d.get('agent_type')} — sent back: {'; '.join(bad)}")
-            refusal_event("stop:record-artefacts", "Permanence agent-roles:" + fix, prompt, where)
-            return with_note({"decision": "block", "reason": "Permanence agent-roles:" + fix}, note)
+            refusal_event("stop:record-artefacts", "bakehouse agent-roles:" + fix, prompt, where)
+            return with_note({"decision": "block", "reason": "bakehouse agent-roles:" + fix}, note)
         log(f"RECORD-ARTEFACTS still missing or bad for {d.get('agent_type')} — let it stop, told the user")
-        return with_note({"systemMessage": f"Permanence agent-roles: {d.get('agent_type')} stopped with its record "
+        return with_note({"systemMessage": f"bakehouse agent-roles: {d.get('agent_type')} stopped with its record "
                                            f"incomplete: {'; '.join(bad)}."}, note)
     if not d.get("stop_hook_active"):
         log(f"RUN-RECORD missing for {d.get('agent_type')} — sent back")
-        refusal_event("stop:run-record", f"Permanence agent-roles: role '{rname}' requires a run record"
+        refusal_event("stop:run-record", f"bakehouse agent-roles: role '{rname}' requires a run record"
                       + (f" in {named}/" if named else "") + "." + fix, prompt, where)
         return with_note({"decision": "block",
-                          "reason": f"Permanence agent-roles: role '{rname}' requires a run record. Before stopping, "
+                          "reason": f"bakehouse agent-roles: role '{rname}' requires a run record. Before stopping, "
                                     + (f"write contract.md and findings.md in the record folder your brief names, "
                                        f"{named}/, or in a subfolder of it, as your dispatch prompt describes"
                                        + (f": no file written in this run there matches {' or '.join(want)}." if want
@@ -946,7 +946,7 @@ def subagent_stop(d):
                                        f"root with contract.md and findings.md, as your dispatch prompt describes.")
                                     + fix}, note)
     log(f"RUN-RECORD still missing for {d.get('agent_type')} — let it stop, told the user")
-    return with_note({"systemMessage": f"Permanence agent-roles: {d.get('agent_type')} stopped without writing a record "
+    return with_note({"systemMessage": f"bakehouse agent-roles: {d.get('agent_type')} stopped without writing a record "
                                        f"{'in ' + named if named else 'under ' + checks[-1][1]}."
                                        + (f" Its record is also incomplete: {'; '.join(bad)}." if bad else "")}, note)
 
@@ -970,15 +970,15 @@ def check_new(cwd):
     gone = [(rn, p) for rn, r in entries for p in team_roles.providers(r)
             if p not in have and (p.split(":")[0] in plugins if ":" in p else bound)]
     for rn, p in gone:
-        print(f"[perma] Agent role '{rn}': provider '{p}' is not installed"
+        print(f"[bakehouse] Agent role '{rn}': provider '{p}' is not installed"
               + (f", but the {p.split(':')[0]} plugin is — it was probably renamed or removed. "
                  if ":" in p else " — reinstall the plugin. ")
               + "Tell the owner, and offer to update the role table that names it "
                 f"(runtime/agent-roles.json or {team_roles.personal_table()}).")
     new = sorted(have - seen - known - team_roles.BUILT_IN)
     if new and not first:
-        print("[perma] New agent(s) installed since the last check: " + ", ".join(new) + ". "
-              "If one does the same job as a Permanence role (runtime/agent-roles.json), tell the owner and "
+        print("[bakehouse] New agent(s) installed since the last check: " + ", ".join(new) + ". "
+              "If one does the same job as a bakehouse role (runtime/agent-roles.json), tell the owner and "
               "offer to add it to that role's providers. It is shown only once.")
     SEEN.parent.mkdir(parents=True, exist_ok=True)
     SEEN.write_text("\n".join(sorted(seen | have)) + "\n")
