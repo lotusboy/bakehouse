@@ -353,8 +353,8 @@ class TestRefusalsWriteOneEvent(SpendScratch):
             [(e["gate"], e["task"]) for e in self.refusals()],
             [("decision:category", None), ("decision:fix-round-number", "T1")],
         )
-        # no stream: nothing to write to, and nothing written (the boundary)
-        self.assertEqual(self.decision("score", "--stream", "nosuch").returncode, 1)
+        # no team: nothing to write to, and nothing written (the boundary)
+        self.assertEqual(self.decision("score", "--repo", str(self.root)).returncode, 1)
         self.assertEqual(len(self.events()), 2)
 
     def test_decision_refusal_output_is_unchanged_without_a_ledger(self):
@@ -368,7 +368,7 @@ class TestRefusalsWriteOneEvent(SpendScratch):
             (without.returncode, without.stdout, without.stderr),
         )
         self.assertEqual(
-            without.stderr, "decision: no decision d20990101-ffffff in a/s\n"
+            without.stderr, "decision: no decision d20990101-ffffff in work\n"
         )
 
     def test_spend_refusal_writes_one_event_with_its_gate(self):
@@ -863,6 +863,7 @@ class TestSpendKinds(SpendScratch):
         rt = self.root / "other-runtime"
         rt.mkdir()
         shutil.copy(RUNTIME / "spend.py", rt / "spend.py")
+        shutil.copy(RUNTIME / "locator.py", rt / "locator.py")
         t = self.table()
         t["roles"]["scribe"] = {"providers": []}
         (rt / "agent-roles.json").write_text(json.dumps(t))
@@ -1182,12 +1183,6 @@ SITE_GATES = [
     ),
     (
         "decision.py",
-        "_add_pointer",
-        "the QUESTIONS.md entry '{}' is no longer",
-        "decision:questions-ref",
-    ),
-    (
-        "decision.py",
         "check_grounding",
         "--fix-round counts from 1",
         "decision:fix-round-number",
@@ -1315,7 +1310,7 @@ SITE_GATES = [
     (
         "decision.py",
         "cmd_ask",
-        "--question is empty (or give --questions",
+        "--question is empty",
         "decision:question",
     ),
     (
@@ -1343,15 +1338,8 @@ SITE_GATES = [
         "decision:options",
     ),
     ("decision.py", "cmd_ask", "id {} already exists in {}", "decision:id-exists"),
-    ("decision.py", "cmd_ask", "{} has no QUESTIONS.md", "decision:questions-ref"),
     ("decision.py", "cmd_outcome", "--by (what showed it) is empty", "decision:by"),
     ("decision.py", "cmd_outcome", "no decision {} in {}", "decision:unknown-id"),
-    (
-        "decision.py",
-        "find_entry",
-        "--questions-ref '{}' matches {} QUESTION",
-        "decision:questions-ref",
-    ),
     (
         "predict-gate.py",
         "main",
@@ -1478,14 +1466,14 @@ EXCLUDED = {
     ): "fail() itself: it writes the event first when it has a gate",
     (
         "decision.py",
-        "resolve_stream",
+        "resolve_project",
         "fail without a gate",
-    ): "boundary 2: no stream, so no ledger",
+    ): "boundary 2: no team, so no ledger",
     (
         "spend.py",
-        "resolve_stream",
+        "resolve_project",
         "fail without a gate",
-    ): "boundary 2: no stream, so no ledger",
+    ): "boundary 2: no team, so no ledger",
     (
         "predict-gate.py",
         "run_check",
@@ -1506,8 +1494,8 @@ EXCLUDED = {
 EXCLUDED_COUNT = {
     ("decision.py", "fail", "sys.exit"): 1,
     ("spend.py", "fail", "sys.exit"): 1,
-    ("decision.py", "resolve_stream", "fail without a gate"): 3,
-    ("spend.py", "resolve_stream", "fail without a gate"): 3,
+    ("decision.py", "resolve_project", "fail without a gate"): 2,
+    ("spend.py", "resolve_project", "fail without a gate"): 2,
     ("predict-gate.py", "run_check", "return"): 2,
     ("predict-gate.py", "run_close", "return"): 1,
     ("predict-gate.py", "install_hook", "return"): 3,
@@ -1538,17 +1526,17 @@ class TestGateIds(unittest.TestCase):
         table = set(re.findall(rf"^\| `({self.ID})` \|", section, re.MULTILINE))
         self.assertEqual(sorted(code - table), [], "in code, not in the docs table")
         self.assertEqual(sorted(table - code), [], "in the docs table, not in code")
-        self.assertEqual(len(code), 54)  # 51, plus V12b's new id, V12c's predict-gate:anchor and stop:seal
+        self.assertEqual(len(code), 53)  # 51, plus V12b's new id, V12c's predict-gate:anchor and stop:seal, less decision:questions-ref (R0)
 
     def test_no_refusal_in_decision_or_spend_is_without_a_gate(self):
-        """Every fail() outside resolve_stream passes a gate id, so a refusal added without one fails here."""
+        """Every fail() outside resolve_project passes a gate id, so a refusal added without one fails here."""
         for name, prefix in (("decision.py", "decision:"), ("spend.py", "spend:")):
             tree = ast.parse((RUNTIME / name).read_text())
             found, bare = 0, []
             for fn in (
                 n
                 for n in ast.walk(tree)
-                if isinstance(n, ast.FunctionDef) and n.name != "resolve_stream"
+                if isinstance(n, ast.FunctionDef) and n.name != "resolve_project"
             ):
                 for call in (c for c in ast.walk(fn) if isinstance(c, ast.Call)):
                     if not (isinstance(call.func, ast.Name) and call.func.id == "fail"):
@@ -1562,7 +1550,7 @@ class TestGateIds(unittest.TestCase):
                         bare.append(f"{name}:{call.lineno}")
             with self.subTest(file=name):
                 self.assertEqual(bare, [])
-                self.assertEqual(found, {"decision.py": 37, "spend.py": 17}[name])
+                self.assertEqual(found, {"decision.py": 34, "spend.py": 17}[name])
 
     def test_each_refusal_site_carries_its_own_gate_id(self):
         """Each site, found by its function and message, names the gate it is documented with. A site that

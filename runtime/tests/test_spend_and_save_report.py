@@ -4,41 +4,27 @@ import hashlib
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from test_gate_events import Scratch  # noqa: E402
+
 RUNTIME = Path(__file__).resolve().parent.parent
-GIT = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
 
 
-class Spend(unittest.TestCase):
+class Spend(Scratch):
+    """A scratch project (test_gate_events.Scratch); the spend ledger is in its records worktree."""
+
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        t = Path(self.tmp.name).resolve()
-        self.perma = t / "perma"
-        (self.perma / "_meta").mkdir(parents=True)
-        (self.perma / "runtime").mkdir()
-        for s in ("resolve-stream.sh", "spend.sh", "spend.py", "ops-event.sh", "ops_ledger.py"):
-            (self.perma / "runtime" / s).symlink_to(RUNTIME / s)
-        self.work = t / "work"
-        subprocess.run(["git", "init", "-q", str(self.work)], check=True)
-        subprocess.run(["git", "-C", str(self.work), "commit", "-q", "--allow-empty", "-m", "first"],
-                       check=True, env=dict(os.environ, **GIT))
-        (self.perma / "a/proj/repo").mkdir(parents=True)
-        (self.perma / "a/proj/repo/binding.json").write_text(json.dumps({"owned": True}))
-        (self.perma / "_meta/REGISTRY.md").write_text(f"| path | stream | what |\n|---|---|---|\n| {self.work} | a/proj | t |\n")
-        self.env = dict(os.environ, PERMA_DIR=str(self.perma), **GIT)
-        for k in ("SPEND_TS", "OPS_REPO", "OPS_TS"):
-            self.env.pop(k, None)
-        self.ledger = self.perma / "a/proj/spend/ledger.jsonl"
-        self.ops = self.perma / "a/proj/repo/ops/events.jsonl"
-
-    def tearDown(self):
-        self.tmp.cleanup()
+        super().setUp()
+        self.spent = self.records / "spend" / "ledger.jsonl"
+        self.ops = self.records / "ops" / "events.jsonl"
 
     def run_(self, *args, env=None, ok=True, cwd=None):
-        p = subprocess.run([str(self.perma / "runtime/spend.sh"), *args], cwd=cwd or self.work,
+        p = subprocess.run([str(self.rt / "spend.sh"), *args], cwd=cwd or self.work,
                            capture_output=True, text=True, env=dict(self.env, **(env or {})))
         if ok:
             self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
@@ -57,9 +43,9 @@ class Spend(unittest.TestCase):
         p = self.run_("record", "--agent", "x1", "--label", "j", "--tokens", "100", ok=False)
         self.assertNotEqual(p.returncode, 0)
         self.assertIn("--outcome", p.stderr)
-        self.assertFalse(self.ledger.exists())
+        self.assertFalse(self.spent.exists())
         self.rec("x1", 10000)
-        row = json.loads(self.ledger.read_text().splitlines()[-1])
+        row = json.loads(self.spent.read_text().splitlines()[-1])
         self.assertEqual((row["outcome"], row["predictedTokens"], row["why"]),
                          ("as-predicted", 10000, "a build agent for engine work"))
         self.rec("x1", 12000, "--correct")
@@ -90,7 +76,7 @@ class Spend(unittest.TestCase):
                                      ok=False).returncode, 0)
 
     def test_a_worse_or_far_off_run_gets_a_lesson_stub_in_tools_md(self):
-        tools = self.perma / "a/proj/TOOLS.md"
+        tools = self.records / "TOOLS.md"
         tools.write_text("# TOOLS\n")
         self.rec("x2", 10500)
         self.assertEqual(tools.read_text(), "# TOOLS\n")
@@ -133,19 +119,19 @@ class Spend(unittest.TestCase):
         self.assertNotEqual(self.rec("a1", 200, ok=False).returncode, 0)
         self.rec("a1", 250, "--correct", "--note", "harness figure, not the self-report")
         self.assertEqual(self.status()[0]["spent"], 250)
-        self.assertEqual(len([l for l in self.ledger.read_text().splitlines() if '"agent"' in l]), 2)
+        self.assertEqual(len([l for l in self.spent.read_text().splitlines() if '"agent"' in l]), 2)
         self.assertNotEqual(self.rec("zz", 5, "--correct", ok=False).returncode, 0)
 
     def test_bad_input_writes_nothing(self):
         self.run_("wave", "open", "w1", "--ceiling", "1000")
-        before = self.ledger.read_text()
+        before = self.spent.read_text()
         for tok in ("0", "-5", "410k", "1.5"):
             self.assertNotEqual(self.rec("a1", tok, ok=False).returncode, 0, tok)
         self.assertNotEqual(self.rec("a1", 5, "--wave", "nope", ok=False).returncode, 0)
         self.assertNotEqual(self.rec("a1", 5, "--kind", "intern", ok=False).returncode, 0)
         self.assertNotEqual(self.run_("wave", "open", "w1", "--ceiling", "5", ok=False).returncode, 0)
         self.assertNotEqual(self.run_("wave", "open", "w2", ok=False).returncode, 0)
-        self.assertEqual(self.ledger.read_text(), before)
+        self.assertEqual(self.spent.read_text(), before)
 
     def test_two_open_waves_need_an_explicit_wave(self):
         self.run_("wave", "open", "w1", "--ceiling", "1000")
@@ -161,7 +147,7 @@ class Spend(unittest.TestCase):
 
     def test_record_with_no_wave_open_is_kept_unwaved(self):
         self.rec("a1", 7)
-        (row,) = [json.loads(l) for l in self.ledger.read_text().splitlines()]
+        (row,) = [json.loads(l) for l in self.spent.read_text().splitlines()]
         self.assertIsNone(row["wave"])
         rep = json.loads(self.run_("report", "--json").stdout)
         self.assertEqual(rep["wave"], {"(no wave)": 7})
@@ -182,7 +168,7 @@ class Spend(unittest.TestCase):
     def test_backfill_needs_a_note(self):
         p = self.rec("a1", 5, env={"SPEND_TS": "2026-10-09T10:00:00+01:00"}, ok=False)
         self.assertNotEqual(p.returncode, 0)
-        self.assertFalse(self.ledger.exists())
+        self.assertFalse(self.spent.exists())
 
     def test_record_also_writes_the_ops_ledger_once(self):
         self.rec("a1", 1234, "--task", "T12")
@@ -195,19 +181,18 @@ class Spend(unittest.TestCase):
         self.assertEqual(len(rows), 2)
         self.assertIsNone(rows[1]["tokens"])
 
-    def test_unowned_stream_and_explicit_stream_skip_the_ops_ledger(self):
-        (self.perma / "b").mkdir()
-        p = self.rec("a1", 5, "--stream", "b", cwd=self.perma)
-        self.assertTrue((self.perma / "b/spend/ledger.jsonl").exists())
+    def test_unowned_project_and_explicit_repo_skip_the_ops_ledger(self):
+        p = self.rec("a1", 5, "--repo", str(self.work), cwd=self.root)
+        self.assertTrue(self.spent.exists())
         self.assertNotIn("ops ledger", p.stdout)
-        (self.perma / "a/proj/repo/binding.json").write_text(json.dumps({"owned": False}))
+        (self.work / ".team" / "binding.json").write_text(json.dumps({"owned": False}))
         self.assertIn("not written", self.rec("a2", 5).stdout)
         self.assertFalse(self.ops.exists())
 
-    def test_unregistered_directory_without_stream_fails(self):
-        p = self.run_("status", cwd=self.perma, ok=False)
+    def test_a_folder_with_no_team_fails_without_repo(self):
+        p = self.run_("status", cwd=self.root, ok=False)
         self.assertNotEqual(p.returncode, 0)
-        self.assertIn("--stream", p.stderr)
+        self.assertIn("--repo", p.stderr)
 
 
 class SaveReport(unittest.TestCase):

@@ -6,8 +6,9 @@ Why it exists: an agent's own report of its token use was off by up to 2x (2026-
 the harness puts in the completion notification (`subagent_tokens`) is the measured one, so that is
 the figure recorded here, and `source` says when a row is anything less.
 
-Ledger: <stream>/spend/ledger.jsonl, append-only, a sibling of decisions/ledger.jsonl. It is a
-stream ledger, not the repo ops ledger, because a wave can run from any stream, owned repo or not.
+Ledger: <records>/spend/ledger.jsonl, append-only, a sibling of decisions/ledger.jsonl. It is not
+the ops ledger, because a wave can run in any project, owned repo or not. The project is found by
+runtime/locator.py.
 Event kinds:
   wave-open   wave, ceiling
   wave-close  wave
@@ -16,7 +17,7 @@ Event kinds:
 Every first record of an agent states the role it ran as (`--kind`), why that tool was chosen, what was
 predicted (result and tokens), what happened and the outcome (owner, 2026-09-27 and 2026-10-14: track tool
 use in results, not only stats). A run that went worse or failed, or whose tokens are off the prediction
-by more than half, gets a stub entry in <stream>/TOOLS.md for the lesson to be written.
+by more than half, gets a stub entry in <records>/TOOLS.md for the lesson to be written.
 A wrong agent row is never edited: `record --correct` appends a new row for the same agent id, and
 the latest row for an agent id is the one that counts.
 """
@@ -30,8 +31,9 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-PERMA = Path(os.environ.get("PERMA_DIR") or Path.home() / "permanence")
-LEDGER = "spend/ledger.jsonl"
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import locator  # noqa: E402
 
 
 
@@ -48,22 +50,20 @@ def kinds():
 KINDS, OLD_ROWS_ONLY = kinds()
 SOURCES = ("harness", "self-reported", "estimate")
 OUTCOMES = ("as-predicted", "better", "worse", "failed")
-TOOLS = "TOOLS.md"
 WARN, STOP = 0.8, 1.0
 
 
-_STREAM = None  # the stream resolve_stream found, for the refusal event
+_PROJECT = None  # the project resolve_project found, for the refusal event
 _TASK = None
 
 
 def fail(msg, gate=None):
     """Refuse: exit 1 with the message. A refusal with a gate id first writes one gate-refused event to
-    the stream's ops ledger (docs/PROJECT-TEAM.md, "Gate refusals"); a failed write changes nothing."""
-    if gate and _STREAM:
+    the project's ops ledger (docs/PROJECT-TEAM.md, "Gate refusals"); a failed write changes nothing."""
+    if gate and _PROJECT:
         try:
-            sys.path.insert(0, str(Path(__file__).resolve().parent))
             import gate_event
-            gate_event.refused(gate, "spend.sh refused", f"spend: {msg}", task=_TASK, stream=_STREAM, perma=PERMA)
+            gate_event.refused(gate, "spend.sh refused", f"spend: {msg}", task=_TASK, path=_PROJECT.root)
         except Exception:  # noqa: BLE001, S110 - the event reports a refusal; it never changes one
             pass
     sys.exit(f"spend: {msg}")
@@ -73,26 +73,27 @@ def stamp():
     return os.environ.get("SPEND_TS") or datetime.datetime.now().astimezone().isoformat(timespec="seconds")
 
 
-def resolve_stream(explicit):
-    if explicit:
-        stream = explicit.strip("/")
-    else:
-        out = subprocess.run([str(PERMA / "runtime" / "resolve-stream.sh"), os.getcwd()],
-                             capture_output=True, text=True, env=dict(os.environ, PERMA_DIR=str(PERMA)))
-        stream = out.stdout.strip()
-        if not stream:
-            fail(f"no stream is registered for {os.getcwd()} in _meta/REGISTRY.md; pass --stream")
-    if ".." in Path(stream).parts or os.path.isabs(stream):
-        fail(f"stream {stream} is not a folder inside {PERMA}")
-    if not (PERMA / stream).is_dir():
-        fail(f"stream {stream} has no folder in {PERMA}")
-    global _STREAM
-    _STREAM = stream
-    return stream
+def resolve_project(repo):
+    """The project of --repo, else of the current folder (runtime/locator.py)."""
+    env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"} if repo else os.environ
+    try:
+        project = locator.find(repo, env)
+    except locator.SetupNeeded as e:
+        fail(str(e))
+    if project is None:
+        fail(f"{repo or os.getcwd()} has no team (no .team/binding.json); pass --repo")
+    global _PROJECT
+    _PROJECT = project
+    return project
 
 
-def read_events(stream):
-    p = PERMA / stream / LEDGER
+def name_of(project):
+    """The project's short name, for a row, a heading or a message (its repository folder's name)."""
+    return project.root.name
+
+
+def read_events(project):
+    p = project.spend_ledger
     if not p.exists():
         return []
     rows = []
@@ -101,12 +102,12 @@ def read_events(stream):
             try:
                 rows.append(json.loads(line))
             except json.JSONDecodeError:
-                print(f"spend: {stream}/{LEDGER} line {n} is not JSON; skipped", file=sys.stderr)
+                print(f"spend: {p} line {n} is not JSON; skipped", file=sys.stderr)
     return rows
 
 
-def append(stream, event):
-    p = PERMA / stream / LEDGER
+def append(project, event):
+    p = project.spend_ledger
     p.parent.mkdir(exist_ok=True)
     with p.open("a", encoding="utf-8") as f:
         f.write(json.dumps(event, ensure_ascii=False) + "\n")
@@ -173,8 +174,9 @@ def bar(frac, width=20):
 # ---------- commands ----------
 
 def cmd_wave(a):
-    stream = resolve_stream(a.stream)
-    ev = read_events(stream)
+    project = resolve_project(a.repo)
+    label = name_of(project)
+    ev = read_events(project)
     known = waves(ev)
     if a.action == "open":
         if not a.name:
@@ -182,69 +184,69 @@ def cmd_wave(a):
         if a.ceiling is None:
             fail("wave open needs --ceiling <tokens>", "spend:wave-args")
         if a.name in known:
-            fail(f"wave {a.name} already exists in {stream} (opened {known[a.name]['opened']}); pick a new name",
+            fail(f"wave {a.name} already exists in {label} (opened {known[a.name]['opened']}); pick a new name",
                  "spend:wave-exists")
-        append(stream, {"ts": stamp(), "event": "wave-open", "wave": a.name, "ceiling": a.ceiling})
-        print(f"wave {a.name} open in {stream}: ceiling {a.ceiling:,} tokens")
+        append(project, {"ts": stamp(), "event": "wave-open", "wave": a.name, "ceiling": a.ceiling})
+        print(f"wave {a.name} open in {label}: ceiling {a.ceiling:,} tokens")
         return
     name = a.name
     if not name:
         live = open_waves(ev)
         if len(live) != 1:
-            fail(f"{len(live)} waves are open in {stream}; name the one to close", "spend:wave-ambiguous")
+            fail(f"{len(live)} waves are open in {label}; name the one to close", "spend:wave-ambiguous")
         name = live[0]
     if name not in known:
-        fail(f"no wave {name} in {stream}", "spend:wave-unknown")
+        fail(f"no wave {name} in {label}", "spend:wave-unknown")
     if known[name]["closed"]:
         fail(f"wave {name} was already closed at {known[name]['closed']}", "spend:wave-closed")
-    append(stream, {"ts": stamp(), "event": "wave-close", "wave": name})
-    s = wave_summary(read_events(stream), name)
-    print(f"wave {name} closed in {stream}: spent {s['spent']:,} of {s['ceiling']:,} "
+    append(project, {"ts": stamp(), "event": "wave-close", "wave": name})
+    s = wave_summary(read_events(project), name)
+    print(f"wave {name} closed in {label}: spent {s['spent']:,} of {s['ceiling']:,} "
           f"({s['fraction'] * 100:.0f}%) across {len(s['agents'])} agents")
 
 
-def mirror_to_ops(stream, a):
-    """One write for the PM: an agent-run row in the repo ops ledger, when this cwd keeps one."""
-    binding = PERMA / stream / "repo" / "binding.json"
+def mirror_to_ops(project, a):
+    """One write for the PM: an agent-run row in the repo ops ledger, when this project keeps one."""
     try:
-        owned = json.loads(binding.read_text()).get("owned") is True
+        owned = json.loads(project.binding.read_text()).get("owned") is True
     except (OSError, json.JSONDecodeError):
         owned = False
     if not owned:
-        return "ops ledger: not written (this stream keeps no ops ledger)"
+        return "ops ledger: not written (this project keeps no ops ledger)"
     note = f"spend.sh: agent={a.agent} kind={a.kind} source={a.source}" + (f" wave={a.wave}" if a.wave else "")
     if a.note:
         note += f"; {a.note}"
     tokens = str(a.tokens) if a.source == "harness" else "-"
-    p = subprocess.run([str(PERMA / "runtime" / "ops-event.sh"), "agent-run", a.task or "-", a.label,
+    p = subprocess.run([str(HERE / "ops-event.sh"), "agent-run", a.task or "-", a.label,
                         a.model or "-", "-", "-", tokens, "-", "done", note],
-                       capture_output=True, text=True, env=dict(os.environ, PERMA_DIR=str(PERMA)))
+                       capture_output=True, text=True, env=dict(os.environ, OPS_REPO=str(project.root)))
     if p.returncode != 0:
         return f"ops ledger: NOT written ({p.stderr.strip()}); the spend row stands"
     return "ops ledger: agent-run row written"
 
 
 def cmd_record(a):
-    stream = resolve_stream(a.stream)
-    ev = read_events(stream)
+    project = resolve_project(a.repo)
+    label = name_of(project)
+    ev = read_events(project)
     if os.environ.get("SPEND_TS") and not a.note:
         fail("a backfilled row (SPEND_TS set) needs --note naming where the figure came from", "spend:backfill-note")
     known = waves(ev)
     if a.wave:
         if a.wave not in known:
-            fail(f"no wave {a.wave} in {stream}; open it first: spend.sh wave open {a.wave} --ceiling <n>",
+            fail(f"no wave {a.wave} in {label}; open it first: spend.sh wave open {a.wave} --ceiling <n>",
                  "spend:wave-unknown")
     else:
         live = open_waves(ev)
         if len(live) > 1:
-            fail(f"{len(live)} waves are open in {stream} ({', '.join(live)}); pass --wave", "spend:wave-ambiguous")
+            fail(f"{len(live)} waves are open in {label} ({', '.join(live)}); pass --wave", "spend:wave-ambiguous")
         a.wave = live[0] if live else None
     seen = {r["agent"] for r in agents(ev)}
     if a.agent in seen and not a.correct:
-        fail(f"agent {a.agent} is already recorded in {stream}; pass --correct to replace its row",
+        fail(f"agent {a.agent} is already recorded in {label}; pass --correct to replace its row",
              "spend:already-recorded")
     if a.correct and a.agent not in seen:
-        fail(f"--correct given but agent {a.agent} has no row in {stream} to correct", "spend:correct-no-row")
+        fail(f"--correct given but agent {a.agent} has no row in {label} to correct", "spend:correct-no-row")
     # The gate is on the record: spend.sh runs after an agent finishes, so it cannot stop the run
     # itself. It stops a second architect run on one task being recorded as if nothing happened
     # first, and the PM role makes the step-back come before the dispatch.
@@ -281,19 +283,19 @@ def cmd_record(a):
            "note": a.note, "corrects": bool(a.correct), "backfilled": bool(os.environ.get("SPEND_TS")),
            "why": a.why, "predicted": a.predicted, "predictedTokens": a.predicted_tokens,
            "result": a.result, "outcome": a.outcome, "steppedBack": getattr(a, "stepped_back", None)}
-    append(stream, row)
+    append(project, row)
     if needs_lesson(a):
-        print(stub_lesson(stream, a))
+        print(stub_lesson(project, a))
     print(f"recorded {a.agent} ({a.label}): {a.tokens:,} tokens, {a.source}"
           + (f", wave {a.wave}" if a.wave else ", no wave open"))
     if a.wave:
-        s = wave_summary(read_events(stream), a.wave)
+        s = wave_summary(read_events(project), a.wave)
         print(f"wave {a.wave}: {bar(s['fraction'])} {s['spent']:,} / {s['ceiling']:,} ({s['fraction'] * 100:.0f}%)")
         msg = flag(s)
         if msg:
             print(msg, file=sys.stderr)
-    if not a.no_ops and not a.correct and not a.stream:
-        print(mirror_to_ops(stream, a))
+    if not a.no_ops and not a.correct and not a.repo:
+        print(mirror_to_ops(project, a))
 
 
 def needs_lesson(a):
@@ -303,10 +305,10 @@ def needs_lesson(a):
     return a.outcome in ("worse", "failed") or bool(off)
 
 
-def stub_lesson(stream, a):
-    path = PERMA / stream / TOOLS
+def stub_lesson(project, a):
+    path = project.tool_lessons
     if not path.exists():
-        return f"TOOLS.md: {stream} has none; no lesson stub written"
+        return f"TOOLS.md: {name_of(project)} has none; no lesson stub written"
     entry = (f"\n### {stamp()[:10]} — {a.task or '-'} — {a.label} ({a.kind}, {a.agent})\n"
              f"- **Why this tool:** {a.why}\n"
              f"- **Predicted:** {a.predicted}; {a.predicted_tokens:,} tokens.\n"
@@ -318,19 +320,20 @@ def stub_lesson(stream, a):
 
 
 def cmd_status(a):
-    stream = resolve_stream(a.stream)
-    ev = read_events(stream)
+    project = resolve_project(a.repo)
+    label = name_of(project)
+    ev = read_events(project)
     names = list(waves(ev)) if a.all else open_waves(ev)
     if a.wave:
         if a.wave not in waves(ev):
-            fail(f"no wave {a.wave} in {stream}", "spend:wave-unknown")
+            fail(f"no wave {a.wave} in {label}", "spend:wave-unknown")
         names = [a.wave]
     out = [wave_summary(ev, n) for n in names]
     if a.json:
-        print(json.dumps({"stream": stream, "waves": out}, indent=2, ensure_ascii=False))
+        print(json.dumps({"stream": label, "waves": out}, indent=2, ensure_ascii=False))
         return
     if not out:
-        print(f"{stream}: no {'' if a.all else 'open '}waves. Open one: spend.sh wave open <name> --ceiling <tokens>")
+        print(f"{label}: no {'' if a.all else 'open '}waves. Open one: spend.sh wave open <name> --ceiling <tokens>")
         return
     for s in out:
         state = "open" if s["open"] else f"closed {s['closed']}"
@@ -345,8 +348,9 @@ def cmd_status(a):
 
 
 def cmd_report(a):
-    stream = resolve_stream(a.stream)
-    rows = [r for r in agents(read_events(stream)) if not a.since or r["ts"][:10] >= a.since]
+    project = resolve_project(a.repo)
+    label = name_of(project)
+    rows = [r for r in agents(read_events(project)) if not a.since or r["ts"][:10] >= a.since]
     by = {"day": defaultdict(int), "wave": defaultdict(int), "kind": defaultdict(int), "source": defaultdict(int)}
     for r in rows:
         by["day"][r["ts"][:10]] += r["tokens"]
@@ -355,10 +359,10 @@ def cmd_report(a):
         by["source"][r["source"]] += r["tokens"]
     total = sum(r["tokens"] for r in rows)
     if a.json:
-        print(json.dumps({"stream": stream, "since": a.since, "agents": len(rows), "total": total,
+        print(json.dumps({"stream": label, "since": a.since, "agents": len(rows), "total": total,
                           **{k: dict(sorted(v.items())) for k, v in by.items()}}, indent=2, ensure_ascii=False))
         return
-    print(f"{stream}: {total:,} tokens across {len(rows)} agents" + (f" since {a.since}" if a.since else ""))
+    print(f"{label}: {total:,} tokens across {len(rows)} agents" + (f" since {a.since}" if a.since else ""))
     for k in ("day", "wave", "kind", "source"):
         print(f"by {k}:")
         for name, n in sorted(by[k].items()):
@@ -388,27 +392,27 @@ def main():
     r.add_argument("--stepped-back", help="a second architect run for --task: the step-back done first")
     r.add_argument("--correct", action="store_true", help="replace this agent's earlier row (appends; never edits)")
     r.add_argument("--no-ops", action="store_true", help="do not also write the repo ops ledger's agent-run row")
-    r.add_argument("--stream")
+    r.add_argument("--repo", help="the project's repository folder; default: the current folder")
     r.set_defaults(fn=cmd_record)
 
     w = sub.add_parser("wave", help="open or close a wave")
     w.add_argument("action", choices=("open", "close"))
     w.add_argument("name", nargs="?")
     w.add_argument("--ceiling", type=tokens_arg)
-    w.add_argument("--stream")
+    w.add_argument("--repo", help="the project's repository folder; default: the current folder")
     w.set_defaults(fn=cmd_wave)
 
     s = sub.add_parser("status", help="spent vs ceiling per wave, per agent, with 80%%/100%% warnings")
     s.add_argument("--wave")
     s.add_argument("--all", action="store_true", help="closed waves too")
     s.add_argument("--json", action="store_true")
-    s.add_argument("--stream")
+    s.add_argument("--repo", help="the project's repository folder; default: the current folder")
     s.set_defaults(fn=cmd_status)
 
     t = sub.add_parser("report", help="totals by day, wave, kind and source")
     t.add_argument("--since", help="YYYY-MM-DD, inclusive")
     t.add_argument("--json", action="store_true")
-    t.add_argument("--stream")
+    t.add_argument("--repo", help="the project's repository folder; default: the current folder")
     t.set_defaults(fn=cmd_report)
 
     a = p.parse_args()

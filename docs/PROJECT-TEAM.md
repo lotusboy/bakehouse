@@ -902,7 +902,6 @@ refusals can be counted per tool and per check. The event is ops-event.sh's, wit
 
 | gate | tool | refuses when |
 |---|---|---|
-| `decision:questions-ref` | decision.sh | `--questions-ref` matches no entry or several, the entry is gone, or the stream has no QUESTIONS.md |
 | `decision:category` | decision.sh | `--category` is empty |
 | `decision:question` | decision.sh | `--question` is empty |
 | `decision:blind-autonomous` | decision.sh | `--blind` with `--autonomous` |

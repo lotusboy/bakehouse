@@ -3,39 +3,27 @@ python3 -m unittest discover -s runtime/tests"""
 import json
 import os
 import subprocess
-import tempfile
+import sys
 import unittest
 from pathlib import Path
 
-RUNTIME = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from test_gate_events import Scratch  # noqa: E402
 
 
-class Ledger(unittest.TestCase):
+class Ledger(Scratch):
+    """A scratch project (test_gate_events.Scratch); the decision ledger is in its records worktree."""
+
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        t = Path(self.tmp.name).resolve()
-        self.perma = t / "perma"
-        (self.perma / "_meta").mkdir(parents=True)
-        (self.perma / "runtime").mkdir()
-        for s in ("resolve-stream.sh", "decision.sh", "decision.py", "decision-config.json"):
-            (self.perma / "runtime" / s).symlink_to(RUNTIME / s)
-        self.work = t / "work"
-        self.work.mkdir()
-        (self.perma / "a/proj").mkdir(parents=True)
-        (self.perma / "_meta/REGISTRY.md").write_text(f"| path | stream | what |\n|---|---|---|\n| {self.work} | a/proj | t |\n")
-        self.env = dict(os.environ, PERMA_DIR=str(self.perma), DECISION_NOW="2026-10-10T12:00:00+01:00")
-        for k in ("DECISION_TS", "DECISION_BACKFILL"):
-            self.env.pop(k, None)
-        self.ledger = self.perma / "a/proj/decisions/ledger.jsonl"
+        super().setUp()
+        self.env["DECISION_NOW"] = "2026-10-10T12:00:00+01:00"
+        self.decisions = self.records / "decisions" / "ledger.jsonl"
         self.src = self.work / "rates.csv"
         self.src.write_text("Band,Rate\n1 to 25,0.5\n")
         self.grounded = ["--read", str(self.src), "--read-what", "rows 1-2"]
 
-    def tearDown(self):
-        self.tmp.cleanup()
-
     def run_(self, *args, env=None, ok=True):
-        p = subprocess.run([str(self.perma / "runtime/decision.sh"), *args], cwd=self.work,
+        p = subprocess.run([str(self.rt / "decision.sh"), *args], cwd=self.work,
                            capture_output=True, text=True, env=dict(self.env, **(env or {})))
         if ok:
             self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
@@ -49,7 +37,7 @@ class Ledger(unittest.TestCase):
         return self.run_(*args, env={"DECISION_TS": ts}).stdout.strip()
 
     def rows(self):
-        return [json.loads(l) for l in self.ledger.read_text().splitlines()]
+        return [json.loads(l) for l in self.decisions.read_text().splitlines()]
 
     def score(self, *extra):
         return json.loads(self.run_("score", "--json", *extra).stdout)
@@ -60,17 +48,17 @@ class Ledger(unittest.TestCase):
         import time
 
         self.ask()
-        lock = self.ledger.with_name(".ledger.jsonl.lock")
+        lock = self.decisions.with_name(".ledger.jsonl.lock")
         self.assertTrue(lock.exists(), "the lock is a file of its own beside the ledger")
         with lock.open("a") as held:
             fcntl.flock(held, fcntl.LOCK_EX)
-            swapped = self.ledger.with_name("swap.tmp")
-            swapped.write_bytes(self.ledger.read_bytes())
-            os.replace(swapped, self.ledger)  # a new inode at the same path, as git checkout writes
+            swapped = self.decisions.with_name("swap.tmp")
+            swapped.write_bytes(self.decisions.read_bytes())
+            os.replace(swapped, self.decisions)  # a new inode at the same path, as git checkout writes
             args = ["ask", "--category", "spend", "--question", "Run it again?", "--option", "yes", "--option",
                     "no", "--recommendation", "yes", "--confidence", "0.9", "--evidence-kind", "measured",
                     "--evidence", "WIP.md", *self.grounded]
-            p = subprocess.Popen([str(self.perma / "runtime/decision.sh"), *args], cwd=self.work,
+            p = subprocess.Popen([str(self.rt / "decision.sh"), *args], cwd=self.work,
                                  env=dict(self.env, DECISION_TS="2026-10-10T10:00:00+01:00"),
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             time.sleep(1.5)
@@ -79,36 +67,35 @@ class Ledger(unittest.TestCase):
         self.assertEqual(len(self.rows()), 2)
 
     # --- record ---
-    def test_ask_answer_outcome_append_to_the_streams_ledger(self):
+    def test_ask_answer_outcome_append_to_the_projects_ledger(self):
         did = self.ask()
         self.run_("answer", did, "--choice", "yes")
         self.run_("outcome", did, "--verdict", "held", "--by", "the run finished")
         kinds = [(r["kind"], r["id"]) for r in self.rows()]
         self.assertEqual(kinds, [("ask", did), ("answer", did), ("outcome", did)])
         self.assertTrue(self.rows()[1]["agreed"])
-        self.assertEqual(self.rows()[0]["stream"], "a/proj")
+        self.assertEqual(self.rows()[0]["stream"], "work")
 
     def test_ask_records_the_approving_option_and_refuses_one_not_offered(self):
         self.ask(extra=["--approves", "yes", "--task", "W-1"])
         self.assertEqual((self.rows()[-1]["approves"], self.rows()[-1]["task"]), ("yes", "W-1"))
-        before = self.ledger.read_text()
+        before = self.decisions.read_text()
         p = self.run_("ask", "--category", "spend", "--question", "Run it?", "--option", "yes", "--option", "no",
                       "--recommendation", "yes", "--confidence", "0.9", "--evidence-kind", "measured",
                       "--evidence", "WIP.md", "--approves", "approve", *self.grounded, ok=False)
         self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
         self.assertIn("--approves must be one of the --option values", p.stdout + p.stderr)
-        self.assertEqual(self.ledger.read_text(), before)
+        self.assertEqual(self.decisions.read_text(), before)
         self.ask(q="Other?")
         self.assertNotIn("approves", self.rows()[-1])
 
-    def test_explicit_stream_works_outside_a_registered_directory(self):
-        (self.perma / "b").mkdir()
-        p = subprocess.run([str(self.perma / "runtime/decision.sh"), "ask", "--stream", "b", "--category", "scope",
+    def test_explicit_repo_works_outside_the_project(self):
+        p = subprocess.run([str(self.rt / "decision.sh"), "ask", "--repo", str(self.work), "--category", "scope",
                             "--question", "q", "--option", "x", "--option", "y", "--recommendation", "x",
                             "--confidence", "0.5", "--evidence-kind", "inference", "--evidence", "e", *self.grounded],
-                           cwd=self.perma, capture_output=True, text=True, env=self.env)
+                           cwd=self.root, capture_output=True, text=True, env=self.env)
         self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertTrue((self.perma / "b/decisions/ledger.jsonl").exists())
+        self.assertTrue(self.decisions.exists())
 
     def test_validation_refuses_bad_input_and_writes_nothing(self):
         base = ["ask", "--category", "spend", "--question", "q", "--option", "a", "--option", "b",
@@ -117,7 +104,7 @@ class Ledger(unittest.TestCase):
             self.assertNotEqual(self.run_(*base, *extra, ok=False).returncode, 0, extra)
         bad_kind = [x if x != "measured" else "vibes" for x in base] + ["--confidence", "0.5"]
         self.assertNotEqual(self.run_(*bad_kind, ok=False).returncode, 0)
-        self.assertFalse(self.ledger.exists())
+        self.assertFalse(self.decisions.exists())
 
     def test_a_question_must_rest_on_a_source_the_asker_opened(self):
         report = self.work / "findings.md"
@@ -128,7 +115,7 @@ class Ledger(unittest.TestCase):
                           "--recommendation", "a", "--confidence", "0.5", "--evidence-kind", "measured",
                           "--evidence", "e", *grounding, ok=False)
             self.assertNotEqual(p.returncode, 0, grounding)
-        self.assertFalse(self.ledger.exists())
+        self.assertFalse(self.decisions.exists())
         did = self.ask()
         self.assertEqual(self.rows()[0]["read"], [{"path": str(self.src), "what": "rows 1-2"}])
         self.assertTrue(did)
@@ -141,7 +128,7 @@ class Ledger(unittest.TestCase):
                           "--evidence", "e", *self.grounded, ok=False)
             self.assertNotEqual(p.returncode, 0, q)
             self.assertIn("guess:", p.stderr)
-        self.assertFalse(self.ledger.exists())
+        self.assertFalse(self.decisions.exists())
         self.ask(q="guess: the label column is probably the first; check it?")
         self.ask(q="Shoulder rates and appearance fees: go?")
         self.assertEqual(len(self.rows()), 2)
@@ -261,9 +248,9 @@ class Ledger(unittest.TestCase):
     def test_disagreement_must_be_stated_and_past_lines_are_never_rewritten(self):
         did = self.ask()
         self.assertNotEqual(self.run_("answer", did, "--choice", "not now", ok=False).returncode, 0)
-        before = self.ledger.read_text()
+        before = self.decisions.read_text()
         self.run_("answer", did, "--choice", "not now", "--agreed", "no")
-        self.assertTrue(self.ledger.read_text().startswith(before))
+        self.assertTrue(self.decisions.read_text().startswith(before))
         self.assertFalse(self.rows()[-1]["agreed"])
 
     def test_blind_answer_may_leave_agreed_open(self):
@@ -330,9 +317,8 @@ class Ledger(unittest.TestCase):
         self.run_("outcome", last, "--verdict", "reversed", "--by", "x")
         self.assertEqual(self.score()["categories"]["placement"]["autonomy"], "ask")
 
-    def test_thresholds_are_configurable_per_stream(self):
-        (self.perma / "a/proj/decisions").mkdir()
-        (self.perma / "a/proj/decisions/config.json").write_text(json.dumps({"autonomy": {"minAnswered": 2}}))
+    def test_thresholds_are_configurable_per_project(self):
+        (self.work / ".team" / "decision-config.json").write_text(json.dumps({"autonomy": {"minAnswered": 2}}))
         self.make_autonomous(n=2)
         s = self.score()["categories"]["placement"]
         self.assertEqual(s["autonomy"], "autonomous", s["autonomyReasons"])
@@ -363,49 +349,27 @@ class Ledger(unittest.TestCase):
         since = self.run_("review", "--since", "2026-10-10").stdout
         self.assertNotIn("First", since)
 
-    # --- DECISIONS.md and QUESTIONS.md ---
+    # --- DECISIONS.md ---
     def test_decisions_md_is_regenerated_from_the_ledger_after_every_write(self):
         did = self.ask(q="Ship the page?")
-        md = (self.perma / "a/proj/DECISIONS.md").read_text()
+        md = (self.records / "DECISIONS.md").read_text()
         self.assertIn(f"### `{did}` — Ship the page?", md)
         self.assertIn("no answer yet", md)
         self.run_("answer", did, "--choice", "yes")
-        md = (self.perma / "a/proj/DECISIONS.md").read_text()
+        md = (self.records / "DECISIONS.md").read_text()
         self.assertIn("**Agreed with the recommendation:** yes", md)
         self.assertLess(md.index("## Scores"), md.index("## Every decision"))
 
-    QS = ("# QUESTIONS\n\n## Q — Keep the old cache? (raised 2026-10-01) [OPEN]\nSome context.\n\n"
-          "## Q — Rename the tool? (raised 2026-10-02) [OPEN]\nMore context.\n")
-
-    def test_questions_md_round_trip_adds_only_pointer_lines(self):
-        qp = self.perma / "a/proj/QUESTIONS.md"
-        qp.write_text(self.QS)
-        did = self.run_("ask", "--questions-ref", "old cache", "--category", "scope", "--option", "keep",
-                        "--option", "drop", "--recommendation", "drop", "--confidence", "0.7",
-                        "--evidence-kind", "source-read", "--evidence", "cache.py:12", *self.grounded,
-                        env={"DECISION_TS": "2026-10-10T09:00:00+01:00"}).stdout.strip()
-        self.assertEqual(self.rows()[0]["question"], "Keep the old cache?")
-        self.run_("answer", did, "--choice", "keep", "--agreed", "no",
-                  env={"DECISION_TS": "2026-10-10T09:30:00+01:00"})
-        lines = qp.read_text().split("\n")
-        added = [l for l in lines if l not in self.QS.split("\n")]
-        self.assertEqual(added, [
-            f"Decision `{did}` in DECISIONS.md: asked 2026-10-10, recommended drop (confidence 0.7).",
-            f"Decision `{did}` in DECISIONS.md: answered 2026-10-10: keep (differed from the recommendation)."])
-        # pointers sit inside the referenced entry, and the rest of the file is unchanged
-        self.assertEqual(lines.index("Some context.") + 1, lines.index(added[0]))
-        stripped = "\n".join(l for l in lines if l not in added)
-        self.assertEqual(stripped, self.QS)
+    def test_an_older_ask_keeps_its_questions_md_entry_in_the_views(self):
+        self.ask()
+        row = self.rows()[0]
+        row.update(id="d20261010-aaaaaa", questionsRef="## Q — Keep the old cache? (raised 2026-10-01) [OPEN]")
+        with self.decisions.open("a") as f:
+            f.write(json.dumps(row) + "\n")
         out = self.run_("review", "--md").stdout
         self.assertIn("Keep the old cache?", out.split("Every decision")[1])
-
-    def test_questions_ref_must_match_exactly_one_entry(self):
-        (self.perma / "a/proj/QUESTIONS.md").write_text(self.QS)
-        base = ["ask", "--category", "scope", "--option", "a", "--option", "b", "--recommendation", "a",
-                "--confidence", "0.5", "--evidence-kind", "inference", "--evidence", "e"]
-        for ref in ("Q —", "no such entry"):
-            self.assertNotEqual(self.run_(*base, "--questions-ref", ref, ok=False).returncode, 0, ref)
-        self.assertEqual((self.perma / "a/proj/QUESTIONS.md").read_text(), self.QS)
+        self.run_("render")
+        self.assertIn("**QUESTIONS.md entry:** Keep the old cache?", (self.records / "DECISIONS.md").read_text())
 
 
 if __name__ == "__main__":

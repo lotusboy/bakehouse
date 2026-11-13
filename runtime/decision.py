@@ -3,17 +3,16 @@
 the owner's choice, and what happened later. Scores agreement and calibration per category, and says
 when a category has earned autonomy. Pure computation; no AI. Called through runtime/decision.sh.
 
-Ledger: <stream>/decisions/ledger.jsonl, append-only; the source of truth for scoring. Three event
+Ledger: <records>/decisions/ledger.jsonl, append-only; the source of truth for scoring. Three event
 kinds share one decision id:
   ask      the question, options, recommendation, confidence, evidence, blind, autonomous
   answer   the owner's choice and whether it agreed with the recommendation
 An ask may name its approving option (--approves): the one choice that approves an exception to
 `predict-gate.sh close`. Agreeing with the recommendation is not approval.
   outcome  later evidence that the decision held, was reversed, or was refined
-Config: runtime/decision-config.json, overridden per stream by <stream>/decisions/config.json.
-Human view: <stream>/DECISIONS.md, regenerated from the ledger after every write (never edited by
-hand). QUESTIONS.md is touched only to add a one-line pointer under an existing entry that a decision
-asks or answers.
+Config: runtime/decision-config.json, overridden per project by .team/decision-config.json.
+Human view: <records>/DECISIONS.md, regenerated from the ledger after every write (never edited by
+hand). The project is found by runtime/locator.py.
 """
 import argparse
 import datetime
@@ -22,7 +21,6 @@ import json
 import os
 import random
 import re
-import subprocess
 import sys
 from pathlib import Path
 
@@ -31,11 +29,10 @@ try:
 except ImportError:  # no fcntl on native Windows: single-writer behaviour, as before
     fcntl = None
 
-PERMA = Path(os.environ.get("PERMA_DIR") or Path.home() / "permanence")
-LEDGER = "decisions/ledger.jsonl"
-STREAM_CONFIG = "decisions/config.json"
-HUMAN = "DECISIONS.md"
-QUESTIONS = "QUESTIONS.md"
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import locator  # noqa: E402
+
 EVIDENCE_KINDS = ("measured", "blind-readers-agreed", "source-read", "inference")
 VERDICTS = ("held", "reversed", "refined")
 # A question rests on a source the asker opened, not on an agent's report about it (owner, 2026-10-14).
@@ -56,19 +53,17 @@ QUOTED = re.compile(r"(?<!\w)'[^']*'(?!\w)|\"[^\"]*\"|\u2018[^\u2019]*\u2019|\u2
 BANDS = ((0.0, 0.5), (0.5, 0.7), (0.7, 0.8), (0.8, 0.9), (0.9, 1.0001))
 
 
-_STREAM = None  # the stream resolve_stream found, for the refusal event
+_PROJECT = None  # the project resolve_project found, for the refusal event
 _TASK = None
 
 
 def fail(msg, gate=None):
     """Refuse: exit 1 with the message. A refusal with a gate id first writes one gate-refused event to
-    the stream's ops ledger (docs/PROJECT-TEAM.md, "Gate refusals"); a failed write changes nothing."""
-    if gate and _STREAM:
+    the project's ops ledger (docs/PROJECT-TEAM.md, "Gate refusals"); a failed write changes nothing."""
+    if gate and _PROJECT:
         try:
-            sys.path.insert(0, str(Path(__file__).resolve().parent))
             import gate_event
-            gate_event.refused(gate, "decision.sh refused", f"decision: {msg}", task=_TASK, stream=_STREAM,
-                               perma=PERMA)
+            gate_event.refused(gate, "decision.sh refused", f"decision: {msg}", task=_TASK, path=_PROJECT.root)
         except Exception:  # noqa: BLE001, S110 - the event reports a refusal; it never changes one
             pass
     sys.exit(f"decision: {msg}")
@@ -88,33 +83,30 @@ def backfill():
     return os.environ.get("DECISION_BACKFILL") == "1"
 
 
-# ---------- streams, config, ledger ----------
+# ---------- project, config, ledger ----------
 
-def resolve_stream(explicit):
-    if explicit:
-        stream = explicit.strip("/")
-    else:
-        out = subprocess.run([str(PERMA / "runtime" / "resolve-stream.sh"), os.getcwd()],
-                             capture_output=True, text=True, env=dict(os.environ, PERMA_DIR=str(PERMA)))
-        stream = out.stdout.strip()
-        if not stream:
-            fail(f"no stream is registered for {os.getcwd()} in _meta/REGISTRY.md; pass --stream")
-    if ".." in Path(stream).parts or os.path.isabs(stream):
-        fail(f"stream {stream} is not a folder inside {PERMA}")
-    if not (PERMA / stream).is_dir():
-        fail(f"stream {stream} has no folder in {PERMA}")
-    global _STREAM
-    _STREAM = stream
-    return stream
+def resolve_project(repo):
+    """The project of --repo, else of the current folder (runtime/locator.py)."""
+    env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"} if repo else os.environ
+    try:
+        project = locator.find(repo, env)
+    except locator.SetupNeeded as e:
+        fail(str(e))
+    if project is None:
+        fail(f"{repo or os.getcwd()} has no team (no .team/binding.json); pass --repo")
+    global _PROJECT
+    _PROJECT = project
+    return project
 
 
-def all_streams():
-    found = []
-    for root, dirs, files in os.walk(PERMA):
-        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("runtime", "__pycache__")]
-        if Path(root).name == "decisions" and "ledger.jsonl" in files:
-            found.append(str(Path(root).parent.relative_to(PERMA)))
-    return sorted(found)
+def name_of(project):
+    """The project's short name, for a row, a heading or a message (its repository folder's name)."""
+    return project.root.name
+
+
+def decisions(project):
+    """(decision id -> {ask, answers, outcomes}, the ledger file) for the project; read by predict-gate."""
+    return fold(read_events(project)), project.decisions_ledger
 
 
 def merge(base, over):
@@ -124,16 +116,16 @@ def merge(base, over):
     return out
 
 
-def config(stream):
-    cfg = json.loads((PERMA / "runtime" / "decision-config.json").read_text())
-    p = PERMA / stream / STREAM_CONFIG if stream else None
+def config(project):
+    cfg = json.loads((HERE / "decision-config.json").read_text())
+    p = project.decision_config if project else None
     if p and p.exists():
         cfg = merge(cfg, json.loads(p.read_text()))
     return cfg
 
 
-def read_events(stream):
-    p = PERMA / stream / LEDGER
+def read_events(project):
+    p = project.decisions_ledger
     if not p.exists():
         return []
     rows = []
@@ -142,19 +134,19 @@ def read_events(stream):
             try:
                 rows.append(json.loads(line))
             except json.JSONDecodeError:
-                print(f"decision: {stream}/{LEDGER} line {n} is not JSON; skipped", file=sys.stderr)
+                print(f"decision: {p} line {n} is not JSON; skipped", file=sys.stderr)
     return rows
 
 
 class locked:
-    """Hold the stream's one lock: two writers must not interleave a read-modify-write of
-    QUESTIONS.md or DECISIONS.md (review 2026-10-11, M3). The lock is a lock file beside the ledger,
+    """Hold the project's one lock: two writers must not interleave a read-modify-write of
+    DECISIONS.md (review 2026-10-11, M3). The lock is a lock file beside the ledger,
     `.ledger.jsonl.lock`, which .gitignore names: the ledger itself is tracked in git, and a checkout,
     merge or reset replaces it while a writer holds a lock on the old file. Re-entrant in one process."""
     depth = 0
 
-    def __init__(self, stream):
-        ledger = PERMA / stream / LEDGER
+    def __init__(self, project):
+        ledger = project.decisions_ledger
         self.path = ledger.with_name(f".{ledger.name}.lock")
 
     def __enter__(self):
@@ -180,57 +172,24 @@ def write_whole(path, text):
     os.replace(tmp, path)
 
 
-def append(stream, event):
-    with locked(stream):
-        _append(stream, event)
+def append(project, event):
+    with locked(project):
+        _append(project, event)
 
 
-def _append(stream, event):
-    p = PERMA / stream / LEDGER
+def _append(project, event):
+    p = project.decisions_ledger
     p.parent.mkdir(exist_ok=True)
     with p.open("a", encoding="utf-8") as f:
         f.write(json.dumps(event, ensure_ascii=False) + "\n")
     print(json.dumps(event, ensure_ascii=False), file=sys.stderr)
-    render(stream)
-
-
-# ---------- QUESTIONS.md pointers ----------
-
-ENTRY = re.compile(r"^## Q\b")
-
-
-def find_entry(lines, ref):
-    """The one `## Q` heading whose text contains ref (case-insensitive)."""
-    hits = [i for i, l in enumerate(lines) if ENTRY.match(l) and ref.lower() in l.lower()]
-    if len(hits) != 1:
-        fail(f"--questions-ref '{ref}' matches {len(hits)} QUESTIONS.md entries; it must match exactly one",
-             "decision:questions-ref")
-    return hits[0]
+    render(project)
 
 
 def heading_question(line):
+    """The question of a QUESTIONS.md heading, as an older ask's questionsRef keeps it."""
     q = re.sub(r"^## Q\s*[—-]\s*", "", line)
     return re.split(r"\s+\(raised\b|\s+\[(OPEN|CLOSED|DECIDED)", q)[0].strip()
-
-
-def add_pointer(stream, heading, text):
-    """Insert one line at the end of the entry under `heading`. Every other line is left as it was."""
-    with locked(stream):
-        _add_pointer(stream, heading, text)
-
-
-def _add_pointer(stream, heading, text):
-    p = PERMA / stream / QUESTIONS
-    lines = p.read_text(encoding="utf-8").split("\n")
-    if heading not in lines:
-        fail(f"the QUESTIONS.md entry '{heading[:60]}' is no longer in the file; pointer not written",
-             "decision:questions-ref")
-    i = lines.index(heading)
-    end = next((j for j in range(i + 1, len(lines)) if lines[j].startswith("## ")), len(lines))
-    while end > i + 1 and lines[end - 1].strip() == "":
-        end -= 1
-    lines.insert(end, text)
-    write_whole(p, "\n".join(lines))
 
 
 def fold(events):
@@ -247,20 +206,12 @@ def fold(events):
 # ---------- record ----------
 
 def cmd_ask(a):
-    stream = resolve_stream(a.stream)
+    project = resolve_project(a.repo)
     loose = backfill()
     if not a.category.strip():
         fail("--category is empty", "decision:category")
-    heading = None
-    if a.questions_ref:
-        qp = PERMA / stream / QUESTIONS
-        if not qp.exists():
-            fail(f"{stream} has no QUESTIONS.md", "decision:questions-ref")
-        lines = qp.read_text(encoding="utf-8").split("\n")
-        heading = lines[find_entry(lines, a.questions_ref)]
-        a.question = a.question or heading_question(heading)
     if not (a.question or "").strip():
-        fail("--question is empty (or give --questions-ref to take it from QUESTIONS.md)", "decision:question")
+        fail("--question is empty", "decision:question")
     if a.blind and a.autonomous:
         fail("a decision is either asked blind or decided autonomously, not both", "decision:blind-autonomous")
     if len(a.option) < 2 and not loose:
@@ -283,21 +234,21 @@ def cmd_ask(a):
     if a.approves is not None and a.approves not in a.option:
         fail("--approves must be one of the --option values", "decision:approves")
     if not loose:
-        check_grounding(a, config(stream))
-    cats = config(stream)["categories"]
+        check_grounding(a, config(project))
+    cats = config(project)["categories"]
     if a.category not in cats:
         print(f"decision: note: category '{a.category}' is outside the default vocabulary ({', '.join(cats)})",
               file=sys.stderr)
     ts = stamp()
     did = a.id or "d" + ts[:10].replace("-", "") + "-" + hashlib.sha1(
-        f"{ts}{stream}{a.question}{random.random()}".encode()).hexdigest()[:6]
-    if did in fold(read_events(stream)):
-        fail(f"id {did} already exists in {stream}", "decision:id-exists")
-    ev = {"kind": "ask", "id": did, "ts": ts, "stream": stream, "project": a.project or None,
+        f"{ts}{project.root}{a.question}{random.random()}".encode()).hexdigest()[:6]
+    if did in fold(read_events(project)):
+        fail(f"id {did} already exists in {name_of(project)}", "decision:id-exists")
+    ev = {"kind": "ask", "id": did, "ts": ts, "stream": name_of(project), "project": a.project or None,
           "category": a.category, "question": a.question, "options": a.option,
           "recommendation": a.recommendation or None, "confidence": conf,
           "evidence": {"kind": a.evidence_kind, "pointer": a.evidence or None},
-          "blind": a.blind, "autonomous": a.autonomous, "questionsRef": heading,
+          "blind": a.blind, "autonomous": a.autonomous, "questionsRef": None,
           "read": [{"path": r, "what": a.read_what} for r in a.read] or None,
           "task": a.task or None, "fixRound": a.fix_round, "rechecked": a.rechecked or None,
           "upstream": a.upstream or None, "steppedBack": a.stepped_back or None,
@@ -306,10 +257,7 @@ def cmd_ask(a):
         ev["approves"] = a.approves
     if loose:
         ev["backfilled"] = True
-    if heading and not loose:
-        add_pointer(stream, heading, f"Decision `{did}` in DECISIONS.md: asked {ts[:10]}"
-                    + ("" if a.blind else f", recommended {a.recommendation} (confidence {conf})") + ".")
-    append(stream, ev)
+    append(project, ev)
     print(did)
 
 
@@ -349,7 +297,7 @@ def check_grounding(a, cfg):
         if hits:
             fail(f"the question uses {', '.join(repr(h) for h in hits)}: an inference. Check it at the"
                  " source, or label that sentence with 'guess:'", "decision:inference")
-    events = read_events(resolve_stream(a.stream)) if a.task else []
+    events = read_events(resolve_project(a.repo)) if a.task else []
     asked = {e.get("fixRound") for e in events if e.get("kind") == "ask"
              and (e.get("task") or "").lower() == (a.task or "").lower() and e.get("fixRound")}
     if a.recheck:
@@ -391,10 +339,10 @@ def norm(s):
 
 
 def cmd_answer(a):
-    stream = resolve_stream(a.stream)
-    d = fold(read_events(stream)).get(a.id)
+    project = resolve_project(a.repo)
+    d = fold(read_events(project)).get(a.id)
     if not d:
-        fail(f"no decision {a.id} in {stream}", "decision:unknown-id")
+        fail(f"no decision {a.id} in {name_of(project)}", "decision:unknown-id")
     ask = d["ask"]
     if ask["autonomous"]:
         fail(f"{a.id} was decided autonomously; record what later showed with `outcome`, not `answer`",
@@ -411,25 +359,20 @@ def cmd_answer(a):
           "notes": a.notes or None}
     if backfill():
         ev["backfilled"] = True
-    elif ask.get("questionsRef"):
-        said = {True: "agreed with the recommendation", False: "differed from the recommendation",
-                None: "agreement not yet compared"}[agreed]
-        add_pointer(stream, ask["questionsRef"],
-                    f"Decision `{a.id}` in DECISIONS.md: answered {ev['ts'][:10]}: {a.choice} ({said}).")
-    append(stream, ev)
+    append(project, ev)
 
 
 def cmd_outcome(a):
-    stream = resolve_stream(a.stream)
-    if a.id not in fold(read_events(stream)):
-        fail(f"no decision {a.id} in {stream}", "decision:unknown-id")
+    project = resolve_project(a.repo)
+    if a.id not in fold(read_events(project)):
+        fail(f"no decision {a.id} in {name_of(project)}", "decision:unknown-id")
     if not a.by.strip():
         fail("--by (what showed it) is empty", "decision:by")
     ev = {"kind": "outcome", "id": a.id, "ts": stamp(), "verdict": a.verdict, "by": a.by,
           "pointer": a.pointer or None}
     if backfill():
         ev["backfilled"] = True
-    append(stream, ev)
+    append(project, ev)
 
 
 # ---------- score ----------
@@ -500,15 +443,15 @@ def verdict(s, t):
     return ("autonomous" if not why else "ask"), why
 
 
-def score(stream, cfg, category=None, since=None):
-    decisions = list(fold(read_events(stream)).values())
+def score(project, cfg, category=None, since=None):
+    decisions = list(fold(read_events(project)).values())
     if since:
         decisions = [d for d in decisions if d["ask"]["ts"][:10] >= since]
     at = now()
     cats = sorted({d["ask"]["category"] for d in decisions})
     if category:
         cats = [category]
-    return {"stream": stream,
+    return {"stream": name_of(project),
             "categories": {c: stats([d for d in decisions if d["ask"]["category"] == c], cfg, at) for c in cats},
             "overall": stats(decisions, cfg, at)}
 
@@ -526,7 +469,7 @@ def score_text(sc, md):
                      fmt(s["agreementRecency"]), fmt(s["brier"]),
                      f"{fmt(s['blindAgreement'])} (n {s['blindN']})", s["reversed"],
                      s["autonomy"] if name != "OVERALL" else "-"])
-    out = [f"Decision scores: stream {sc['stream']}", ""]
+    out = [f"Decision scores: project {sc['stream']}", ""]
     out += table(head, rows, md)
     out += ["", "Why each category still asks:"]
     for name, s in sc["categories"].items():
@@ -551,25 +494,21 @@ def table(head, rows, md):
     return ["  ".join(str(x).ljust(n) for x, n in zip(r, w)).rstrip() for r in [head, *rows]]
 
 
-def streams_for(a):
-    return all_streams() if a.all_streams else [resolve_stream(a.stream)]
-
-
 def cmd_score(a):
-    for stream in streams_for(a):
-        sc = score(stream, config(stream), a.category, a.since)
-        if a.json:
-            print(json.dumps(sc, indent=1))
-        else:
-            print("\n".join(score_text(sc, False)) + "\n")
+    project = resolve_project(a.repo)
+    sc = score(project, config(project), a.category, a.since)
+    if a.json:
+        print(json.dumps(sc, indent=1))
+    else:
+        print("\n".join(score_text(sc, False)) + "\n")
 
 
 # ---------- sample ----------
 
 def cmd_should_ask(a):
-    stream = resolve_stream(a.stream)
-    cfg = config(stream)
-    s = score(stream, cfg, a.category)["categories"][a.category]
+    project = resolve_project(a.repo)
+    cfg = config(project)
+    s = score(project, cfg, a.category)["categories"][a.category]
     if s["autonomy"] != "autonomous":
         print("ask")
         print(f"{a.category} is not autonomous: " + "; ".join(s["autonomyReasons"]), file=sys.stderr)
@@ -587,17 +526,17 @@ def flags_of(q):
                             ("backfilled", q.get("backfilled"))) if on]
 
 
-def render(stream):
-    """Rewrite <stream>/DECISIONS.md from the ledger: scores on top, then every decision, newest first."""
-    sc = score(stream, config(stream))
-    out = [f"# DECISIONS — {stream}", "",
+def render(project):
+    """Rewrite <records>/DECISIONS.md from the ledger: scores on top, then every decision, newest first."""
+    sc = score(project, config(project))
+    out = [f"# DECISIONS — {name_of(project)}", "",
            "> Generated by `runtime/decision.sh` from `decisions/ledger.jsonl` after every recorded ask, answer "
            "or outcome. Do not edit by hand: a change here is overwritten. The ledger is the record; this "
            f"file is the readable view. Scores as of {now().isoformat(timespec='minutes')}.", "",
            "## Scores", ""]
     out += score_text(sc, True)[2:]
     out += ["", "## Every decision, newest first", ""]
-    for d in sorted(fold(read_events(stream)).values(), key=lambda d: d["ask"]["ts"], reverse=True):
+    for d in sorted(fold(read_events(project)).values(), key=lambda d: d["ask"]["ts"], reverse=True):
         q, ev = d["ask"], d["ask"].get("evidence") or {}
         out += [f"### `{q['id']}` — {q['question']}", "",
                 f"- **When:** {q['ts'][:16].replace('T', ' ')}. **Category:** {q['category']}."
@@ -624,58 +563,55 @@ def render(stream):
             out.append(f"- **Later ({o['ts'][:10]}):** {o['verdict']}, shown by {o['by']}"
                        + (f" ({o['pointer']})" if o.get("pointer") else "") + ".")
         out.append("")
-    write_whole(PERMA / stream / HUMAN, "\n".join(out))
+    write_whole(project.decisions_view, "\n".join(out))
 
 
 def cmd_render(a):
-    for stream in streams_for(a):
-        render(stream)
-        print(PERMA / stream / HUMAN)
+    project = resolve_project(a.repo)
+    render(project)
+    print(project.decisions_view)
 
 
 def cmd_review(a):
-    for stream in streams_for(a):
-        cfg = config(stream)
-        out = score_text(score(stream, cfg, since=a.since), a.md)
-        out += ["", f"Every decision, newest first: stream {stream}", ""]
-        ds = sorted(fold(read_events(stream)).values(), key=lambda d: d["ask"]["ts"], reverse=True)
-        if a.since:
-            ds = [d for d in ds if d["ask"]["ts"][:10] >= a.since]
-        rows = []
-        for d in ds:
-            q = d["ask"]
-            flags = flags_of(q)
-            ans = d["answers"][-1] if d["answers"] else None
-            ev = q.get("evidence") or {}
-            rows.append([q["ts"][:16].replace("T", " "), q["id"], q["category"], q.get("project") or "",
-                         q["question"], " / ".join(q.get("options") or []), q.get("recommendation") or "",
-                         fmt(q.get("confidence")),
-                         f"{ev.get('kind') or ''}: {ev.get('pointer') or ''}".strip(": "),
-                         "(decided by agent)" if q["autonomous"] else (ans["choice"] if ans else "(no answer yet)"),
-                         {True: "yes", False: "no", None: "-"}[ans["agreed"]] if ans else "-",
-                         "; ".join(f"{o['verdict']}: {o['by']}" for o in d["outcomes"]),
-                         ", ".join(flags), (ans or {}).get("notes") or "",
-                         heading_question(q["questionsRef"]) if q.get("questionsRef") else ""])
-        out += table(["when", "id", "category", "project", "question", "options", "recommended", "conf",
-                      "evidence", "owner's choice", "agreed", "outcomes", "flags", "notes", "QUESTIONS.md entry"],
-                     rows, a.md)
-        print("\n".join(out) + "\n")
+    project = resolve_project(a.repo)
+    cfg = config(project)
+    out = score_text(score(project, cfg, since=a.since), a.md)
+    out += ["", f"Every decision, newest first: project {name_of(project)}", ""]
+    ds = sorted(fold(read_events(project)).values(), key=lambda d: d["ask"]["ts"], reverse=True)
+    if a.since:
+        ds = [d for d in ds if d["ask"]["ts"][:10] >= a.since]
+    rows = []
+    for d in ds:
+        q = d["ask"]
+        flags = flags_of(q)
+        ans = d["answers"][-1] if d["answers"] else None
+        ev = q.get("evidence") or {}
+        rows.append([q["ts"][:16].replace("T", " "), q["id"], q["category"], q.get("project") or "",
+                     q["question"], " / ".join(q.get("options") or []), q.get("recommendation") or "",
+                     fmt(q.get("confidence")),
+                     f"{ev.get('kind') or ''}: {ev.get('pointer') or ''}".strip(": "),
+                     "(decided by agent)" if q["autonomous"] else (ans["choice"] if ans else "(no answer yet)"),
+                     {True: "yes", False: "no", None: "-"}[ans["agreed"]] if ans else "-",
+                     "; ".join(f"{o['verdict']}: {o['by']}" for o in d["outcomes"]),
+                     ", ".join(flags), (ans or {}).get("notes") or "",
+                     heading_question(q["questionsRef"]) if q.get("questionsRef") else ""])
+    out += table(["when", "id", "category", "project", "question", "options", "recommended", "conf",
+                  "evidence", "owner's choice", "agreed", "outcomes", "flags", "notes", "QUESTIONS.md entry"],
+                 rows, a.md)
+    print("\n".join(out) + "\n")
 
 
 def main():
     p = argparse.ArgumentParser(prog="decision.sh", description=__doc__.split("\n")[0])
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    def stream_arg(sp, many=False):
-        sp.add_argument("--stream", help="Permanence stream; default: resolved from the current directory")
-        if many:
-            sp.add_argument("--all-streams", action="store_true")
+    def repo_arg(sp):
+        sp.add_argument("--repo", help="the project's repository folder; default: the current folder")
 
     s = sub.add_parser("ask", help="record a question put to the owner (prints its id)")
-    stream_arg(s)
+    repo_arg(s)
     s.add_argument("--category", required=True)
     s.add_argument("--question", help="verbatim, as put to the owner")
-    s.add_argument("--questions-ref", help="text of an existing QUESTIONS.md entry this decision asks")
     s.add_argument("--option", action="append", default=[], help="repeat once per option")
     s.add_argument("--recommendation")
     s.add_argument("--confidence", type=float)
@@ -698,7 +634,7 @@ def main():
     s.set_defaults(fn=cmd_ask)
 
     s = sub.add_parser("answer", help="record the owner's reply")
-    stream_arg(s)
+    repo_arg(s)
     s.add_argument("id")
     s.add_argument("--choice", required=True, help="verbatim")
     s.add_argument("--agreed", choices=["yes", "no"])
@@ -706,7 +642,7 @@ def main():
     s.set_defaults(fn=cmd_answer)
 
     s = sub.add_parser("outcome", help="record what later showed about a decision")
-    stream_arg(s)
+    repo_arg(s)
     s.add_argument("id")
     s.add_argument("--verdict", required=True, choices=VERDICTS)
     s.add_argument("--by", required=True, help="what showed it")
@@ -714,26 +650,26 @@ def main():
     s.set_defaults(fn=cmd_outcome)
 
     s = sub.add_parser("score", help="agreement, calibration and autonomy per category")
-    stream_arg(s, many=True)
+    repo_arg(s)
     s.add_argument("--category")
     s.add_argument("--since", help="YYYY-MM-DD")
     s.add_argument("--json", action="store_true")
     s.set_defaults(fn=cmd_score)
 
     s = sub.add_parser("should-ask", help="ask, ask-blind or decide-and-log for a category")
-    stream_arg(s)
+    repo_arg(s)
     s.add_argument("category")
     s.add_argument("--seed", type=int)
     s.set_defaults(fn=cmd_should_ask)
 
     s = sub.add_parser("review", help="the full record, newest first, with the scores on top")
-    stream_arg(s, many=True)
+    repo_arg(s)
     s.add_argument("--since", help="YYYY-MM-DD")
     s.add_argument("--md", action="store_true", help="markdown tables")
     s.set_defaults(fn=cmd_review)
 
     s = sub.add_parser("render", help="regenerate DECISIONS.md from the ledger")
-    stream_arg(s, many=True)
+    repo_arg(s)
     s.set_defaults(fn=cmd_render)
 
     a = p.parse_args()
