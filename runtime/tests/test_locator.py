@@ -65,6 +65,14 @@ class TestFind(Base):
         with self.assertRaises(locator.SetupNeeded):
             locator.find(self.repo, env={})
 
+    def test_a_dangling_binding_link_is_still_a_team(self):
+        (self.repo / ".team").mkdir()
+        (self.repo / ".team" / "binding.json").symlink_to(self.tmp / "nowhere.json")
+        rec = self.records()
+        p = locator.find(self.repo, env={})
+        self.assertEqual(p.binding, self.repo / ".team" / "binding.json")
+        self.assertFalse(p.binding.is_file())
+
     def test_bound_repo_with_records(self):
         self.bind()
         rec = self.records()

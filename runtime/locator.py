@@ -134,11 +134,13 @@ def find(folder=None, env=os.environ) -> Project | None:
     top = toplevel(project_dir(folder, env))
     if top is None:
         return None
-    if (top / ".team" / "binding.json").is_file():
+    # A binding that exists but cannot be read (a dangling link, a folder) still means a team: the caller
+    # then fails reading it and refuses, naming it, instead of treating the repo as having no team.
+    if os.path.lexists(top / ".team" / "binding.json"):
         team = top / ".team"
     else:
         side = _git(top, "config", "--get", "bakehouse.sidecar")
-        if not side or not (Path(side) / "binding.json").is_file():
+        if not side or not os.path.lexists(Path(side) / "binding.json"):
             return None
         team = Path(side)
     rec = _git(top, "config", "--get", "bakehouse.records")

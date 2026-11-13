@@ -1355,10 +1355,6 @@ class TestB2UnreadableInput(DecisionFixture):
         self.assertIn(f"the binding {self.bpath} cannot be read", kept[0])
         self.assertNotIn("not written: ops-event", self.log())
 
-    # The locator (runtime/locator.py) reads a .team/binding.json that is a dangling symlink as no team
-    # (is_file), so the hook sees no binding: this dispatch is still refused, but as dispatch:record-folder,
-    # naming the brief's line, not the binding. Reported to the locator's owner; kept here as the record.
-    @unittest.expectedFailure
     def test_f4_a_dangling_binding_refuses_naming_it(self):
         self.bpath.unlink()
         self.bpath.symlink_to(self.bpath.parent / "gone.json")
