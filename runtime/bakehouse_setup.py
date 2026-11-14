@@ -246,16 +246,37 @@ def repair(top: Path, folder: Path) -> bool:
     return False
 
 
-def origin_main_clone(top: Path) -> Path | None:
-    """origin's folder when origin is a local clone with team records (git config bakehouse.records), else None."""
+def origin_path(top: Path) -> Path | None:
+    """origin's folder when origin is a local path (a file:// URL, or no scheme and no `host:`), else None."""
     url = git(top, "config", "--get", "remote.origin.url").stdout.strip()
-    if not url:
+    if not url or ("://" in url and not url.startswith("file://")) or ":" in url.split("/")[0]:
         return None
     path = Path(url[len("file://"):] if url.startswith("file://") else url).expanduser()
-    if not path.is_absolute():
-        path = top / path
-    if path.is_dir() and git(path, "config", "--local", "--get", "bakehouse.records").stdout.strip():
+    return path if path.is_absolute() else top / path
+
+
+def origin_main_clone(top: Path) -> Path | None:
+    """origin's folder when origin is a local clone with team records (git config bakehouse.records), else None."""
+    path = origin_path(top)
+    if path is not None and path.is_dir() and git(path, "config", "--local", "--get", "bakehouse.records").stdout.strip():
         return path.resolve()
+    return None
+
+
+def lane_reason(top: Path) -> str | None:
+    """Why this clone looks like a lane, whose records are its main clone's: a records pointer that is neither
+    its own sibling folder nor a worktree this repo lists, or a local origin path that no longer exists."""
+    rec = git(top, "config", "--get", "bakehouse.records").stdout.strip()
+    if rec:
+        r = Path(os.path.normpath(top / rec)).resolve()
+        own = {Path(line[len("worktree "):]).resolve()
+               for line in git(top, "worktree", "list", "--porcelain").stdout.splitlines()
+               if line.startswith("worktree ")}
+        if r != (top.parent / f"{top.name}.{BRANCH}").resolve() and r not in own:
+            return f"its records pointer (git config bakehouse.records) names {rec}, which is not this clone's own"
+    path = origin_path(top)
+    if path is not None and not path.exists():
+        return f"its origin, {path}, is a local path that no longer exists (the main clone may have moved)"
     return None
 
 
@@ -359,6 +380,11 @@ def setup_main(top: Path, root, env, pre_commit) -> int:
     if main_clone is not None:
         say(f"this clone's origin, {main_clone}, is a main clone with team records: a clone of it uses those. "
             f"Refused, nothing changed. Run `bakehouse setup --pointer {main_clone}` instead.")
+        return 1
+    why = lane_reason(top)
+    if why:
+        say(f"this clone looks like a lane clone: {why}. A lane uses its main clone's records. Refused, nothing "
+            "changed. Run `bakehouse setup --pointer <main clone>` instead.")
         return 1
     folder = make_records(top)
     if folder is None:

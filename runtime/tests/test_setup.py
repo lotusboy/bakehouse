@@ -370,6 +370,42 @@ class Pointer(Base):
         self.assertNotEqual(self.git(lane, "show-ref", "--verify", "--quiet", "refs/heads/bakehouse-records",
                                      check=False).returncode, 0)
 
+    def moved_main_clone(self):
+        """The main clone and its records moved together (a renamed workspace), and repaired by setup there."""
+        there = self.tmp / "there"
+        there.mkdir()
+        rec = self.records(self.repo)
+        self.repo.rename(there / self.repo.name)
+        rec.rename(there / rec.name)
+        rc, out = self.setup_in(there / self.repo.name)
+        self.assertEqual(rc, 0, out)
+        return there / self.repo.name
+
+    def assert_told_to_use_the_pointer(self, lane, before):
+        rc, out = self.setup_in(lane)
+        self.assertEqual(rc, 1, out)
+        self.assertIn("bakehouse setup --pointer <main clone>", out)
+        self.assertFalse(os.path.lexists(self.records(lane)))
+        self.assertEqual(self.config(lane, "bakehouse.records"), before)
+        self.assertNotEqual(self.git(lane, "show-ref", "--verify", "--quiet", "refs/heads/bakehouse-records",
+                                     check=False).returncode, 0)
+
+    def test_plain_setup_in_a_lane_whose_main_clone_moved_is_told_to_use_the_pointer(self):
+        # S16 fix2 P1-2: a pointer that is not this clone's own records means a lane: no second records home
+        self.setup_in(self.repo)
+        lane = self.lane()
+        self.setup_in(lane, "--pointer", str(self.repo))
+        before = self.config(lane, "bakehouse.records")
+        self.moved_main_clone()
+        self.assertRaises(locator.SetupNeeded, locator.find, lane, {})
+        self.assert_told_to_use_the_pointer(lane, before)
+
+    def test_plain_setup_in_a_clone_whose_local_origin_is_gone_is_told_to_use_the_pointer(self):
+        self.setup_in(self.repo)
+        lane = self.lane()
+        self.moved_main_clone()
+        self.assert_told_to_use_the_pointer(lane, "")
+
     def test_pointer_refuses_a_main_clone_with_no_records(self):
         lane = self.lane()
         rc, out = self.setup_in(lane, "--pointer", str(self.repo))
