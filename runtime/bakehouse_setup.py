@@ -292,8 +292,11 @@ def make_records(top: Path) -> Path | None:
         # the branch is checked out at another path that still exists: the main clone moved alone
         return used if repair(top, used) else None
     if used is not None:
-        git(top, "worktree", "prune")
-        say(f"pruned this repo's worktree entry for {used}: that folder is gone")
+        # moved or deleted cannot be told apart from here, so nothing is pruned and no replacement is made
+        say(f"this repo's {BRANCH} branch is checked out at {used}, which no longer exists. Refused, nothing "
+            f"changed. If you moved that folder, run `git worktree repair <new path>` here, then `bakehouse setup` "
+            f"again. If you deleted it, run `git worktree prune`, then `bakehouse setup` again.")
+        return None
     if os.path.lexists(folder):
         if not is_records_checkout(top, folder):
             if links_here(top, folder):

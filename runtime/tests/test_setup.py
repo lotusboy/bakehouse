@@ -226,16 +226,42 @@ class Setup(Base):
         self.assertEqual(locator.find(moved, env={}).records, there / rec.name)
         self.assertTrue((there / rec.name / "decisions" / "ledger.jsonl").is_file())
 
-    def test_a_records_folder_that_is_gone_is_pruned_and_checked_out_again(self):
+    def assert_both_ways_out(self, rc, out, gone):
+        """S16 fix2 P1-1: the branch is registered at a path that no longer exists: refused, naming both ways
+        out, with nothing pruned and no replacement checkout."""
+        self.assertEqual(rc, 1, out)
+        self.assertIn(f"checked out at {gone}, which no longer exists", out)
+        self.assertIn("`git worktree repair <new path>`", out)
+        self.assertIn("`git worktree prune`, then `bakehouse setup`", out)
+        self.assertNotIn("pruned", out)
+        self.assertFalse(os.path.lexists(self.records(self.repo)))
+        self.assertIn(f"worktree {gone}", self.git(self.repo, "worktree", "list", "--porcelain").stdout)
+
+    def test_a_records_folder_that_is_gone_is_refused_then_checked_out_again_after_a_prune(self):
         self.setup_in(self.repo)
         rec = self.records(self.repo)
         head = self.git(rec, "rev-parse", "HEAD").stdout
         shutil.rmtree(rec)
+        self.assert_both_ways_out(*self.setup_in(self.repo), rec)
+        self.git(self.repo, "worktree", "prune")
         rc, out = self.setup_in(self.repo)
         self.assertEqual(rc, 0, out)
-        self.assertIn("pruned", out)
         self.assertEqual(self.git(rec, "rev-parse", "HEAD").stdout, head)
         self.assertEqual(locator.find(self.repo, env={}).records, rec)
+
+    def test_a_records_folder_moved_alone_is_refused_then_reconnected_after_a_repair(self):
+        self.setup_in(self.repo)
+        rec = self.records(self.repo)
+        self.uncommitted_record(rec)
+        moved = self.tmp / "elsewhere" / rec.name
+        moved.parent.mkdir()
+        rec.rename(moved)
+        self.assert_both_ways_out(*self.setup_in(self.repo), rec)
+        self.git(self.repo, "worktree", "repair", str(moved))
+        rc, out = self.setup_in(self.repo)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(locator.find(self.repo, env={}).records, moved)
+        self.assertTrue((moved / "decisions" / "ledger.jsonl").is_file())
 
     def test_a_local_records_branch_is_checked_out_not_made_again(self):
         self.setup_in(self.repo)
