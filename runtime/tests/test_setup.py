@@ -65,7 +65,14 @@ class Base(unittest.TestCase):
         return Path(self.git(repo, "rev-parse", "--path-format=absolute", "--git-path", "hooks").stdout.strip()) / name
 
     def hook_text(self, name):
-        return bakehouse_setup.hook_stub(self.launcher, name)
+        """The git hook setup writes, as literal expected text (not built by hook_stub itself)."""
+        q = shlex.quote(str(self.launcher))
+        return ("#!/bin/sh\n# installed-by: bakehouse\n"
+                '[ "$(git symbolic-ref -q HEAD)" = refs/heads/bakehouse-records ] && exit 0\n'
+                f'[ -x {q} ] || {{ echo "bakehouse: the git-hook launcher "{q}" is missing or not executable, so the '
+                f'{name} hook cannot run. Run \\`bakehouse setup\\` to write it again." >&2; '
+                f'exit {1 if name == "pre-commit" else 0}; }}\n'
+                f"exec {q} {name}\n")
 
     def records(self, repo):
         return repo.parent / f"{repo.name}.bakehouse-records"
@@ -620,7 +627,7 @@ class SessionStart(Base):
         self.run_hook(self.tmp, CLAUDE_PLUGIN_ROOT=str(self.tmp / "elsewhere" / "bakehouse-v0"))
         self.assertEqual(bakehouse_setup.launcher_target(self.launcher), str(ROOT))
 
-    def test_never_creates_the_launcher(self):
+    def test_never_creates_the_launcher_without_a_project_with_bakehouse_hooks(self):
         self.run_hook(self.tmp, CLAUDE_PLUGIN_ROOT=str(ROOT))
         self.assertFalse(self.launcher.exists())
         # nor in a project whose git hooks are not bakehouse's

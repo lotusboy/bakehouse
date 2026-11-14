@@ -172,25 +172,10 @@ def install_hooks(project, launcher: Path, pre_commit: bool) -> bool:
     return ok
 
 
-def exclude_local_settings(project):
-    """A repo another party owns: the plugin is switched on in .claude/settings.local.json, which must never
-    be committed there (§4.8)."""
-    line = ".claude/settings.local.json"
-    path = Path(git(project.root, "rev-parse", "--path-format=absolute", "--git-path", "info/exclude").stdout.strip())
-    text = path.read_text() if path.is_file() else ""
-    if line in (l.strip() for l in text.splitlines()):
-        return
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text + ("" if text.endswith("\n") or not text else "\n") + line + "\n")
-    say(f"{line} added to {path}")
-
-
 def finish(project, root, env, pre_commit) -> int:
     launcher = write_launcher(root, env)
     say(f"{launcher} written, target {root}")
     ok = install_hooks(project, launcher, pre_commit)
-    if project.team != project.root / ".team":
-        exclude_local_settings(project)
     return 0 if ok else 1
 
 
