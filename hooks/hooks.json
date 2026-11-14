@@ -1,0 +1,28 @@
+{
+  "description": "bakehouse: the role tables on every agent dispatch, and the session-start PM instruction.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/runtime/agent-roles.py\" --check-new" },
+          { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/runtime/session-start.py\"" }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Agent",
+        "hooks": [
+          { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/runtime/agent-roles.py\"" }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/runtime/agent-roles.py\"" }
+        ]
+      }
+    ]
+  }
+}

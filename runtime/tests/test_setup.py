@@ -1,4 +1,4 @@
-"""Tests for bin/bakehouse setup and the git-hook launcher. Standard library only.
+"""Tests for bin/bakehouse setup, the git-hook launcher and runtime/session-start.py. Standard library only.
 Each test builds scratch git repos and a scratch machine folder; nothing outside a temporary folder is read
 or written."""
 import json
@@ -14,6 +14,7 @@ from pathlib import Path
 RUNTIME = Path(__file__).resolve().parents[1]
 ROOT = RUNTIME.parent
 BAKEHOUSE = ROOT / "bin" / "bakehouse"
+SESSION_START = RUNTIME / "session-start.py"
 sys.path.insert(0, str(RUNTIME))
 import bakehouse_setup  # noqa: E402
 import locator  # noqa: E402
@@ -340,6 +341,68 @@ class Hooks(Base):
         rc, out = self.commit(self.repo, "--allow-empty", "-m", "x")
         self.assertNotEqual(rc, 0)
         self.assertIn("the pre-commit gate cannot run. Run `bakehouse setup`", out)
+
+
+class SessionStart(Base):
+    def run_hook(self, project, **extra):
+        p = subprocess.run(["python3", str(SESSION_START)], capture_output=True, text=True,
+                           env={**self.env, "CLAUDE_PROJECT_DIR": str(project), **extra})
+        self.assertEqual(p.returncode, 0, p.stderr)
+        return p.stdout
+
+    def role(self, text):
+        self.machine.mkdir(exist_ok=True)
+        (self.machine / "role").write_text(text)
+
+    def test_retargets_the_launcher_to_the_plugin_root(self):
+        bakehouse_setup.write_launcher("/old/root", env=self.env)
+        new = self.tmp / "new root"
+        self.run_hook(self.tmp, CLAUDE_PLUGIN_ROOT=str(new))
+        self.assertEqual(bakehouse_setup.launcher_target(self.launcher), str(new))
+        text = self.launcher.read_text()
+        bakehouse_setup.write_launcher(new, env=self.env)
+        self.assertEqual(self.launcher.read_text(), text)
+
+    def test_never_creates_the_launcher(self):
+        self.run_hook(self.tmp, CLAUDE_PLUGIN_ROOT=str(ROOT))
+        self.assertFalse(self.launcher.exists())
+
+    def test_no_team_prints_nothing(self):
+        self.assertEqual(self.run_hook(self.make_repo("plain", None)), "")
+        self.assertEqual(self.run_hook(self.tmp), "")
+
+    def test_setup_needed_prints_the_locator_message(self):
+        out = self.run_hook(self.repo)
+        self.assertEqual(len(out.splitlines()), 1, out)
+        self.assertIn("`bakehouse setup` in the main clone, or `bakehouse setup --pointer <main clone>`", out)
+
+    def test_pm_and_a_missing_role_file_print_the_instruction(self):
+        self.setup_in(self.repo)
+        want = ("bakehouse: this project has a team. Be its PM: load the `bakehouse:pm` skill now and follow it "
+                "for the whole session.\n")
+        self.assertEqual(self.run_hook(self.repo), want)
+        self.role("pm\n")
+        self.assertEqual(self.run_hook(self.repo), want)
+
+    def test_none_prints_nothing(self):
+        self.setup_in(self.repo)
+        self.role("none\n")
+        self.assertEqual(self.run_hook(self.repo), "")
+
+    def test_other_role_content_is_read_as_pm_and_said(self):
+        self.setup_in(self.repo)
+        self.role("boss\n")
+        lines = self.run_hook(self.repo).splitlines()
+        self.assertEqual(len(lines), 2, lines)
+        self.assertIn("holds 'boss', not `pm` or `none`; treating it as `pm`", lines[0])
+        self.assertIn("load the `bakehouse:pm` skill", lines[1])
+
+    def test_a_broken_machine_folder_still_exits_zero(self):
+        self.setup_in(self.repo)
+        shutil.rmtree(self.machine)
+        self.machine.write_text("not a folder")
+        out = self.run_hook(self.repo, CLAUDE_PLUGIN_ROOT=str(ROOT))
+        self.assertIn("load the `bakehouse:pm` skill", out)
 
 
 if __name__ == "__main__":
