@@ -123,7 +123,17 @@ def install_hooks(project, launcher: Path, pre_commit: bool) -> bool:
     if pre_commit:
         names.append("pre-commit")
     else:
-        say("pre-commit: not installed; the predict-gate commit check is opt-in: bakehouse setup --pre-commit")
+        earlier = Path(git(project.root, "rev-parse", "--path-format=absolute", "--git-path", "hooks/pre-commit")
+                       .stdout.strip())
+        try:
+            left = MARKER in earlier.read_text(errors="replace")
+        except OSError:
+            left = False
+        if left:
+            say(f"pre-commit: {earlier}, installed earlier, is left in place; setup without --pre-commit does not "
+                "remove it")
+        else:
+            say("pre-commit: not installed; the predict-gate commit check is opt-in: bakehouse setup --pre-commit")
     if owned(project):
         names.append("post-commit")
     else:
@@ -188,33 +198,126 @@ def is_records_checkout(top: Path, folder: Path) -> bool:
     return git(folder, "symbolic-ref", "-q", "HEAD").stdout.strip() == f"refs/heads/{BRANCH}"
 
 
+def links_here(top: Path, folder: Path) -> bool:
+    """folder's .git file names, by a path that is gone, a worktree entry this repo still has: this repo's
+    records worktree, whose link broke when the main clone (or both) moved."""
+    try:
+        line = (folder / ".git").read_text().strip()
+    except OSError:
+        return False
+    if not line.startswith("gitdir: "):
+        return False
+    gitdir = Path(line[len("gitdir: "):])
+    common = git(top, "rev-parse", "--path-format=absolute", "--git-common-dir").stdout.strip()
+    return (gitdir.parent.name == "worktrees" and not gitdir.exists() and bool(common)
+            and (Path(common) / "worktrees" / gitdir.name).is_dir())
+
+
+def registered_at(top: Path) -> Path | None:
+    """Where this repo's worktree list has the records branch checked out, or None."""
+    path = None
+    for line in git(top, "worktree", "list", "--porcelain").stdout.splitlines():
+        if line.startswith("worktree "):
+            path = Path(line[len("worktree "):])
+        elif line == f"branch refs/heads/{BRANCH}":
+            return path
+    return None
+
+
+def repair(top: Path, folder: Path) -> bool:
+    """`git worktree repair` of this repo's records worktree at folder; True when it is then the checkout."""
+    p = git(top, "worktree", "repair", str(folder))
+    if is_records_checkout(top, folder):
+        say(f"{folder} is this repo's {BRANCH} checkout: reconnected after a move (git worktree repair)")
+        return True
+    say(f"{folder} holds this repo's records, and `git worktree repair` could not reconnect it:\n"
+        f"{(p.stderr or p.stdout).strip()}\nLeft as it is. Run `git -C {top} worktree repair {folder}`, then "
+        "`bakehouse setup` again.")
+    return False
+
+
+def origin_main_clone(top: Path) -> Path | None:
+    """origin's folder when origin is a local clone with team records (git config bakehouse.records), else None."""
+    url = git(top, "config", "--get", "remote.origin.url").stdout.strip()
+    if not url:
+        return None
+    path = Path(url[len("file://"):] if url.startswith("file://") else url).expanduser()
+    if not path.is_absolute():
+        path = top / path
+    if path.is_dir() and git(path, "config", "--local", "--get", "bakehouse.records").stdout.strip():
+        return path.resolve()
+    return None
+
+
+def fetch_origin_records(top: Path) -> bool | None:
+    """Look for the records branch on origin before a new one is made: True when it was there and is now
+    fetched as origin/<branch>; False when origin has none (or there is no origin); None (after saying why)
+    when origin cannot be asked."""
+    if not git(top, "config", "--get", "remote.origin.url").stdout.strip():
+        return False
+    p = git(top, "ls-remote", "--heads", "origin", BRANCH)
+    if p.returncode:
+        say(f"could not look for {BRANCH} on origin, so a new records branch is not made:\n{p.stderr.strip()}\n"
+            "Nothing changed. Run `bakehouse setup` again when origin can be reached.")
+        return None
+    if not p.stdout.strip():
+        return False
+    # a single-branch clone fetches only its branch: add this one, so origin/<branch> can be tracked
+    specs = git(top, "config", "--get-all", "remote.origin.fetch").stdout
+    if f"refs/heads/{BRANCH}:" not in specs and "refs/heads/*:" not in specs:
+        git(top, "remote", "set-branches", "--add", "origin", BRANCH)
+    p = git(top, "fetch", "-q", "origin", f"+refs/heads/{BRANCH}:refs/remotes/origin/{BRANCH}")
+    if p.returncode:
+        say(f"origin has {BRANCH}, but it could not be fetched:\n{p.stderr.strip()}\nNothing changed.")
+        return None
+    say(f"fetched {BRANCH} from origin")
+    return True
+
+
 def make_records(top: Path) -> Path | None:
     """The records checkout in the sibling folder, made or reused. None (after saying why) when it cannot be."""
     folder = top.parent / f"{top.name}.{BRANCH}"
+    used = None if os.path.lexists(folder) else registered_at(top)
+    if used is not None and os.path.lexists(used):
+        # the branch is checked out at another path that still exists: the main clone moved alone
+        return used if repair(top, used) else None
+    if used is not None:
+        git(top, "worktree", "prune")
+        say(f"pruned this repo's worktree entry for {used}: that folder is gone")
     if os.path.lexists(folder):
         if not is_records_checkout(top, folder):
-            say(f"{folder} exists and is not this repo's {BRANCH} checkout. Refused: move it away, then run "
-                "`bakehouse setup` again.")
-            return None
-        say(f"{folder} is already the {BRANCH} checkout; using it")
+            if links_here(top, folder):
+                if not repair(top, folder):
+                    return None
+            else:
+                say(f"{folder} exists and is not this repo's {BRANCH} checkout. Refused: move it away, then run "
+                    "`bakehouse setup` again.")
+                return None
+        else:
+            say(f"{folder} is already the {BRANCH} checkout; using it")
     elif git(top, "show-ref", "--verify", "--quiet", f"refs/heads/{BRANCH}").returncode == 0:
         p = git(top, "worktree", "add", str(folder), BRANCH)
         if p.returncode:
             say(f"could not check out {BRANCH} into {folder}:\n{p.stderr.strip()}")
             return None
         say(f"checked out the branch {BRANCH} into {folder}")
-    elif git(top, "show-ref", "--verify", "--quiet", f"refs/remotes/origin/{BRANCH}").returncode == 0:
-        p = git(top, "worktree", "add", "--track", "-b", BRANCH, str(folder), f"origin/{BRANCH}")
-        if p.returncode:
-            say(f"could not check out origin/{BRANCH} into {folder}:\n{p.stderr.strip()}")
-            return None
-        say(f"checked out origin/{BRANCH} into {folder}")
     else:
-        p = git(top, "worktree", "add", "--orphan", "-b", BRANCH, str(folder))
-        if p.returncode:
-            say(f"could not create {folder}:\n{p.stderr.strip()}")
-            return None
-        say(f"created {folder} on the new branch {BRANCH}")
+        on_origin = git(top, "show-ref", "--verify", "--quiet", f"refs/remotes/origin/{BRANCH}").returncode == 0 \
+            or fetch_origin_records(top)
+        if on_origin is None:
+            return None  # origin could not be asked; fetch_origin_records said why
+        if on_origin:
+            p = git(top, "worktree", "add", "--track", "-b", BRANCH, str(folder), f"origin/{BRANCH}")
+            if p.returncode:
+                say(f"could not check out origin/{BRANCH} into {folder}:\n{p.stderr.strip()}")
+                return None
+            say(f"checked out origin/{BRANCH} into {folder}")
+        else:
+            p = git(top, "worktree", "add", "--orphan", "-b", BRANCH, str(folder))
+            if p.returncode:
+                say(f"could not create {folder}:\n{p.stderr.strip()}")
+                return None
+            say(f"created {folder} on the new branch {BRANCH}")
     if git(folder, "rev-parse", "-q", "--verify", "HEAD").returncode:
         (folder / ".gitignore").write_text(GITIGNORE)
         git(folder, "add", ".gitignore")
@@ -239,6 +342,11 @@ def setup_main(top: Path, root, env, pre_commit) -> int:
     if project is not None:
         say(f"already set up: records at {project.records}. Installing the hooks again.")
         return finish(project, root, env, pre_commit)
+    main_clone = origin_main_clone(top)
+    if main_clone is not None:
+        say(f"this clone's origin, {main_clone}, is a main clone with team records: a clone of it uses those. "
+            f"Refused, nothing changed. Run `bakehouse setup --pointer {main_clone}` instead.")
+        return 1
     folder = make_records(top)
     if folder is None:
         return 1
@@ -283,6 +391,11 @@ def main(argv, root) -> int:
     top = locator.toplevel(Path.cwd())
     if top is None:
         say(f"{Path.cwd()} is not inside a git repository")
+        return 1
+    side = git(top, "config", "--get", "bakehouse.sidecar").stdout.strip()
+    if not os.path.lexists(top / ".team" / "binding.json") and side and os.path.lexists(Path(side) / "binding.json"):
+        say("bakehouse R0 does not set up records for a repo another party owns (a known limit); nothing was "
+            "changed")
         return 1
     if argv:
         return setup_pointer(top, argv[1], root, env, pre_commit)

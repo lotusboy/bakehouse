@@ -143,15 +143,24 @@ class Setup(Base):
         self.assertEqual(self.config(self.repo, "bakehouse.records"), "")
         self.assertEqual(sorted(p.name for p in folder.iterdir()), ["mine.txt"])
 
-    def test_a_fresh_clone_checks_out_the_pushed_records_branch(self):
+    def pushed(self):
+        """The main clone set up, one records commit made, and both branches pushed to a bare origin."""
         self.setup_in(self.repo)
         rec = self.records(self.repo)
         (rec / "ops").mkdir()
         (rec / "ops" / "events.jsonl").write_text("{}\n")
         self.git(rec, "add", "-A")
         self.git(rec, "commit", "-q", "-m", "anchor")
+        origin = self.tmp / "origin.git"
+        self.git(self.tmp, "init", "-q", "--bare", str(origin))
+        self.git(self.repo, "push", "-q", str(origin), "main", "bakehouse-records")
+        return rec, origin
+
+    def test_a_fresh_clone_checks_out_the_pushed_records_branch(self):
+        # S16 M4: a clone of a remote, not of the main clone (that one is told to use --pointer)
+        rec, origin = self.pushed()
         clone = self.tmp / "clone"
-        self.git(self.tmp, "clone", "-q", str(self.repo), str(clone))
+        self.git(self.tmp, "clone", "-q", "-b", "main", str(origin), str(clone))
         rc, out = self.setup_in(clone)
         self.assertEqual(rc, 0, out)
         self.assertIn("checked out origin/bakehouse-records", out)
@@ -162,6 +171,71 @@ class Setup(Base):
                          "origin/bakehouse-records")
         self.assertEqual((crec / "ops" / "events.jsonl").read_text(), "{}\n")
         self.assertEqual(self.config(clone, "bakehouse.records"), str(crec))
+
+    def test_a_single_branch_clone_fetches_the_records_branch_from_origin(self):
+        rec, origin = self.pushed()
+        clone = self.tmp / "clone"
+        self.git(self.tmp, "clone", "-q", "--single-branch", "-b", "main", str(origin), str(clone))
+        rc, out = self.setup_in(clone)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("checked out origin/bakehouse-records", out)
+        self.assertEqual(self.git(self.records(clone), "rev-parse", "HEAD").stdout, self.git(rec, "rev-parse", "HEAD").stdout)
+
+    def test_a_clone_of_the_main_clone_is_told_to_use_the_pointer(self):
+        self.setup_in(self.repo)
+        clone = self.tmp / "clone"
+        self.git(self.tmp, "clone", "-q", str(self.repo), str(clone))
+        rc, out = self.setup_in(clone)
+        self.assertEqual(rc, 1, out)
+        self.assertIn(f"bakehouse setup --pointer {self.repo}", out)
+        self.assertFalse(os.path.lexists(self.records(clone)))
+        self.assertEqual(self.config(clone, "bakehouse.records"), "")
+        self.assertNotEqual(self.git(clone, "show-ref", "--verify", "--quiet", "refs/heads/bakehouse-records",
+                                     check=False).returncode, 0)
+
+    def uncommitted_record(self, rec):
+        (rec / "decisions").mkdir()
+        (rec / "decisions" / "ledger.jsonl").write_text('{"kind": "ask", "id": "d1"}\n')
+
+    def test_a_main_clone_moved_alone_is_reconnected_to_its_records(self):
+        self.setup_in(self.repo)
+        rec = self.records(self.repo)
+        self.uncommitted_record(rec)
+        moved = self.tmp / "moved"
+        self.repo.rename(moved)
+        self.assertRaises(locator.SetupNeeded, locator.find, moved, {})
+        rc, out = self.setup_in(moved)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("reconnected", out)
+        self.assertEqual(locator.find(moved, env={}).records, rec)
+        self.assertEqual(self.config(moved, "bakehouse.records"), str(rec))
+        self.assertTrue((rec / "decisions" / "ledger.jsonl").is_file())
+
+    def test_a_main_clone_moved_with_its_records_is_reconnected_never_moved_away(self):
+        self.setup_in(self.repo)
+        rec = self.records(self.repo)
+        self.uncommitted_record(rec)
+        there = self.tmp / "there"
+        there.mkdir()
+        self.repo.rename(there / "proj")
+        rec.rename(there / rec.name)
+        moved = there / "proj"
+        rc, out = self.setup_in(moved)
+        self.assertEqual(rc, 0, out)
+        self.assertNotIn("move it away", out)
+        self.assertEqual(locator.find(moved, env={}).records, there / rec.name)
+        self.assertTrue((there / rec.name / "decisions" / "ledger.jsonl").is_file())
+
+    def test_a_records_folder_that_is_gone_is_pruned_and_checked_out_again(self):
+        self.setup_in(self.repo)
+        rec = self.records(self.repo)
+        head = self.git(rec, "rev-parse", "HEAD").stdout
+        shutil.rmtree(rec)
+        rc, out = self.setup_in(self.repo)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("pruned", out)
+        self.assertEqual(self.git(rec, "rev-parse", "HEAD").stdout, head)
+        self.assertEqual(locator.find(self.repo, env={}).records, rec)
 
     def test_a_local_records_branch_is_checked_out_not_made_again(self):
         self.setup_in(self.repo)
@@ -180,6 +254,15 @@ class Setup(Base):
         self.assertFalse(os.path.lexists(self.hook(self.repo, "pre-commit")))
         self.assertEqual(self.hook(self.repo, "post-commit").read_text(), self.hook_text("post-commit"))
         self.assertIn("bakehouse setup --pre-commit", out)
+
+    def test_a_second_run_without_the_flag_says_the_earlier_pre_commit_hook_is_left(self):
+        self.setup_in(self.repo)
+        rc, out = self.setup_in(self.repo, pre_commit=False)
+        self.assertEqual(rc, 0, out)
+        hook = self.hook(self.repo, "pre-commit")
+        self.assertEqual(hook.read_text(), self.hook_text("pre-commit"))
+        self.assertIn(f"pre-commit: {hook}, installed earlier, is left in place", out)
+        self.assertNotIn("pre-commit: not installed", out)
 
     def test_a_lane_clone_without_the_flag_gets_no_pre_commit_hook(self):
         self.setup_in(self.repo)
@@ -208,7 +291,8 @@ class Setup(Base):
         self.assertEqual(rc, 0, out)
         self.assertIn("ops ledger: 2 commit(s) behind", out)
 
-    def test_a_sidecar_team_excludes_the_local_settings_once(self):
+    def test_a_sidecar_team_is_refused_and_nothing_changes(self):
+        # S16 M8: R0 does not set up records for a repo another party owns (a known limit)
         theirs = self.make_repo("theirs", None)
         side = self.tmp / "side"
         side.mkdir()
@@ -216,11 +300,17 @@ class Setup(Base):
         self.git(theirs, "config", "bakehouse.sidecar", str(side))
         exclude = theirs / ".git" / "info" / "exclude"
         exclude.write_text("# git ls-files --others --exclude-from=.git/info/exclude\n*.tmp")
-        for _ in range(2):
-            rc, out = self.setup_in(theirs)
-            self.assertEqual(rc, 0, out)
-        self.assertEqual(exclude.read_text().splitlines()[1:], ["*.tmp", ".claude/settings.local.json"])
-        self.assertEqual(locator.find(theirs, env={}).team, side)
+        for args in ((), ("--pointer", str(self.repo))):
+            with self.subTest(args=args):
+                rc, out = self.setup_in(theirs, *args)
+                self.assertEqual(rc, 1, out)
+                self.assertIn("bakehouse R0 does not set up records for a repo another party owns (a known limit); "
+                              "nothing was changed", out)
+        self.assertEqual(self.git(theirs, "branch", "--list").stdout.split(), ["*", "main"])
+        self.assertFalse(os.path.lexists(self.records(theirs)))
+        self.assertEqual(self.config(theirs, "bakehouse.records"), "")
+        self.assertEqual(exclude.read_text().splitlines()[1:], ["*.tmp"])
+        self.assertFalse(self.hook(theirs, "pre-commit").exists())
 
     def test_the_usage_names_the_commands_the_locator_names(self):
         rc, out = self.setup_in(self.repo, "--pointer")

@@ -976,6 +976,8 @@ object); stderr names it. 2: bad usage.
   hypothesis for any other.
 - A job in a repo another party owns stops before it writes any plan or step state: where that
   state is kept is not yet decided.
+- `bakehouse setup` refuses a repo another party owns (a sidecar team): R0 does not set up records for
+  such a repo, and changes nothing in it (design 05 §4.8 is not yet met).
 - The binding has no default-branch field and no pull-request tool field. Jobs read the default
   branch from `origin/HEAD` and open a pull request with the repo host's own tool, or hand the owner
   the branch name and the pull request text.
