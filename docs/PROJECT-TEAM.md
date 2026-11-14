@@ -983,6 +983,11 @@ that is not a folder inside a git repository.
   such a repo, and changes nothing in it (design 05 §4.8 is not yet met).
 - `records-check.py --binding <file>` reads the ledger of the project the locator finds, not a ledger
   beside that file.
+- A records pointer set by hand (`git config bakehouse.records`) to another project's records worktree is
+  accepted, because every project's records worktree is on the same branch; the ledgers are then written
+  there. `bakehouse setup` never writes such a pointer: `--pointer` refuses a main clone of another project.
+- A fresh main clone whose remote `origin` cannot be reached cannot be set up: setup must first ask origin
+  for the records branch, so that it never makes a second one. It says so and changes nothing.
 - `bakehouse status` refuses a decision ledger line that is not a JSON object (exit 1), where
   `decision.sh` skips such a line with a warning.
 - The locator's git calls have no timeout of their own: a records folder on a stalled mount makes session
