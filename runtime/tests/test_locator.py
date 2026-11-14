@@ -114,6 +114,16 @@ class TestFind(Base):
             with self.assertRaises(locator.SetupNeeded) as e:
                 locator.find(self.repo, env={})
             self.assertIn(f"run `git -C {rec} switch bakehouse-records`", str(e.exception))
+        # a pointer naming a main clone (no linked worktree) is not told to switch it to the records branch
+        other = self.tmp / "other"
+        other.mkdir()
+        git(other, "init", "-q", "-b", "main")
+        git(other, "commit", "-q", "--allow-empty", "-m", "first")
+        git(self.repo, "config", "bakehouse.records", str(other))
+        with self.assertRaises(locator.SetupNeeded) as e:
+            locator.find(self.repo, env={})
+        self.assertNotIn("switch", str(e.exception))
+        self.assertIn("is missing or is not a records checkout", str(e.exception))
 
     def test_a_records_folder_in_the_project_tree_needs_setup(self):
         self.bind()
