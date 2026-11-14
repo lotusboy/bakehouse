@@ -16,6 +16,8 @@ hook moves the target when the plugin folder changes. The hooks never name the p
 changes on every update.
 """
 
+from __future__ import annotations
+
 import json
 import os
 import shlex

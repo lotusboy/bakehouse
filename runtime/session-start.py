@@ -16,8 +16,6 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import bakehouse_setup  # noqa: E402
-import locator  # noqa: E402
 
 PM = ("bakehouse: this project has a team. Be its PM: load the `bakehouse:pm` skill now and follow it "
       "for the whole session.")
@@ -64,6 +62,8 @@ def main(env=os.environ):
 
 if __name__ == "__main__":
     try:
+        import bakehouse_setup  # noqa: E402 - inside the try: a failed import must not stop the session
+        import locator  # noqa: E402
         main()
     except Exception as e:
         print(f"bakehouse: session-start failed: {e!r}", file=sys.stderr)

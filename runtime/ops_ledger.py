@@ -18,6 +18,8 @@ events written before it stay as they are. `verify` reports every line it cannot
 without prev, and every broken link. Standard library only.
 """
 
+from __future__ import annotations
+
 import contextlib
 import hashlib
 import json

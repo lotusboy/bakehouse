@@ -13,6 +13,10 @@
 >
 > Script paths on this page, `runtime/<script>`, are in the plugin's folder (`${CLAUDE_PLUGIN_ROOT}`
 > in a command or agent body).
+>
+> **Python.** The tools need Python 3.10 or later. The plugin's hooks run the first `python3` on the
+> hook's PATH and load under Python 3.9 too (macOS's `/usr/bin/python3`), so the dispatch gate and the
+> session start keep working there.
 
 ## What it is
 

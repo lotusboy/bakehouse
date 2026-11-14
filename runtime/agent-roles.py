@@ -87,9 +87,16 @@ import unicodedata
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import locator  # noqa: E402 - the plugin's own module, beside this file
-
-MACHINE = locator.machine_dir()
+try:
+    import locator  # noqa: E402 - the plugin's own module, beside this file
+    LOCATOR_ERROR = None
+    MACHINE = locator.machine_dir()
+except Exception as e:  # fail open, as for team_roles below: logged, and every dispatch passes unchanged
+    LOCATOR_ERROR = e
+    # locator.machine_dir()'s rule, so the failure can still be logged
+    MACHINE = Path(os.environ.get("BAKEHOUSE_MACHINE_DIR") or Path(
+        os.environ.get("XDG_STATE_HOME") or Path(os.environ.get("HOME", str(Path.home()))) / ".local" / "state")
+        / "bakehouse")
 SEEN = MACHINE / "seen-agents"
 LOG = MACHINE / "logs" / "agent-roles.log"
 DISPATCHES = MACHINE / "logs" / "prediction-dispatch.jsonl"
@@ -118,6 +125,8 @@ def log(msg):
         pass
 
 
+if LOCATOR_ERROR is not None:
+    log(f"ERROR import locator: {LOCATOR_ERROR!r}")
 try:
     import team_roles
 except Exception as e:  # fail open: without the module every dispatch passes unchanged

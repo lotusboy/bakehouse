@@ -423,5 +423,79 @@ class SessionStart(Base):
         self.assertIn("load the `bakehouse:pm` skill", out)
 
 
+class BrokenImport(Base):
+    """A hook whose own module cannot be imported fails open, as its docstring says (S16 M1)."""
+
+    def broken_copy(self, script):
+        """script beside a locator.py that raises on import."""
+        d = self.tmp / "broken"
+        d.mkdir()
+        for name in (script, "bakehouse_setup.py", "team_roles.py"):
+            shutil.copy(RUNTIME / name, d / name)
+        (d / "locator.py").write_text("raise TypeError('unsupported operand')\n")
+        return d / script
+
+    def test_the_dispatch_hook_logs_the_failure_and_lets_the_dispatch_through(self):
+        d = {"hook_event_name": "PreToolUse", "tool_name": "Agent", "cwd": str(self.tmp),
+             "tool_input": {"subagent_type": "role:nosuchrole", "description": "d", "prompt": "x"}}
+        p = subprocess.run(["python3", str(self.broken_copy("agent-roles.py"))], input=json.dumps(d),
+                           capture_output=True, text=True, env=self.env)
+        self.assertEqual((p.returncode, p.stdout, p.stderr), (0, "", ""))
+        self.assertIn("ERROR import locator: TypeError('unsupported operand')",
+                      (self.machine / "logs" / "agent-roles.log").read_text())
+
+    def test_session_start_says_so_and_exits_zero(self):
+        p = subprocess.run(["python3", str(self.broken_copy("session-start.py"))], capture_output=True, text=True,
+                           env=self.env)
+        self.assertEqual((p.returncode, p.stdout), (0, ""))
+        self.assertIn("bakehouse: session-start failed: TypeError('unsupported operand')", p.stderr)
+
+
+OLD_PYTHON = Path("/usr/bin/python3")
+
+
+def old_python() -> bool:
+    """True when /usr/bin/python3 exists and is older than 3.10 (macOS ships 3.9)."""
+    if not OLD_PYTHON.is_file():
+        return False
+    p = subprocess.run([str(OLD_PYTHON), "-c", "import sys; print(sys.version_info < (3, 10))"],
+                       capture_output=True, text=True)
+    return p.stdout.strip() == "True"
+
+
+@unittest.skipUnless(old_python(), "needs /usr/bin/python3 older than 3.10")
+class OldPython(Base):
+    """The hooks run bare `python3`, which may be 3.9: every module they import must load there (S16 M1)."""
+    HOOK_MODULES = ("agent-roles.py", "team_roles.py", "locator.py", "session-start.py", "bakehouse_setup.py",
+                    "gate_event.py", "predict-gate.py", "records-check.py", "team-preflight.py", "decision.py",
+                    "ops_ledger.py")
+
+    def old(self, *args, input=None, **extra):
+        return subprocess.run([str(OLD_PYTHON), *args], capture_output=True, text=True, input=input,
+                              env={**self.env, "PYTHONDONTWRITEBYTECODE": "1", **extra})
+
+    def test_every_module_the_hooks_import_loads(self):
+        code = ("import importlib.util, sys; sys.path.insert(0, sys.argv[1]); "
+                "s = importlib.util.spec_from_file_location('m', sys.argv[2]); "
+                "m = sys.modules['m'] = importlib.util.module_from_spec(s); s.loader.exec_module(m)")
+        for name in self.HOOK_MODULES:
+            with self.subTest(name=name):
+                p = self.old("-c", code, str(RUNTIME), str(RUNTIME / name))
+                self.assertEqual(p.returncode, 0, p.stderr)
+
+    def test_the_dispatch_hook_still_denies_an_unknown_role(self):
+        d = {"hook_event_name": "PreToolUse", "tool_name": "Agent", "cwd": str(self.tmp),
+             "tool_input": {"subagent_type": "role:nosuchrole", "description": "d", "prompt": "x"}}
+        p = self.old(str(RUNTIME / "agent-roles.py"), input=json.dumps(d))
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(json.loads(p.stdout)["hookSpecificOutput"]["permissionDecision"], "deny")
+
+    def test_session_start_still_prints_the_pm_instruction(self):
+        self.setup_in(self.repo)
+        p = self.old(str(SESSION_START), CLAUDE_PROJECT_DIR=str(self.repo))
+        self.assertEqual((p.returncode, p.stderr), (0, ""))
+        self.assertIn("load the `bakehouse:pm` skill", p.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

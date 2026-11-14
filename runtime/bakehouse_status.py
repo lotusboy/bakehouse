@@ -20,6 +20,8 @@ Exit 0; 3 no team here (JSON: {"format": 1, "team": false}); 4 setup needed (the
 stderr); 1 a broken ledger (named on stderr); 2 bad usage.
 """
 
+from __future__ import annotations
+
 import datetime
 import json
 import os

@@ -19,6 +19,8 @@ Usage from a shell script: `python3 locator.py <field> [folder]` prints one path
 Exit 4: a team, but setup is needed; the message says what to run.
 """
 
+from __future__ import annotations
+
 import os
 import subprocess
 import sys

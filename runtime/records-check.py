@@ -86,6 +86,8 @@ count.
 Exit: 0 when the check completed, whatever it flagged; 2 bad input.
 """
 
+from __future__ import annotations
+
 import argparse
 import contextlib
 import copy
