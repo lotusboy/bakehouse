@@ -65,6 +65,25 @@ class TestPmReplyShape(unittest.TestCase):
         self.assertIn("none is required", self.pm)
 
 
+class TestRecordsAndLanes(unittest.TestCase):
+    """S16 M6, M7: the PM commits the records worktree; a lane's commands name the variables the tools read."""
+
+    def setUp(self):
+        self.pm = (RUNTIME.parent / "skills" / "pm" / "SKILL.md").read_text()
+        self.change = (RUNTIME.parent / "commands" / "change.md").read_text()
+
+    def test_m6_the_pm_commits_the_records_after_each_close_and_before_the_session_ends(self):
+        b = bullet(self.pm, "The records folder is always committed: after each close, and before the session ends.")
+        self.assertIn("`git -C <records> add -A && git -C <records> commit -m \"<work order or 'records'>: records\"`", b)
+        self.assertEqual(self.pm.count("git -C <records> add -A"), 1)
+
+    def test_m7_the_lane_variables_are_named_where_lanes_are_set(self):
+        for text in (self.pm, self.change):
+            self.assertIn("BAKEHOUSE_LANE=", text)
+            self.assertIn("BAKEHOUSE_WO=", text)
+            self.assertIn("The older lane variable names are not read", " ".join(text.split()))
+
+
 class TestReviewerPrompt(unittest.TestCase):
     def test_b4_the_refactor_reviewer_owes_at_least_5_rows(self):
         text = " ".join(

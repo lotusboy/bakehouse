@@ -224,6 +224,16 @@
    "note": "ratify.sh is the tool; nothing refuses an eyeballed list"
   },
   {
+   "id": "pm-24",
+   "file": "skills/pm/SKILL.md",
+   "sentences": [
+    "- **The records folder is always committed: after each close, and before the session ends.** The tools write the records but commit only the ops ledger's seal anchors, so the PM commits the records worktree (`bakehouse status` names it), as the session committed its notes folder before: `git -C <records> add -A && git -C <records> commit -m \"<work order or 'records'>: records\"`."
+   ],
+   "enforcer": "prompt",
+   "proof": "prompt only: no tool, hook or review brief checks it",
+   "note": "S16 M6: only seal anchors commit in the records worktree"
+  },
+  {
    "id": "bakehouse-change-01",
    "file": "commands/change.md",
    "sentences": [

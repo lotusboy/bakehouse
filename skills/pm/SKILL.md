@@ -219,6 +219,16 @@ where the owner uses that tool; none is required.** A project that has never use
 and the PM does not start one unasked — offer it once when the need first shows. `docs/TOOLS.md` lists
 them, and each tool's header comment is its full reference.
 
+- **The records folder is always committed: after each close, and before the session ends.** The tools
+  write the records but commit only the ops ledger's seal anchors, so the PM commits the records worktree
+  (`bakehouse status` names it), as the session committed its notes folder before:
+  `git -C <records> add -A && git -C <records> commit -m "<work order or 'records'>: records"`. A record
+  left uncommitted is lost to a `git clean` or a move.
+- **A lane's commands carry its lane and its work order.** Where work runs in lanes, set
+  `BAKEHOUSE_LANE=<lane>` and `BAKEHOUSE_WO=<work order id>` in each lane's commands: `heavy-run.sh` takes
+  that lane's lock and `lane-event.sh` labels the lane's events with them. The older lane variable names
+  are not read, so a lane without these shares the main lane's lock.
+
 - **Decisions are recorded, so the agent's judgement can be measured.** Before sending the owner a
   question, record it with `${CLAUDE_PLUGIN_ROOT}/runtime/decision.sh ask` (the question as sent, the options, the
   recommendation, a confidence between 0 and 1, and a one-line pointer to the evidence). The tool refuses
