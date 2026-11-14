@@ -43,10 +43,16 @@ def frontmatter_name(path):
     return path.stem
 
 
+def project_top(cwd):
+    """The folder the harness reads a project's .claude/ from: the cwd's git toplevel, else the cwd."""
+    return locator.toplevel(cwd) or Path(cwd)
+
+
 def enabled_plugins(cwd):
     enabled = {}
-    for p in (Path.home() / ".claude" / "settings.json", Path(cwd) / ".claude" / "settings.json",
-              Path(cwd) / ".claude" / "settings.local.json"):
+    top = project_top(cwd)
+    for p in (Path.home() / ".claude" / "settings.json", top / ".claude" / "settings.json",
+              top / ".claude" / "settings.local.json"):
         try:
             enabled.update(json.load(open(p)).get("enabledPlugins", {}))
         except (OSError, ValueError):
@@ -57,7 +63,8 @@ def enabled_plugins(cwd):
 def installed_agents(cwd):
     """Every agent name this session could dispatch: built-ins, user, project, enabled plugins."""
     names = set(BUILT_IN)
-    for d in (Path.home() / ".claude" / "agents", Path(cwd) / ".claude" / "agents"):
+    top = project_top(cwd)
+    for d in (Path.home() / ".claude" / "agents", top / ".claude" / "agents"):
         for f in d.glob("*.md"):
             n = frontmatter_name(f)
             if n:
@@ -68,9 +75,9 @@ def installed_agents(cwd):
         installs = {}
     for key in enabled_plugins(cwd):
         entries = installs.get(key, [])
-        # a project-scope install for this folder wins over the user-scope one
-        pick = next((e for e in entries if e.get("scope") == "project"
-                     and str(cwd).startswith(e.get("projectPath", "\0"))), None)
+        # a project-scope install for this project wins over the user-scope one
+        pick = next((e for e in entries if e.get("scope") == "project" and isinstance(e.get("projectPath"), str)
+                     and Path(e["projectPath"]).resolve() == top.resolve()), None)
         pick = pick or next((e for e in entries if e.get("scope") == "user"), None)
         if not pick:
             continue

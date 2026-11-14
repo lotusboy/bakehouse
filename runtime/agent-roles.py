@@ -100,7 +100,8 @@ except Exception as e:  # fail open, as for team_roles below: logged, and every 
 SEEN = MACHINE / "seen-agents"
 LOG = MACHINE / "logs" / "agent-roles.log"
 DISPATCHES = MACHINE / "logs" / "prediction-dispatch.jsonl"
-# a lookup for a path a brief names asks that path's own repo, not $CLAUDE_PROJECT_DIR's
+# a lookup asks the repo of the path it is given (the hook input's cwd, or a path a brief names), never
+# $CLAUDE_PROJECT_DIR's: the session may have been launched in another folder (S16 M2)
 NAMED_ENV = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"}
 MARKER = "[bakehouse:agent-roles]"
 PREDICTION_MARKER = "[bakehouse:prediction-record]"
@@ -152,7 +153,7 @@ def binding_at(path, named=False):
     k = str(path)
     if (k, named) not in _BINDINGS:
         t = min(team_roles.RESOLVE_TIMEOUT, left())
-        b, why = team_roles.read_binding(k, log, timeout=t, env=NAMED_ENV if named else os.environ)
+        b, why = team_roles.read_binding(k, log, timeout=t, env=NAMED_ENV)
         if why and t < team_roles.RESOLVE_TIMEOUT and ("did not answer" in why or "was not run" in why):
             why = (f"the hook's {RUN_BUDGET_S} s run deadline ran out: earlier calls in this run (a slow locator or "
                    f"git) used {time.monotonic() - START:.1f} s of it, so {why}")

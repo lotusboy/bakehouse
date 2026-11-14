@@ -1114,12 +1114,13 @@ class TestDispatchDecision(DecisionFixture):
         self.assertEqual(self.logged(), [])
 
     def test_the_project_dir_gives_the_cwds_binding_and_a_named_path_its_own_repos(self):
-        # the harness sets CLAUDE_PROJECT_DIR for a plugin hook: the locator reads the cwd's project from it,
-        # and a path a brief names from that path's own repository
+        # the harness sets CLAUDE_PROJECT_DIR for a plugin hook; the hook judges its input's cwd, never that
+        # variable (S16 M2), and a path a brief names from that path's own repository
         self.bpath.write_text(json.dumps({"owned": True, "reviews": "records/", "roles": {"engineer": "design-author"}}))
         self.project_dir = self.repo
         self.assertEqual(self.decide("role:engineer", "p", self.other)[0], "ok")
-        self.assertIn("role:engineer -> design-author (binding roles key 'engineer')", self.log())
+        self.assertIn("role:engineer -> bakehouse:refactor-engineer (runtime/agent-roles.json key 'engineer')",
+                      self.log())
         self.project_dir = self.ws
         got, sent = self.decide("role:reviewer", f"Review T7.\nRecord folder: {self.rf}/\n", self.ws)
         self.assertEqual((got, self.logged()[-1]["record"]["folder"]), ("ok", "records/2026-01-03-T7-x"))
@@ -1438,6 +1439,56 @@ class TestReadBinding(Fixture):
         shutil.rmtree(self.records)
         self.assertIn("bakehouse setup", read(self.repo)[1])
         self.assertEqual(team_roles.load_binding(self.repo), {})
+
+
+class TestTheHooksFolder(Fixture):
+    """S16 M2: the dispatch hook judges the hook input's cwd, resolved to its git toplevel; never
+    $CLAUDE_PROJECT_DIR. The plugin's switch-on and a project-scope install are read from that toplevel."""
+
+    def project_scope(self, project_path):
+        """The plugin switched on in the repo's .claude/settings.json, installed for project_path only."""
+        (self.home / ".claude" / "settings.json").write_text("{}")
+        (self.repo / ".claude").mkdir(exist_ok=True)
+        (self.repo / ".claude" / "settings.json").write_text(json.dumps({"enabledPlugins": {"bakehouse@t": True}}))
+        (self.home / ".claude" / "plugins" / "installed_plugins.json").write_text(json.dumps(
+            {"plugins": {"bakehouse@t": [{"scope": "project", "projectPath": str(project_path),
+                                          "installPath": str(self.home / "plugin")}]}}))
+
+    def test_a_dispatch_from_a_subfolder_finds_the_project_scope_plugin(self):
+        self.project_scope(self.repo)
+        (self.repo / "sub" / "deeper").mkdir(parents=True)
+        self.project_dir = self.repo
+        for cwd in (self.repo, self.repo / "sub", self.repo / "sub" / "deeper"):
+            with self.subTest(cwd=cwd):
+                self.assertEqual(self.dispatch("role:reviewer", cwd=cwd)["subagent_type"], "bakehouse:refactor-reviewer")
+                self.assertEqual(self.dispatch("role:architect", cwd=cwd)["subagent_type"], "bakehouse:architect")
+
+    def test_a_project_path_is_compared_resolved_and_whole(self):
+        link = Path(self.tmp.name).resolve() / "link"
+        link.symlink_to(self.repo)
+        self.project_scope(link)
+        self.assertEqual(self.dispatch("role:architect")["subagent_type"], "bakehouse:architect")
+        # /a/proj2 is not /a/proj
+        sibling = Path(f"{self.repo}2")
+        project(sibling, {"owned": True, "roles": {}})
+        (sibling / ".claude").mkdir()
+        (sibling / ".claude" / "settings.json").write_text(json.dumps({"enabledPlugins": {"bakehouse@t": True}}))
+        self.project_scope(self.repo)
+        self.assertEqual(self.dispatch("role:architect", cwd=sibling), "DENY")
+
+    def test_a_folder_outside_the_repo_is_judged_as_itself(self):
+        self.binding({"engineer": "design-author"})
+        self.project_dir = self.repo
+        self.assertEqual(self.dispatch("role:engineer", cwd=self.other)["subagent_type"], "bakehouse:refactor-engineer")
+
+    def test_the_repo_is_judged_when_the_project_dir_is_a_parent_that_is_no_repo(self):
+        self.binding({"engineer": "design-author"})
+        self.project_dir = Path(self.tmp.name).resolve()
+        self.assertEqual(self.dispatch("role:engineer")["subagent_type"], "design-author")
+        # a record-folder refusal holds too (pass 2's ANDON-2 shape)
+        ti = {"subagent_type": "bakehouse:refactor-reviewer", "description": "d",
+              "prompt": "Review it.\nRecord folder: axis/runs/x/\n"}
+        self.assertEqual(self.dispatch("x", tool_input=ti), "DENY")
 
 
 class TestResolve(unittest.TestCase):
