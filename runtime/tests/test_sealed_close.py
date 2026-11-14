@@ -998,10 +998,12 @@ class Sealed(unittest.TestCase):
         )
 
     def test_j2_seals_merged_with_ours_refuse_as_removed(self):
-        first = self.pgit2("symbolic-ref", "--short", "HEAD").stdout.strip()
-        self.pgit2("checkout", "-q", "-b", "side")
+        # the seals end up on a side branch the records branch has not merged; the records worktree itself stays
+        # on its branch, which the locator requires (S16 M5)
+        base = self.pgit2("rev-parse", "HEAD").stdout.strip()
         self.flow()
-        self.pgit2("checkout", "-q", first)
+        self.pgit2("branch", "side")
+        self.pgit2("reset", "-q", "--hard", base)
         _, out = self.close()
         self.assertNotIn(
             "sealed: judged by",
