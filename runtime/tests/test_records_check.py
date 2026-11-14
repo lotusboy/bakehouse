@@ -606,8 +606,8 @@ class TestTemplates(unittest.TestCase):
         spec = importlib.util.spec_from_file_location("agent_roles", root / "runtime" / "agent-roles.py")
         hook = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(hook)
-        for path in ("perma-change.md", "perma-refactor.md"):
-            text = (root / "runtime" / "commands" / path).read_text()
+        for path in ("change.md", "refactor.md"):
+            text = (root / "commands" / path).read_text()
             for brief in ("Engineer", "Reviewer"):
                 with self.subTest(path=path, brief=brief):
                     m = re.search(rf"^### {brief} brief\n.*?^```text\n(.*?)^```", text, re.MULTILINE | re.DOTALL)
@@ -641,8 +641,8 @@ class TestTemplates(unittest.TestCase):
                 subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
             hook.LOG = t / "log.txt"
             terms = {"{root}": f"{repo}/", "binding.reviews": "records/", "binding.reviewName": "2026-01-03-T7-step1-review"}
-            for path in ("perma-change.md", "perma-refactor.md"):
-                text = (root / "runtime" / "commands" / path).read_text()
+            for path in ("change.md", "refactor.md"):
+                text = (root / "commands" / path).read_text()
                 for brief in ("Engineer", "Reviewer"):
                     with self.subTest(path=path, brief=brief):
                         block = re.search(rf"^### {brief} brief\n.*?^```text\n(.*?)^```", text, re.MULTILINE | re.DOTALL).group(1)
@@ -1271,9 +1271,9 @@ class TestMutations(Fixture):
         globs = set(rev["marks"]) | {rev["require"][0]["glob"], rev["require"][0]["per"]}
         pairs = [(rc.round_name(rev, 0, "findings"), rc.round_name(rev, 0, "mutations")),
                  tuple(rev["rounds"]["fix"][k].replace("{n}", "<N>") for k in ("findings", "mutations"))]
-        for path in ("commands/perma-change.md", "commands/perma-refactor.md", "agents/refactor-reviewer.md",
-                     "agent-roles.py", "records-check.py", "agent-roles.json"):
-            text = (root / "runtime" / path).read_text()
+        for path in ("commands/change.md", "commands/refactor.md", "agents/refactor-reviewer.md",
+                     "runtime/agent-roles.py", "runtime/records-check.py", "runtime/agent-roles.json"):
+            text = (root / path).read_text()
             for tok in re.findall(r"\b(?:findings|mutations)[\w.<>{}*-]*?\.(?:md|json)\b", text):
                 as_findings = tok if tok.endswith(".md") else f"findings{tok[len('mutations'):-len('.json')]}.md"
                 ok = tok in globs or tok in pairs[1] or rc.declared(as_findings, rev) is not None and (

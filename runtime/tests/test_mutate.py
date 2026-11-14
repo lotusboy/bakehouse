@@ -1054,7 +1054,7 @@ class TestBlock(unittest.TestCase):
 
     def test_the_docs_and_the_reviewer_prompt_name_the_runner(self):
         root = RUNTIME.parent
-        for f in ("docs/TOOLS.md", "docs/PROJECT-TEAM.md", "runtime/agents/refactor-reviewer.md"):
+        for f in ("docs/TOOLS.md", "docs/PROJECT-TEAM.md", "agents/refactor-reviewer.md"):
             with self.subTest(f):
                 self.assertIn("mutate.sh", (root / f).read_text())
 

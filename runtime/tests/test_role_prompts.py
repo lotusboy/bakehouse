@@ -23,7 +23,7 @@ def bullet(text, head):
 
 class TestPmReplyShape(unittest.TestCase):
     def setUp(self):
-        self.pm = (RUNTIME / "roles" / "pm.md").read_text()
+        self.pm = (RUNTIME.parent / "skills" / "pm" / "SKILL.md").read_text()
         self.shape = bullet(self.pm, "One reply shape.")
         self.assertTrue(self.shape)
 
@@ -68,7 +68,7 @@ class TestPmReplyShape(unittest.TestCase):
 class TestReviewerPrompt(unittest.TestCase):
     def test_b4_the_refactor_reviewer_owes_at_least_5_rows(self):
         text = " ".join(
-            (RUNTIME / "agents" / "refactor-reviewer.md").read_text().split()
+            (RUNTIME.parent / "agents" / "refactor-reviewer.md").read_text().split()
         )
         self.assertIn("Pick at least 5 of the engineer's mutation tests", text)
         self.assertIn(

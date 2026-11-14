@@ -31,13 +31,13 @@ HEADING = re.compile(r"^#{1,6}\s+(.*?)\s*$")
 TOP = "(top)"
 ENFORCERS = ("code", "reviewer", "prompt")
 COMMANDS = (
-    "runtime/commands/perma-change.md",
-    "runtime/commands/perma-health.md",
-    "runtime/commands/perma-refactor.md",
+    "commands/change.md",
+    "commands/health.md",
+    "commands/refactor.md",
 )
 REVIEW_BRIEFS = (
-    "runtime/agents/design-reviewer.md",
-    "runtime/agents/refactor-reviewer.md",
+    "agents/design-reviewer.md",
+    "agents/refactor-reviewer.md",
 )
 NO_PROOF = "code exists, no proof test:"
 
@@ -104,7 +104,7 @@ def problems(root):
     files = reg.get("files", [])
     prompts = {
         str(p.relative_to(root))
-        for d in ("runtime/agents", "runtime/roles")
+        for d in ("agents", "skills/pm")
         for p in (root / d).glob("*.md")
     }
     prompts |= set(COMMANDS)
@@ -253,7 +253,7 @@ class TestTheCheckBites(unittest.TestCase):
         return re.compile(r"\s+".join(map(re.escape, sentence.split())))
 
     def bold_entry(self):
-        f = "runtime/agents/design-author.md"
+        f = "agents/design-author.md"
         return entry(
             self.reg,
             f,
@@ -264,14 +264,14 @@ class TestTheCheckBites(unittest.TestCase):
         self.assertEqual(problems(self.root), [])
 
     def test_an_unlisted_rule_sentence_fails(self):
-        f = "runtime/agents/architect.md"
+        f = "agents/architect.md"
         self.write(f, self.read(f) + "\nNever skip the second count.\n")
         self.assertEqual(
             problems(self.root), [f"unlisted: {f}: Never skip the second count."]
         )
 
     def test_a_short_rule_sentence_is_read(self):
-        f, h = "runtime/agents/architect.md", "runtime/commands/perma-health.md"
+        f, h = "agents/architect.md", "commands/health.md"
         self.write(f, self.read(f) + "\nDo not push.\n")
         text, n = self.wrapped("Never push.").subn("", self.read(h))
         self.assertEqual(n, 1)
@@ -282,7 +282,7 @@ class TestTheCheckBites(unittest.TestCase):
         )
 
     def test_an_edited_rule_sentence_fails_as_unlisted_and_stale(self):
-        f = "runtime/roles/pm.md"
+        f = "skills/pm/SKILL.md"
         text = self.read(f)
         self.assertIn("Never retry a failed fan-out automatically.", text)
         self.write(
@@ -299,7 +299,7 @@ class TestTheCheckBites(unittest.TestCase):
         self.assertIn("Never retry a failed fan-out automatically.**", got[1])
 
     def test_an_edited_rule_inside_a_fenced_brief_fails(self):
-        f = "runtime/commands/perma-change.md"
+        f = "commands/change.md"
         text = self.read(f)
         self.assertIn("```text", text)
         self.assertIn("Never without the upgrade condition.", text)
@@ -321,7 +321,7 @@ class TestTheCheckBites(unittest.TestCase):
 
     def test_deleting_one_of_two_copies_fails(self):
         f, s = (
-            "runtime/commands/perma-refactor.md",
+            "commands/refactor.md",
             "Never edit a test or an output to make a gate pass.",
         )
         text = self.read(f)
@@ -338,7 +338,7 @@ class TestTheCheckBites(unittest.TestCase):
 
     def test_moving_a_copy_to_another_brief_fails(self):
         f, s = (
-            "runtime/commands/perma-refactor.md",
+            "commands/refactor.md",
             "Never edit a test or an output to make a gate pass.",
         )
         text = self.read(f)
@@ -362,7 +362,7 @@ class TestTheCheckBites(unittest.TestCase):
         )
 
     def test_a_second_copy_of_a_rule_held_once_fails(self):
-        f = "runtime/agents/design-author.md"
+        f = "agents/design-author.md"
         self.assertEqual(self.read(f).count("Do not commit."), 1)
         self.write(f, self.read(f) + "\nDo not commit.\n")
         self.assertEqual(
@@ -373,7 +373,7 @@ class TestTheCheckBites(unittest.TestCase):
         )
 
     def test_a_rewrap_inside_a_sentence_moves_no_key(self):
-        f = "runtime/commands/perma-health.md"
+        f = "commands/health.md"
         text = self.read(f)
         self.assertIn("Never use a path, command, threshold or part name", text)
         self.write(
@@ -420,7 +420,7 @@ class TestTheCheckBites(unittest.TestCase):
     def test_a_reviewer_quote_not_in_its_brief_fails(self):
         e = entry(
             self.reg,
-            "runtime/agents/design-author.md",
+            "agents/design-author.md",
             "- A change that grows the file must earn every added line.",
         )
         path, _, quote = e["proof"].partition(": ")
@@ -432,7 +432,7 @@ class TestTheCheckBites(unittest.TestCase):
         )
 
     def test_deleting_the_checks_a_reviewer_proof_quotes_fails(self):
-        f, e = "runtime/agents/design-reviewer.md", self.bold_entry()
+        f, e = "agents/design-reviewer.md", self.bold_entry()
         lines = self.read(f).split("\n")
         self.assertEqual(len([x for x in lines if x.startswith("grep -")]), 2)
         self.write(f, "\n".join(x for x in lines if not x.startswith("grep -")))
@@ -443,9 +443,9 @@ class TestTheCheckBites(unittest.TestCase):
 
     def test_a_reviewer_proof_must_name_a_review_brief(self):
         e = self.bold_entry()
-        e["proof"] = "runtime/agents/design-author.md: Do not review your own work."
+        e["proof"] = "agents/design-author.md: Do not review your own work."
         self.save()
-        want = f"{e['id']}: proof names 'runtime/agents/design-author.md', which is not a review brief"
+        want = f"{e['id']}: proof names 'agents/design-author.md', which is not a review brief"
         self.assertEqual(problems(self.root), [want])
 
     def test_a_reviewer_proof_with_no_quote_fails(self):
@@ -478,7 +478,7 @@ class TestTheCheckBites(unittest.TestCase):
         )
 
     def test_files_may_list_only_process_prompts(self):
-        f = "runtime/commands/help.md"
+        f = "commands/help.md"
         self.write(f, "Lists the commands.\n")
         self.reg["files"].append(f)
         self.save()
@@ -487,10 +487,10 @@ class TestTheCheckBites(unittest.TestCase):
         )
 
     def test_a_new_agent_file_must_be_listed(self):
-        self.write("runtime/agents/new-role.md", "You read.\n")
+        self.write("agents/new-role.md", "You read.\n")
         self.assertEqual(
             problems(self.root),
-            ["not in files: runtime/agents/new-role.md is a process prompt"],
+            ["not in files: agents/new-role.md is a process prompt"],
         )
 
     def test_an_unknown_enforcer_and_a_repeated_id_fail(self):

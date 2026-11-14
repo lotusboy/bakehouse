@@ -1,23 +1,23 @@
 {
  "files": [
-  "runtime/roles/pm.md",
-  "runtime/commands/perma-change.md",
-  "runtime/commands/perma-health.md",
-  "runtime/commands/perma-refactor.md",
-  "runtime/agents/absence-check.md",
-  "runtime/agents/architect.md",
-  "runtime/agents/blast-radius.md",
-  "runtime/agents/count-check.md",
-  "runtime/agents/design-author.md",
-  "runtime/agents/design-reviewer.md",
-  "runtime/agents/human-expert.md",
-  "runtime/agents/refactor-engineer.md",
-  "runtime/agents/refactor-reviewer.md"
+  "skills/pm/SKILL.md",
+  "commands/change.md",
+  "commands/health.md",
+  "commands/refactor.md",
+  "agents/absence-check.md",
+  "agents/architect.md",
+  "agents/blast-radius.md",
+  "agents/count-check.md",
+  "agents/design-author.md",
+  "agents/design-reviewer.md",
+  "agents/human-expert.md",
+  "agents/refactor-engineer.md",
+  "agents/refactor-reviewer.md"
  ],
  "rules": [
   {
    "id": "pm-01",
-   "file": "runtime/roles/pm.md",
+   "file": "skills/pm/SKILL.md",
    "sentences": [
     "- **Claude never lets a task exist only in the conversation.** ## 2."
    ],
@@ -26,7 +26,7 @@
   },
   {
    "id": "pm-02",
-   "file": "runtime/roles/pm.md",
+   "file": "skills/pm/SKILL.md",
    "sentences": [
     "- **Never retry a failed fan-out automatically.** A failed batch retried one by one is how one run turns into double the spend with nothing to show for it."
    ],
@@ -35,7 +35,7 @@
   },
   {
    "id": "pm-03",
-   "file": "runtime/roles/pm.md",
+   "file": "skills/pm/SKILL.md",
    "sentences": [
     "- what must not change, and how to check that it did not;",
     "- what the agent must not do (commit, push, start further agents);"
@@ -46,7 +46,7 @@
   },
   {
    "id": "pm-04",
-   "file": "runtime/roles/pm.md",
+   "file": "skills/pm/SKILL.md",
    "sentences": [
     "Least does not mean unsafe: never leave out a check where data crosses a trust boundary, error handling that keeps data from being lost, anything security depends on, or anything the owner asked for."
    ],
@@ -55,7 +55,7 @@
   },
   {
    "id": "pm-05",
-   "file": "runtime/roles/pm.md",
+   "file": "skills/pm/SKILL.md",
    "sentences": [
     "It is never one of the things in the paragraph above."
    ],
@@ -65,7 +65,7 @@
   },
   {
    "id": "pm-06",
-   "file": "runtime/roles/pm.md",
+   "file": "skills/pm/SKILL.md",
    "sentences": [
     "The table in `${CLAUDE_PLUGIN_ROOT}/runtime/agent-roles.json` names which installed agent fills each role and how it must run, and a hook enforces that on every dispatch."
    ],
@@ -74,7 +74,7 @@
   },
   {
    "id": "pm-07",
-   "file": "runtime/roles/pm.md",
+   "file": "skills/pm/SKILL.md",
    "sentences": [
     "- **Never start a second thing without parking the first.** Park it with the reason."
    ],
@@ -83,7 +83,7 @@
   },
   {
    "id": "pm-08",
-   "file": "runtime/roles/pm.md",
+   "file": "skills/pm/SKILL.md",
    "sentences": [
     "Never \"say if you want it logged\": seen and not written down, it is lost by the end of the session."
    ],
@@ -92,7 +92,7 @@
   },
   {
    "id": "pm-09",
-   "file": "runtime/roles/pm.md",
+   "file": "skills/pm/SKILL.md",
    "sentences": [
     "- **Never illustrate with invented data.** In a report about real work, an example is a real row, file or output, quoted from where it lives."
    ],
@@ -101,7 +101,7 @@
   },
   {
    "id": "pm-10",
-   "file": "runtime/roles/pm.md",
+   "file": "skills/pm/SKILL.md",
    "sentences": [
     "- **Investigate before asking.** Do not hand the owner a question that reading or measuring would answer: find the answer, then say what was found."
    ],
@@ -110,7 +110,7 @@
   },
   {
    "id": "pm-11",
-   "file": "runtime/roles/pm.md",
+   "file": "skills/pm/SKILL.md",
    "sentences": [
     "State conclusions outright; never leave them implied."
    ],
@@ -119,7 +119,7 @@
   },
   {
    "id": "pm-12",
-   "file": "runtime/roles/pm.md",
+   "file": "skills/pm/SKILL.md",
    "sentences": [
     "- **Concrete time estimates.** Minutes or hours — never \"shortly\" or \"a bit of work\"."
    ],
@@ -128,7 +128,7 @@
   },
   {
    "id": "pm-13",
-   "file": "runtime/roles/pm.md",
+   "file": "skills/pm/SKILL.md",
    "sentences": [
     "- **Offer a refactor, never start one.** When the owner asks to refactor a part, or the health watch shows a part ready, offer `/bakehouse:refactor <part>`; it starts only on the owner's decision."
    ],
@@ -137,7 +137,7 @@
   },
   {
    "id": "pm-14",
-   "file": "runtime/roles/pm.md",
+   "file": "skills/pm/SKILL.md",
    "sentences": [
     "The closing line always says whether the owner needs to respond, and when the next update comes, as a concrete time."
    ],
@@ -146,7 +146,7 @@
   },
   {
    "id": "pm-16",
-   "file": "runtime/roles/pm.md",
+   "file": "skills/pm/SKILL.md",
    "sentences": [
     "**Each rule below applies where the owner uses that tool; none is required.** A project that has never used one has no file for it, and the PM does not start one unasked — offer it once when the need first shows."
    ],
@@ -155,7 +155,7 @@
   },
   {
    "id": "pm-17",
-   "file": "runtime/roles/pm.md",
+   "file": "skills/pm/SKILL.md",
    "sentences": [
     "The tool refuses a question that is not grounded (owner, 2026-10-14, after a rushed heuristic was put to the owner as fact): `--read <file>` names a source the PM opened itself — raw document, product data or code, never an agent's report — with `--read-what` saying which rows or lines; a guess word (probably, should, infer, pattern, works it out…) must be labelled `guess:` in the question; a fix round gives `--task` and `--fix-round N`, and round 2 or later needs `--rechecked`, what the PM re-checked at the source first, because a second round means the design may be wrong; and a question that proposes a fix gives `--upstream`, what feeds the failing step and what the PM saw when it looked there (Seesaw, written into the tool after the PM patched a symptom twice)."
    ],
@@ -165,7 +165,7 @@
   },
   {
    "id": "pm-18",
-   "file": "runtime/roles/pm.md",
+   "file": "skills/pm/SKILL.md",
    "sentences": [
     "From fix round 3 of a task — or a second fix round asked after two earlier ones — the tool refuses without `--stepped-back`, a one-line summary of the step-back done first (the `step-back` skill's helicopter view); `spend.sh record --kind architect` refuses a second architect run for the same task without it (owner, 2026-10-15, after a change found its edge cases one review round at a time)."
    ],
@@ -175,7 +175,7 @@
   },
   {
    "id": "pm-19",
-   "file": "runtime/roles/pm.md",
+   "file": "skills/pm/SKILL.md",
    "sentences": [
     "From fix round 3 of a task — or a second fix round asked after two earlier ones — the tool refuses without `--stepped-back`, a one-line summary of the step-back done first (the `step-back` skill's helicopter view); `spend.sh record --kind architect` refuses a second architect run for the same task without it (owner, 2026-10-15, after a change found its edge cases one review round at a time)."
    ],
@@ -185,7 +185,7 @@
   },
   {
    "id": "pm-20",
-   "file": "runtime/roles/pm.md",
+   "file": "skills/pm/SKILL.md",
    "sentences": [
     "`spend.sh record` refuses a first record without `--kind` (a role from `${CLAUDE_PLUGIN_ROOT}/runtime/agent-roles.json`: one of its `roles`, or a `spend_kinds` entry open to new records), `--why`, `--predicted`, `--predicted-tokens`, `--result` and `--outcome`; a run that went worse or failed, or whose tokens are off by more than half, gets a lesson stub in `TOOLS.md`."
    ],
@@ -195,7 +195,7 @@
   },
   {
    "id": "pm-21",
-   "file": "runtime/roles/pm.md",
+   "file": "skills/pm/SKILL.md",
    "sentences": [
     "- **Spend is measured, not estimated.** When an agent finishes, record the token count the harness reported with `${CLAUDE_PLUGIN_ROOT}/runtime/spend.sh record` — the harness's figure, never the agent's own estimate."
    ],
@@ -205,7 +205,7 @@
   },
   {
    "id": "pm-22",
-   "file": "runtime/roles/pm.md",
+   "file": "skills/pm/SKILL.md",
    "sentences": [
     "- **Reports are saved, never re-typed.** When an agent's report must live in a file, pipe its text exactly as returned into `${CLAUDE_PLUGIN_ROOT}/runtime/save-report.sh`."
    ],
@@ -215,7 +215,7 @@
   },
   {
    "id": "pm-23",
-   "file": "runtime/roles/pm.md",
+   "file": "skills/pm/SKILL.md",
    "sentences": [
     "- **Closed vocabularies are ratified, not eyeballed.** When a system maps patterns to classes (a rule table, a mapping, a controlled list), do not ask the owner to judge the list by eye."
    ],
@@ -224,8 +224,8 @@
    "note": "ratify.sh is the tool; nothing refuses an eyeballed list"
   },
   {
-   "id": "perma-change-01",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-01",
+   "file": "commands/change.md",
    "sentences": [
     "This job never invents a field."
    ],
@@ -233,8 +233,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-change-02",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-02",
+   "file": "commands/change.md",
    "sentences": [
     "Never use a path, command, gate or figure from anywhere else."
    ],
@@ -242,8 +242,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-change-03",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-03",
+   "file": "commands/change.md",
    "sentences": [
     "| Field | Holds | Used in | |---|---|---| | `id` | the tracker id; it must equal this job's argument | everything | | `need` | one sentence: what the tool must do that it does not do now | the engineer brief, the pull request | | `evidence` | where the failure shows: document, page, table, run, output, count | the engineer brief; the reviewer re-runs it | | `layer` | the owning layer the requester's root-cause check found | the engineer brief: the fix goes there | | `gates` | gate ids from the repo's gate list that prove the change; never a copied command | the engineer and reviewer briefs, resolved through the binding | | `expected` | the moves the requester expects; the prediction must cover each one | the prediction check (step 6) | | `mustNotMove` | outputs that must stay byte-identical | the prediction check, the gates | | `decided` | who decided the tool must change, as a role, and the date | the engineer brief, the pull request | Beside the eight fields, the item carries a **`branch:` line**: the branch the change is made on."
    ],
@@ -252,8 +252,8 @@
    "note": "a table of the eight fields; its rules (id equals the argument, gates never a copied command, the prediction covers expected) are the PM's checks at steps 4.2 and 6.2"
   },
   {
-   "id": "perma-change-04",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-04",
+   "file": "commands/change.md",
    "sentences": [
     "It never opens a second branch for the same item, and it never copies a work order from one branch to another."
    ],
@@ -261,8 +261,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-change-05",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-05",
+   "file": "commands/change.md",
    "sentences": [
     "Whoever writes the work order writes this line; the job never fills it."
    ],
@@ -270,8 +270,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-change-06",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-06",
+   "file": "commands/change.md",
    "sentences": [
     "Run every git command in the records folder as `git -C {records} …`; never `cd` away from the repo."
    ],
@@ -279,8 +279,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-change-07",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-07",
+   "file": "commands/change.md",
    "sentences": [
     "Every \"merged\" and every \"on the default branch\" below means on `origin/<default>`, never a local branch."
    ],
@@ -288,8 +288,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-change-08",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-08",
+   "file": "commands/change.md",
    "sentences": [
     "Record it in the item; never recompute it."
    ],
@@ -297,8 +297,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-change-09",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-09",
+   "file": "commands/change.md",
    "sentences": [
     "The work order's `gates` names the ones that prove the need; each must be in this list."
    ],
@@ -307,8 +307,8 @@
    "note": "preflight cannot read the work order; the PM checks it at step 4.2"
   },
   {
-   "id": "perma-change-10",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-10",
+   "file": "commands/change.md",
    "sentences": [
     "- **Placeholders.** `{root}`; `{id}`; `{n}` (`1`); `{date}` (fixed once, when step 5 runs, as `YYYY-MM-DD`; never refilled on a later day); `{name}` (a short name the PM chooses when it opens the branch)."
    ],
@@ -316,8 +316,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-change-11",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-11",
+   "file": "commands/change.md",
    "sentences": [
     "A brief names it on its `Record folder:` line as a full path, `{root}/` + the folder, in `~/` form: the role hook decides the folder at dispatch and refuses a relative line."
    ],
@@ -325,8 +325,8 @@
    "proof": "test_team_roles.TestDispatchDecision.test_a_relative_line_is_refused_at_dispatch_naming_where_it_resolves"
   },
   {
-   "id": "perma-change-60",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-60",
+   "file": "commands/change.md",
    "sentences": [
     "The line holds the path only (backticks or quotes may wrap it, and a path with a space needs them); notes go on the next line: the hook refuses any text after the path."
    ],
@@ -334,8 +334,8 @@
    "proof": "test_team_roles.TestStrictRecordLine.test_f7_text_after_the_path_is_refused_showing_the_line"
   },
   {
-   "id": "perma-change-12",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-12",
+   "file": "commands/change.md",
    "sentences": [
     "It is the machine file the predicted-moves gate reads, `moves.prediction.json`; preflight refuses a binding that names anything else."
    ],
@@ -343,8 +343,8 @@
    "proof": "test_team_preflight.TestOwned.test_prediction_must_be_a_machine_file"
   },
   {
-   "id": "perma-change-13",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-13",
+   "file": "commands/change.md",
    "sentences": [
     "Any other top-level `moves.measured*` file with no prediction of its round makes close refuse (bakehouse `docs/PREDICT-GATE.md`, \"Closing a work order\")."
    ],
@@ -352,8 +352,8 @@
    "proof": "test_predict_gate.Close.test_close_names_a_rounds_missing_measured_file_and_refuses_an_unpaired_measurement"
   },
   {
-   "id": "perma-change-14",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-14",
+   "file": "commands/change.md",
    "sentences": [
     "Never hardcode a model."
    ],
@@ -361,8 +361,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-change-15",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-15",
+   "file": "commands/change.md",
    "sentences": [
     "Every other `{…}` and `[…]` must be filled; any left is a defect of the work order or the binding, and the dry run names it."
    ],
@@ -370,8 +370,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-change-16",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-16",
+   "file": "commands/change.md",
    "sentences": [
     "Never guess a repo's commands."
    ],
@@ -379,8 +379,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-change-17",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-17",
+   "file": "commands/change.md",
    "sentences": [
     "The reviewer role never falls to the session."
    ],
@@ -389,8 +389,8 @@
    "note": "role resolution: a review role nothing fills goes to general-purpose"
   },
   {
-   "id": "perma-change-18",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-18",
+   "file": "commands/change.md",
    "sentences": [
     "Then, when the binding has a `tracker`, check the argument: `<id>` must match `binding.tracker.id`."
    ],
@@ -399,8 +399,8 @@
    "note": "refused late: at close, not at step 1"
   },
   {
-   "id": "perma-change-19",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-19",
+   "file": "commands/change.md",
    "sentences": [
     "Without one, preflight failed: offer to draft a proposal for `binding.approver`, as `/bakehouse:health` step 6 does, naming the approver by role, never by a person's name;"
    ],
@@ -409,8 +409,8 @@
    "note": "preflight check 6"
   },
   {
-   "id": "perma-change-20",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-20",
+   "file": "commands/change.md",
    "sentences": [
     "Without one, preflight failed: offer to draft a proposal for `binding.approver`, as `/bakehouse:health` step 6 does, naming the approver by role, never by a person's name;"
    ],
@@ -419,8 +419,8 @@
    "note": "the approver is named by role: nothing checks the proposal's text"
   },
   {
-   "id": "perma-change-21",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-21",
+   "file": "commands/change.md",
    "sentences": [
     "- when it does run, the approval covers this work order only, the only output is a pull request, and the repo's tracker, hooks and other branches are never written."
    ],
@@ -428,8 +428,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-change-22",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-22",
+   "file": "commands/change.md",
    "sentences": [
     "The ops ledger refuses this repo; do not work around it."
    ],
@@ -437,8 +437,8 @@
    "proof": "test_ops_ledger.OpsEvent.test_refuses_a_repository_the_owner_does_not_own"
   },
   {
-   "id": "perma-change-23",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-23",
+   "file": "commands/change.md",
    "sentences": [
     "The ops ledger refuses this repo; do not work around it."
    ],
@@ -447,8 +447,8 @@
    "note": "'do not work around it' is the session's own rule; the refusal itself is the code entry"
   },
   {
-   "id": "perma-change-24",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-24",
+   "file": "commands/change.md",
    "sentences": [
     "Never open another branch; never start the job again."
    ],
@@ -456,8 +456,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-change-25",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-25",
+   "file": "commands/change.md",
    "sentences": [
     "Never dispatch the engineer."
    ],
@@ -465,8 +465,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-change-26",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-26",
+   "file": "commands/change.md",
    "sentences": [
     "Never fill `expected`, `mustNotMove` or `decided` yourself."
    ],
@@ -474,8 +474,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-change-27",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-27",
+   "file": "commands/change.md",
    "sentences": [
     "Do not open a branch."
    ],
@@ -483,8 +483,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-change-28",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-28",
+   "file": "commands/change.md",
    "sentences": [
     "The item must be on `origin/<default>` for this; if it exists only on another branch without a `branch:` line, stop and ask the owner which branch the change belongs on."
    ],
@@ -492,8 +492,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-change-29",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-29",
+   "file": "commands/change.md",
    "sentences": [
     "Never copy the work order."
    ],
@@ -501,8 +501,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-change-30",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-30",
+   "file": "commands/change.md",
    "sentences": [
     "A predicted move that `expected` does not name is a new decision, never a detail."
    ],
@@ -510,8 +510,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-change-31",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-31",
+   "file": "commands/change.md",
    "sentences": [
     "A prediction changed after its measured file was committed needs that go recorded as a decision (`decision.sh ask`, then the owner's `decision.sh answer`) and cited in git: the commit that changes it ends with the trailer `Prediction-approved: <decision id>`, in the last paragraph of the message, never the subject.",
     "Without it, close refuses."
@@ -521,17 +521,17 @@
    "note": "row 53 ('Without it, close refuses.') is the same rule; the trailer in the subject: test_predict_gate.CloseLedger.test_a_trailer_in_the_subject_is_not_a_trailer"
   },
   {
-   "id": "perma-change-32",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-32",
+   "file": "commands/change.md",
    "sentences": [
     "Never ask it to start the reviewer."
    ],
    "enforcer": "prompt",
-   "proof": "code exists, no proof test: runtime/agents/refactor-engineer.md (its tools: line names no agent tool; the harness, not bakehouse, enforces it)"
+   "proof": "code exists, no proof test: agents/refactor-engineer.md (its tools: line names no agent tool; the harness, not bakehouse, enforces it)"
   },
   {
-   "id": "perma-change-33",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-33",
+   "file": "commands/change.md",
    "sentences": [
     "Never edit or delete it."
    ],
@@ -539,8 +539,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-change-34",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-34",
+   "file": "commands/change.md",
    "sentences": [
     "The reviewer writes them; it never commits.",
     "Do not commit."
@@ -550,8 +550,8 @@
    "note": "the reviewer's tools include Bash, so it can commit"
   },
   {
-   "id": "perma-change-35",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-35",
+   "file": "commands/change.md",
    "sentences": [
     "Commit the whole record folder first: close reads it from git at `HEAD`, and an untracked or uncommitted file refuses."
    ],
@@ -560,8 +560,8 @@
    "note": "untracked files: test_predict_gate.CloseRecord.test_untracked_files_refuse"
   },
   {
-   "id": "perma-change-36",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-36",
+   "file": "commands/change.md",
    "sentences": [
     "The pass is the command's exit 0, never a reading."
    ],
@@ -570,8 +570,8 @@
    "note": "a rule on the PM's reading of close; no tool stops a pull request after a refused close"
   },
   {
-   "id": "perma-change-37",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-37",
+   "file": "commands/change.md",
    "sentences": [
     "A consumed approval never starts a job again."
    ],
@@ -580,8 +580,8 @@
    "note": "preflight check 6"
   },
   {
-   "id": "perma-change-38",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-38",
+   "file": "commands/change.md",
    "sentences": [
     "A bounded count (a test count, for example) is written in the prediction file as a `range`, never as words under `to`: the check compares `to` for equality."
    ],
@@ -589,8 +589,8 @@
    "proof": "code exists, no proof test: runtime/predict-gate.py (the check compares `to` for equality, so words under `to` refuse; no test plants words under `to`)"
   },
   {
-   "id": "perma-change-39",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-39",
+   "file": "commands/change.md",
    "sentences": [
     "Never edit a test or an output to make a gate pass."
    ],
@@ -599,8 +599,8 @@
    "note": "a reviewer may see a test edit in the diff, but no review brief names the check"
   },
   {
-   "id": "perma-change-40",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-40",
+   "file": "commands/change.md",
    "sentences": [
     "A usage reading never goes into the repo: not into a branch, a commit, a review record or the tracker."
    ],
@@ -608,8 +608,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-change-41",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-41",
+   "file": "commands/change.md",
    "sentences": [
     "Never offer a stopgap as an equal option."
    ],
@@ -617,8 +617,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-change-42",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-42",
+   "file": "commands/change.md",
    "sentences": [
     "- The reviewer must **run** the risky case, not only read it."
    ],
@@ -627,8 +627,8 @@
    "note": "a rule on the reviewer itself; nobody checks that it ran the case"
   },
   {
-   "id": "perma-change-43",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-43",
+   "file": "commands/change.md",
    "sentences": [
     "- Never declare an agent's work lost without checking its output and the ops ledger."
    ],
@@ -636,8 +636,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-change-44",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-44",
+   "file": "commands/change.md",
    "sentences": [
     "Briefs reach committed review records, so a brief never carries a person's name, a usage reading or a working-style note."
    ],
@@ -645,8 +645,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-change-45",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-45",
+   "file": "commands/change.md",
    "sentences": [
     "- **The owner decides.** The job never starts without the owner's go on the work order, never switches a site before the owner's go on the prediction, and never runs a move the work order and the approved prediction do not name."
    ],
@@ -655,8 +655,8 @@
    "note": "'never starts without the owner's go on the work order': in a repo another party owns, preflight check 6 refuses without an approval (test_team_preflight.TestApproval.test_no_matching_record_fails); in an owned repo nothing checks the go"
   },
   {
-   "id": "perma-change-46",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-46",
+   "file": "commands/change.md",
    "sentences": [
     "- **The owner decides.** The job never starts without the owner's go on the work order, never switches a site before the owner's go on the prediction, and never runs a move the work order and the approved prediction do not name."
    ],
@@ -665,8 +665,8 @@
    "note": "'never runs a move ... the approved prediction do not name': the check refuses an unpredicted move"
   },
   {
-   "id": "perma-change-59",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-59",
+   "file": "commands/change.md",
    "sentences": [
     "- **The owner decides.** The job never starts without the owner's go on the work order, never switches a site before the owner's go on the prediction, and never runs a move the work order and the approved prediction do not name."
    ],
@@ -675,8 +675,8 @@
    "note": "'never switches a site before the owner's go on the prediction': the stop hook holds the engineer until a prediction exists (test_team_roles.TestPredictionRecord.test_prediction_record_stop_blocks_a_prose_only_folder), but nothing checks the owner's go before a site is switched"
   },
   {
-   "id": "perma-change-47",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-47",
+   "file": "commands/change.md",
    "sentences": [
     "- **One work order, one branch.** The branch is the item's `branch:` line; the job never opens a second one and never copies a work order between branches."
    ],
@@ -684,8 +684,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-change-48",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-48",
+   "file": "commands/change.md",
    "sentences": [
     "- **The reviewer did not do the work.** The PM dispatches it; the engineer never does; the session that built the change never reviews it."
    ],
@@ -694,8 +694,8 @@
    "note": "code covers only role resolution (test_team_roles.TestGate.test_reviewer_falls_back_to_general_purpose); nothing stops the session reviewing its own work"
   },
   {
-   "id": "perma-change-50",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-50",
+   "file": "commands/change.md",
    "sentences": [
     "Never `git add -A`: other sessions may have writes in flight."
    ],
@@ -703,8 +703,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-health-01",
-   "file": "runtime/commands/perma-health.md",
+   "id": "bakehouse-health-01",
+   "file": "commands/health.md",
    "sentences": [
     "It never starts work."
    ],
@@ -713,8 +713,8 @@
    "note": "stated twice in the file (description and first paragraph): one key"
   },
   {
-   "id": "perma-health-02",
-   "file": "runtime/commands/perma-health.md",
+   "id": "bakehouse-health-02",
+   "file": "commands/health.md",
    "sentences": [
     "Never use a path, command, threshold or part name that the binding and the register do not give you."
    ],
@@ -722,8 +722,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-health-03",
-   "file": "runtime/commands/perma-health.md",
+   "id": "bakehouse-health-03",
+   "file": "commands/health.md",
    "sentences": [
     "Never guess a repo's commands."
    ],
@@ -731,8 +731,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-health-04",
-   "file": "runtime/commands/perma-health.md",
+   "id": "bakehouse-health-04",
+   "file": "commands/health.md",
    "sentences": [
     "Do not retry with other arguments."
    ],
@@ -740,8 +740,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-health-05",
-   "file": "runtime/commands/perma-health.md",
+   "id": "bakehouse-health-05",
+   "file": "commands/health.md",
    "sentences": [
     "The signal never overwrites a part's `decision`."
    ],
@@ -749,8 +749,8 @@
    "proof": "test_health_signal.TestStateAndDecision.test_decision_and_settings_are_never_overwritten"
   },
   {
-   "id": "perma-health-06",
-   "file": "runtime/commands/perma-health.md",
+   "id": "bakehouse-health-06",
+   "file": "commands/health.md",
    "sentences": [
     "**Offer or propose, by ownership.** A ready part is an offer, never an order."
    ],
@@ -758,8 +758,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-health-07",
-   "file": "runtime/commands/perma-health.md",
+   "id": "bakehouse-health-07",
+   "file": "commands/health.md",
    "sentences": [
     "Do not start the refactor, write a decision, open a branch or brief an agent."
    ],
@@ -767,8 +767,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-health-08",
-   "file": "runtime/commands/perma-health.md",
+   "id": "bakehouse-health-08",
+   "file": "commands/health.md",
    "sentences": [
     "- **`owned` is false.** Draft a proposal for the owner to take to the binding's `approver` — name the approver by that role, never by a person's name."
    ],
@@ -776,8 +776,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-health-09",
-   "file": "runtime/commands/perma-health.md",
+   "id": "bakehouse-health-09",
+   "file": "commands/health.md",
    "sentences": [
     "Never `git add -A`: other sessions may have writes in flight."
    ],
@@ -785,8 +785,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-health-10",
-   "file": "runtime/commands/perma-health.md",
+   "id": "bakehouse-health-10",
+   "file": "commands/health.md",
    "sentences": [
     "Do not read them."
    ],
@@ -794,8 +794,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-health-11",
-   "file": "runtime/commands/perma-health.md",
+   "id": "bakehouse-health-11",
+   "file": "commands/health.md",
    "sentences": [
     "So report \"found\", never \"all\"."
    ],
@@ -803,8 +803,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-health-12",
-   "file": "runtime/commands/perma-health.md",
+   "id": "bakehouse-health-12",
+   "file": "commands/health.md",
    "sentences": [
     "This step never acts on one: it closes no work order, writes no artefact and records no override."
    ],
@@ -812,8 +812,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-health-13",
-   "file": "runtime/commands/perma-health.md",
+   "id": "bakehouse-health-13",
+   "file": "commands/health.md",
    "sentences": [
     "It never starts a refactor or a change, whatever the figures say, and even when the work looks small."
    ],
@@ -821,18 +821,18 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-health-14",
-   "file": "runtime/commands/perma-health.md",
+   "id": "bakehouse-health-14",
+   "file": "commands/health.md",
    "sentences": [
     "- **A repo another party owns is read-only.** The checkout is never written: no file, branch, hook, tracker item or commit."
    ],
    "enforcer": "prompt",
    "proof": "prompt only: no tool, hook or review brief checks it",
-   "note": "the tools leave a repo alone (test_health_signal.TestRefusals.test_the_repository_is_left_unchanged; repo-hooks writes a hook only into an owned repo), but nothing stops the session writing"
+   "note": "the tools leave a repo alone (test_health_signal.TestRefusals.test_the_repository_is_left_unchanged; bakehouse setup writes the post-commit hook only into an owned repo), but nothing stops the session writing"
   },
   {
-   "id": "perma-refactor-01",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-01",
+   "file": "commands/refactor.md",
    "sentences": [
     "Never use a path, command, threshold, gate or part name from anywhere else."
    ],
@@ -840,8 +840,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-refactor-02",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-02",
+   "file": "commands/refactor.md",
    "sentences": [
     "**A ready part is an offer, never an order.** This command starts only when the owner has said `/bakehouse:refactor <part>`, or has asked for the part to be refactored."
    ],
@@ -849,8 +849,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-refactor-03",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-03",
+   "file": "commands/refactor.md",
    "sentences": [
     "Run every git command in the records folder as `git -C {records} …`; never `cd` away from the repo."
    ],
@@ -858,8 +858,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-refactor-04",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-04",
+   "file": "commands/refactor.md",
    "sentences": [
     "Every \"merged\" and every \"on the default branch\" below means on `origin/<default>`, never a local branch."
    ],
@@ -867,8 +867,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-refactor-05",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-05",
+   "file": "commands/refactor.md",
    "sentences": [
     "- **Placeholders.** `{root}`; `{register}` (the register's full path); `{part}`; `{id}` (the tracker id); `{n}` (the step number); `{date}` (fixed once, when step `{n}` starts, as `YYYY-MM-DD`; never refilled on a later day); `{name}` (a short step name the PM chooses when it opens the branch)."
    ],
@@ -876,8 +876,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-refactor-06",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-06",
+   "file": "commands/refactor.md",
    "sentences": [
     "A brief names it on its `Record folder:` line as a full path, `{root}/` + the folder, in `~/` form: the role hook decides the folder at dispatch and refuses a relative line."
    ],
@@ -885,8 +885,8 @@
    "proof": "test_team_roles.TestDispatchDecision.test_a_relative_line_is_refused_at_dispatch_naming_where_it_resolves"
   },
   {
-   "id": "perma-refactor-44",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-44",
+   "file": "commands/refactor.md",
    "sentences": [
     "The line holds the path only (backticks or quotes may wrap it, and a path with a space needs them); notes go on the next line: the hook refuses any text after the path."
    ],
@@ -894,8 +894,8 @@
    "proof": "test_team_roles.TestStrictRecordLine.test_f7_text_after_the_path_is_refused_showing_the_line"
   },
   {
-   "id": "perma-refactor-07",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-07",
+   "file": "commands/refactor.md",
    "sentences": [
     "Never hardcode a model."
    ],
@@ -903,8 +903,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-refactor-08",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-08",
+   "file": "commands/refactor.md",
    "sentences": [
     "Never guess a repo's commands."
    ],
@@ -912,8 +912,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-refactor-09",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-09",
+   "file": "commands/refactor.md",
    "sentences": [
     "The reviewer role never falls to the session."
    ],
@@ -922,8 +922,8 @@
    "note": "role resolution: a review role nothing fills goes to general-purpose"
   },
   {
-   "id": "perma-refactor-10",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-10",
+   "file": "commands/refactor.md",
    "sentences": [
     "The part must be a key under the register's `parts`."
    ],
@@ -932,8 +932,8 @@
    "note": "preflight does not read the register's parts"
   },
   {
-   "id": "perma-refactor-11",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-11",
+   "file": "commands/refactor.md",
    "sentences": [
     "Do not invent a part."
    ],
@@ -941,8 +941,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-refactor-12",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-12",
+   "file": "commands/refactor.md",
    "sentences": [
     "Without one, preflight failed: offer to draft a proposal for `binding.approver`, as `/bakehouse:health` step 6 does, naming the approver by role, never by a person's name;"
    ],
@@ -951,8 +951,8 @@
    "note": "preflight check 6"
   },
   {
-   "id": "perma-refactor-13",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-13",
+   "file": "commands/refactor.md",
    "sentences": [
     "Without one, preflight failed: offer to draft a proposal for `binding.approver`, as `/bakehouse:health` step 6 does, naming the approver by role, never by a person's name;"
    ],
@@ -961,8 +961,8 @@
    "note": "the approver is named by role: nothing checks the proposal's text"
   },
   {
-   "id": "perma-refactor-14",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-14",
+   "file": "commands/refactor.md",
    "sentences": [
     "A meaning-change step in another party's repo is offered as its own proposal, never run under this approval;"
    ],
@@ -970,8 +970,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-refactor-15",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-15",
+   "file": "commands/refactor.md",
    "sentences": [
     "The repo's tracker, hooks and other branches are never written."
    ],
@@ -979,8 +979,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-refactor-16",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-16",
+   "file": "commands/refactor.md",
    "sentences": [
     "The ops ledger refuses this repo; do not work around it."
    ],
@@ -988,8 +988,8 @@
    "proof": "test_ops_ledger.OpsEvent.test_refuses_a_repository_the_owner_does_not_own"
   },
   {
-   "id": "perma-refactor-17",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-17",
+   "file": "commands/refactor.md",
    "sentences": [
     "The ops ledger refuses this repo; do not work around it."
    ],
@@ -998,8 +998,8 @@
    "note": "'do not work around it' is the session's own rule; the refusal itself is the code entry"
   },
   {
-   "id": "perma-refactor-18",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-18",
+   "file": "commands/refactor.md",
    "sentences": [
     "Never start the step again."
    ],
@@ -1007,8 +1007,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-refactor-19",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-19",
+   "file": "commands/refactor.md",
    "sentences": [
     "Never open the branch again."
    ],
@@ -1016,8 +1016,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-refactor-20",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-20",
+   "file": "commands/refactor.md",
    "sentences": [
     "Never `git add -A`."
    ],
@@ -1025,8 +1025,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-refactor-21",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-21",
+   "file": "commands/refactor.md",
    "sentences": [
     "A meaning the owner must define is asked on its own, one meaning at a time."
    ],
@@ -1034,8 +1034,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-refactor-22",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-22",
+   "file": "commands/refactor.md",
    "sentences": [
     "If `binding.gates.oneAtATime` is empty, add one line: the binding names no heavy run that must run alone, so any heavy output check the repo runs outside its gate list is not one of this job's gates."
    ],
@@ -1044,8 +1044,8 @@
    "note": "an instruction to add one line to the owner's message"
   },
   {
-   "id": "perma-refactor-23",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-23",
+   "file": "commands/refactor.md",
    "sentences": [
     "**A meaning-change step that the plan does not name never runs.** When the owner answers, record it:"
    ],
@@ -1053,17 +1053,17 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-refactor-24",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-24",
+   "file": "commands/refactor.md",
    "sentences": [
     "Never ask it to start the reviewer."
    ],
    "enforcer": "prompt",
-   "proof": "code exists, no proof test: runtime/agents/refactor-engineer.md (its tools: line names no agent tool; the harness, not bakehouse, enforces it)"
+   "proof": "code exists, no proof test: agents/refactor-engineer.md (its tools: line names no agent tool; the harness, not bakehouse, enforces it)"
   },
   {
-   "id": "perma-refactor-25",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-25",
+   "file": "commands/refactor.md",
    "sentences": [
     "The reviewer writes them; it never commits.",
     "Do not commit."
@@ -1073,8 +1073,8 @@
    "note": "the reviewer's tools include Bash, so it can commit"
   },
   {
-   "id": "perma-refactor-26",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-26",
+   "file": "commands/refactor.md",
    "sentences": [
     "A consumed approval never starts a job again."
    ],
@@ -1083,8 +1083,8 @@
    "note": "preflight check 6"
   },
   {
-   "id": "perma-refactor-27",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-27",
+   "file": "commands/refactor.md",
    "sentences": [
     "Never edit a test or an output to make a gate pass."
    ],
@@ -1093,8 +1093,8 @@
    "note": "a reviewer may see a test edit in the diff, but no review brief names the check"
   },
   {
-   "id": "perma-refactor-28",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-28",
+   "file": "commands/refactor.md",
    "sentences": [
     "Every predicted move must be one the plan named; a move the plan did not name is a new decision for the owner."
    ],
@@ -1103,8 +1103,8 @@
    "note": "the plan lives in the tracker; no tool compares the prediction with it"
   },
   {
-   "id": "perma-refactor-29",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-29",
+   "file": "commands/refactor.md",
    "sentences": [
     "Every moved line must be one the prediction named."
    ],
@@ -1112,8 +1112,8 @@
    "proof": "test_predict_gate.Check.test_the_2026_10_10_case_unpredicted_move_refuses"
   },
   {
-   "id": "perma-refactor-30",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-30",
+   "file": "commands/refactor.md",
    "sentences": [
     "A usage reading never goes into the repo: not into a branch, a commit, a review record or the tracker."
    ],
@@ -1121,8 +1121,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-refactor-31",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-31",
+   "file": "commands/refactor.md",
    "sentences": [
     "Never offer a stopgap as an equal option."
    ],
@@ -1130,8 +1130,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-refactor-32",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-32",
+   "file": "commands/refactor.md",
    "sentences": [
     "- The reviewer must **run** the risky case, not only read it."
    ],
@@ -1140,8 +1140,8 @@
    "note": "a rule on the reviewer itself; nobody checks that it ran the case"
   },
   {
-   "id": "perma-refactor-33",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-33",
+   "file": "commands/refactor.md",
    "sentences": [
     "- Never declare an agent's work lost without checking its output and the ops ledger."
    ],
@@ -1149,8 +1149,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-refactor-34",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-34",
+   "file": "commands/refactor.md",
    "sentences": [
     "Briefs reach committed review records, so a brief never carries a person's name, a usage reading or a working-style note."
    ],
@@ -1158,8 +1158,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-refactor-35",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-35",
+   "file": "commands/refactor.md",
    "sentences": [
     "- **The owner decides.** The job never restructures, accepts, or changes a meaning without the owner's answer, and never runs a meaning change the approved plan does not name."
    ],
@@ -1167,8 +1167,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "perma-refactor-36",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-36",
+   "file": "commands/refactor.md",
    "sentences": [
     "- **The reviewer did not do the work.** The PM dispatches it; the engineer never does; the session that built the step never reviews it."
    ],
@@ -1177,8 +1177,8 @@
    "note": "code covers only role resolution (test_team_roles.TestGate.test_reviewer_falls_back_to_general_purpose); nothing stops the session reviewing its own work"
   },
   {
-   "id": "perma-refactor-38",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-38",
+   "file": "commands/refactor.md",
    "sentences": [
     "Never `git add -A`: other sessions may have writes in flight."
    ],
@@ -1187,7 +1187,7 @@
   },
   {
    "id": "absence-check-01",
-   "file": "runtime/agents/absence-check.md",
+   "file": "agents/absence-check.md",
    "sentences": [
     "You never interview anyone and you never ask an agent how it is doing — that returns the agent's own account of itself, which is the thing already known not to work."
    ],
@@ -1196,7 +1196,7 @@
   },
   {
    "id": "absence-check-02",
-   "file": "runtime/agents/absence-check.md",
+   "file": "agents/absence-check.md",
    "sentences": [
     "Do not comment on the quality of the work, the agent, or the session."
    ],
@@ -1205,7 +1205,7 @@
   },
   {
    "id": "architect-01",
-   "file": "runtime/agents/architect.md",
+   "file": "agents/architect.md",
    "sentences": [
     "It reads and measures only; it never edits code and never decides.",
     "Never edit code, never write the decision."
@@ -1216,7 +1216,7 @@
   },
   {
    "id": "architect-02",
-   "file": "runtime/agents/architect.md",
+   "file": "agents/architect.md",
    "sentences": [
     "You measure; you do not persuade."
    ],
@@ -1225,7 +1225,7 @@
   },
   {
    "id": "architect-03",
-   "file": "runtime/agents/architect.md",
+   "file": "agents/architect.md",
    "sentences": [
     "The owner reads your answer as a chain of logic, so every conclusion is stated, never implied by placement."
    ],
@@ -1234,7 +1234,7 @@
   },
   {
    "id": "architect-04",
-   "file": "runtime/agents/architect.md",
+   "file": "agents/architect.md",
    "sentences": [
     "| A module, check or half-done refactor that already points the way | Measure, do not infer.",
     "Measure, do not infer."
@@ -1245,7 +1245,7 @@
   },
   {
    "id": "architect-05",
-   "file": "runtime/agents/architect.md",
+   "file": "agents/architect.md",
    "sentences": [
     "Options Always give at least: **restructure** (the proper fix, with its steps), **redesign** (in REDESIGN mode), **a smaller part of it**, and **accept** (with the reason that would be recorded)."
    ],
@@ -1254,7 +1254,7 @@
   },
   {
    "id": "architect-06",
-   "file": "runtime/agents/architect.md",
+   "file": "agents/architect.md",
    "sentences": [
     "A **redesign** option must name:"
    ],
@@ -1264,7 +1264,7 @@
   },
   {
    "id": "blast-radius-01",
-   "file": "runtime/agents/blast-radius.md",
+   "file": "agents/blast-radius.md",
    "sentences": [
     "Do not assess whether the change is a good idea, or comment on the work or the session."
    ],
@@ -1273,7 +1273,7 @@
   },
   {
    "id": "count-check-01",
-   "file": "runtime/agents/count-check.md",
+   "file": "agents/count-check.md",
    "sentences": [
     "You never ask anyone how they got there — you re-derive."
    ],
@@ -1282,7 +1282,7 @@
   },
   {
    "id": "count-check-02",
-   "file": "runtime/agents/count-check.md",
+   "file": "agents/count-check.md",
    "sentences": [
     "Do not assess the conclusion the number supports, the quality of the work, or the session."
    ],
@@ -1291,7 +1291,7 @@
   },
   {
    "id": "design-author-01",
-   "file": "runtime/agents/design-author.md",
+   "file": "agents/design-author.md",
    "sentences": [
     "Hand it the design file, what must change and why, and the evidence (measurements, file:line, decisions with dates)."
    ],
@@ -1301,37 +1301,37 @@
   },
   {
    "id": "design-author-02",
-   "file": "runtime/agents/design-author.md",
+   "file": "agents/design-author.md",
    "sentences": [
     "Never a topic sentence, never a whole sentence | | No bold paragraph openers | A sentence that needs a label is a heading | | Tables for comparisons | Outcomes, fields, failure cases, options — anything with repeating dimensions | | Bullets for parallel items only | A sequence of steps is a numbered list; an argument is prose | | Plain, logic-level sentences | One idea per sentence."
    ],
    "enforcer": "reviewer",
-   "proof": "runtime/agents/design-reviewer.md: | Style | Numbered headings, no bold openers, tables for comparisons, no flourishes, specification voice |",
+   "proof": "agents/design-reviewer.md: | Style | Numbered headings, no bold openers, tables for comparisons, no flourishes, specification voice |",
    "note": "house-style rows: bold only for emphasis, no bold openers, tables for comparisons"
   },
   {
    "id": "design-author-03",
-   "file": "runtime/agents/design-author.md",
+   "file": "agents/design-author.md",
    "sentences": [
     "If one step depends on another, say so in words | | Specification voice | Describe the system, not the project: roles, never people's names; no schedule talk | | No flourishes | Delete: \"worth noting\", \"the whole point\", \"for free\", \"as often as you like\", rhetorical contrasts, anything that makes the design sound clever."
    ],
    "enforcer": "reviewer",
-   "proof": "runtime/agents/design-reviewer.md: | Style | Numbered headings, no bold openers, tables for comparisons, no flourishes, specification voice |",
+   "proof": "agents/design-reviewer.md: | Style | Numbered headings, no bold openers, tables for comparisons, no flourishes, specification voice |",
    "note": "house-style rows: specification voice (never people's names), no flourishes"
   },
   {
    "id": "design-author-04",
-   "file": "runtime/agents/design-author.md",
+   "file": "agents/design-author.md",
    "sentences": [
     "A flourish that overstates a constraint is a defect | | No drafting history | Something that only existed in an earlier draft is not mentioned; git holds it | | Corrections stay in | Something published and acted on, then found wrong, gets a dated row in the design's corrections section: what was believed, when, what is true, where | | Reasons for constraints stay | \"It must be X because Y\" survives; \"we considered Z and rejected it\" does not | ## 3."
    ],
    "enforcer": "reviewer",
-   "proof": "runtime/agents/design-reviewer.md: | Style | Numbered headings, no bold openers, tables for comparisons, no flourishes, specification voice |",
+   "proof": "agents/design-reviewer.md: | Style | Numbered headings, no bold openers, tables for comparisons, no flourishes, specification voice |",
    "note": "house-style row: a flourish that overstates a constraint is a defect"
   },
   {
    "id": "design-author-05",
-   "file": "runtime/agents/design-author.md",
+   "file": "agents/design-author.md",
    "sentences": [
     "A flourish that overstates a constraint is a defect | | No drafting history | Something that only existed in an earlier draft is not mentioned; git holds it | | Corrections stay in | Something published and acted on, then found wrong, gets a dated row in the design's corrections section: what was believed, when, what is true, where | | Reasons for constraints stay | \"It must be X because Y\" survives; \"we considered Z and rejected it\" does not | ## 3."
    ],
@@ -1341,16 +1341,16 @@
   },
   {
    "id": "design-author-06",
-   "file": "runtime/agents/design-author.md",
+   "file": "agents/design-author.md",
    "sentences": [
     "- A change that grows the file must earn every added line."
    ],
    "enforcer": "reviewer",
-   "proof": "runtime/agents/design-reviewer.md: | Succinctness | What could be removed without losing a rule? |"
+   "proof": "agents/design-reviewer.md: | Succinctness | What could be removed without losing a rule? |"
   },
   {
    "id": "design-author-07",
-   "file": "runtime/agents/design-author.md",
+   "file": "agents/design-author.md",
    "sentences": [
     "Do not review your own work."
    ],
@@ -1360,7 +1360,7 @@
   },
   {
    "id": "design-reviewer-01",
-   "file": "runtime/agents/design-reviewer.md",
+   "file": "agents/design-reviewer.md",
    "sentences": [
     "It reads, checks and reports; it never edits the design.",
     "Never edit the design."
@@ -1371,7 +1371,7 @@
   },
   {
    "id": "human-expert-01",
-   "file": "runtime/agents/human-expert.md",
+   "file": "agents/human-expert.md",
    "sentences": [
     "NEVER hand it your own recommendation: it reads blind."
    ],
@@ -1381,7 +1381,7 @@
   },
   {
    "id": "human-expert-02",
-   "file": "runtime/agents/human-expert.md",
+   "file": "agents/human-expert.md",
    "sentences": [
     "- If the brief contains the caller's own recommendation, or another analysis of the same question, say in your report that it did, and do not rely on it."
    ],
@@ -1390,7 +1390,7 @@
   },
   {
    "id": "human-expert-03",
-   "file": "runtime/agents/human-expert.md",
+   "file": "agents/human-expert.md",
    "sentences": [
     "- Do not read design reports, trackers or review records about the question unless the brief names them as sources."
    ],
@@ -1399,7 +1399,7 @@
   },
   {
    "id": "human-expert-04",
-   "file": "runtime/agents/human-expert.md",
+   "file": "agents/human-expert.md",
    "sentences": [
     "If your reading of the source conflicts with a ruling, say so plainly; do not bend the reading to fit."
    ],
@@ -1408,7 +1408,7 @@
   },
   {
    "id": "human-expert-05",
-   "file": "runtime/agents/human-expert.md",
+   "file": "agents/human-expert.md",
    "sentences": [
     "Never leave a conclusion implied."
    ],
@@ -1417,7 +1417,7 @@
   },
   {
    "id": "human-expert-06",
-   "file": "runtime/agents/human-expert.md",
+   "file": "agents/human-expert.md",
    "sentences": [
     "- You never rule."
    ],
@@ -1426,17 +1426,17 @@
   },
   {
    "id": "human-expert-07",
-   "file": "runtime/agents/human-expert.md",
+   "file": "agents/human-expert.md",
    "sentences": [
     "- You never edit a file, commit, push, or start another agent."
    ],
    "enforcer": "prompt",
-   "proof": "code exists, no proof test: runtime/agents/human-expert.md (its tools: line names no agent tool; the harness, not bakehouse, enforces it)",
+   "proof": "code exists, no proof test: agents/human-expert.md (its tools: line names no agent tool; the harness, not bakehouse, enforces it)",
    "note": "covers 'start another agent' only; Bash can still edit, commit and push"
   },
   {
    "id": "human-expert-08",
-   "file": "runtime/agents/human-expert.md",
+   "file": "agents/human-expert.md",
    "sentences": [
     "- You never invent an example."
    ],
@@ -1445,7 +1445,7 @@
   },
   {
    "id": "human-expert-09",
-   "file": "runtime/agents/human-expert.md",
+   "file": "agents/human-expert.md",
    "sentences": [
     "- You never answer a second question nobody asked."
    ],
@@ -1454,17 +1454,17 @@
   },
   {
    "id": "refactor-engineer-01",
-   "file": "runtime/agents/refactor-engineer.md",
+   "file": "agents/refactor-engineer.md",
    "sentences": [
     "Axis handles: **Feathers' Legacy Code** (change only behind a characterisation test), **Chesterton's Fence** (understand every odd line before moving it), **Poka-yoke** (where the restructure adds a check, a wrong change must fail it)."
    ],
    "enforcer": "reviewer",
-   "proof": "runtime/agents/refactor-reviewer.md: Try to make a wrong order, a missing declaration or a wrong-way import pass the new checks.",
+   "proof": "agents/refactor-reviewer.md: Try to make a wrong order, a missing declaration or a wrong-way import pass the new checks.",
    "note": "Poka-yoke: a wrong change must fail the new check"
   },
   {
    "id": "refactor-engineer-02",
-   "file": "runtime/agents/refactor-engineer.md",
+   "file": "agents/refactor-engineer.md",
    "sentences": [
     "Never write into the project's real output locations."
    ],
@@ -1473,16 +1473,16 @@
   },
   {
    "id": "refactor-engineer-03",
-   "file": "runtime/agents/refactor-engineer.md",
+   "file": "agents/refactor-engineer.md",
    "sentences": [
     "- Dependencies must point inward."
    ],
    "enforcer": "reviewer",
-   "proof": "runtime/agents/refactor-reviewer.md: Try to make a wrong order, a missing declaration or a wrong-way import pass the new checks."
+   "proof": "agents/refactor-reviewer.md: Try to make a wrong order, a missing declaration or a wrong-way import pass the new checks."
   },
   {
    "id": "refactor-engineer-04",
-   "file": "runtime/agents/refactor-engineer.md",
+   "file": "agents/refactor-engineer.md",
    "sentences": [
     "Never adjust outputs or tests to pass."
    ],
@@ -1492,7 +1492,7 @@
   },
   {
    "id": "refactor-engineer-05",
-   "file": "runtime/agents/refactor-engineer.md",
+   "file": "agents/refactor-engineer.md",
    "sentences": [
     "Do not push and do not open a pull request."
    ],
@@ -1501,7 +1501,7 @@
   },
   {
    "id": "refactor-engineer-06",
-   "file": "runtime/agents/refactor-engineer.md",
+   "file": "agents/refactor-engineer.md",
    "sentences": [
     "Do not commit files you were told to leave."
    ],
@@ -1510,7 +1510,7 @@
   },
   {
    "id": "refactor-reviewer-01",
-   "file": "runtime/agents/refactor-reviewer.md",
+   "file": "agents/refactor-reviewer.md",
    "sentences": [
     "It writes only the review record; it never edits code.",
     "Never edit code."
@@ -1521,7 +1521,7 @@
   },
   {
    "id": "refactor-reviewer-02",
-   "file": "runtime/agents/refactor-reviewer.md",
+   "file": "agents/refactor-reviewer.md",
    "sentences": [
     "Do not write your own harness."
    ],
@@ -1530,7 +1530,7 @@
   },
   {
    "id": "refactor-reviewer-03",
-   "file": "runtime/agents/refactor-reviewer.md",
+   "file": "agents/refactor-reviewer.md",
    "sentences": [
     "- **Run the risky case, do not only read it.** For every latent change the engineer reports (\"no case reaches it\"), build that case in a scratch directory and run it on real data: the outputs, the refusals, the reasons."
    ],
@@ -1540,7 +1540,7 @@
   },
   {
    "id": "refactor-reviewer-04",
-   "file": "runtime/agents/refactor-reviewer.md",
+   "file": "agents/refactor-reviewer.md",
    "sentences": [
     "Report Write `contract.md`, `pass1.md`, `pass2.md`, `findings.md` and `mutations.json` in the run directory you were given (a subfolder if it already holds the same round's record — never overwrite one)."
    ],
@@ -1549,7 +1549,7 @@
   },
   {
    "id": "refactor-reviewer-05",
-   "file": "runtime/agents/refactor-reviewer.md",
+   "file": "agents/refactor-reviewer.md",
    "sentences": [
     "The stop hook refuses a findings file under any other name, and sends you back once if a folder holding your findings file has no paired mutations file in this format:"
    ],
@@ -1559,7 +1559,7 @@
   },
   {
    "id": "refactor-reviewer-06",
-   "file": "runtime/agents/refactor-reviewer.md",
+   "file": "agents/refactor-reviewer.md",
    "sentences": [
     "The stop hook refuses a findings file under any other name, and sends you back once if a folder holding your findings file has no paired mutations file in this format:"
    ],
@@ -1569,7 +1569,7 @@
   },
   {
    "id": "refactor-reviewer-07",
-   "file": "runtime/agents/refactor-reviewer.md",
+   "file": "agents/refactor-reviewer.md",
    "sentences": [
     "- `open: <finding id>` when the survivor is a finding nobody has decided yet; the id must be in the findings file beside it."
    ],
@@ -1578,8 +1578,8 @@
    "note": "the stop hook runs the same check_folder (runtime/agent-roles.py)"
   },
   {
-   "id": "perma-change-51",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-51",
+   "file": "commands/change.md",
    "sentences": [
     "Do not push or open a pull request."
    ],
@@ -1588,8 +1588,8 @@
    "note": "engineer brief; the same rule as refactor-engineer.md's 'Do not push and do not open a pull request.'"
   },
   {
-   "id": "perma-change-52",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-52",
+   "file": "commands/change.md",
    "sentences": [
     "Never leave out a check at a trust boundary, error handling that keeps data from being lost, anything security depends on, or anything the work order asks for."
    ],
@@ -1598,8 +1598,8 @@
    "note": "engineer brief: the short form of pm.md's 'Least does not mean unsafe' rule"
   },
   {
-   "id": "perma-change-53",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-53",
+   "file": "commands/change.md",
    "sentences": [
     "Never without the upgrade condition."
    ],
@@ -1608,8 +1608,8 @@
    "note": "engineer brief: a shortcut marker names its upgrade condition"
   },
   {
-   "id": "perma-change-54",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-54",
+   "file": "commands/change.md",
    "sentences": [
     "Before your first edit, write the prediction (shadow run with calls per site and the unreached sites; static scan of every stated value, data rows included) to the record folder as [the file name in binding.gates.predictedMoves.prediction]: every expected move with its case and its value before and after, and every must-not-move output as unchanged."
    ],
@@ -1618,8 +1618,8 @@
    "note": "the stop hook needs a prediction before the engineer stops (test_team_roles.TestPredictionRecord.test_prediction_record_stop_blocks_a_prose_only_folder); nothing checks that it came before the first edit"
   },
   {
-   "id": "perma-change-55",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-55",
+   "file": "commands/change.md",
    "sentences": [
     "Scratch dir: [PM: a folder under the system temp directory, outside the repo, named by the work order id, never by the user's name]."
    ],
@@ -1628,8 +1628,8 @@
    "note": "the PM fills the field"
   },
   {
-   "id": "perma-change-56",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-56",
+   "file": "commands/change.md",
    "sentences": [
     "Do not edit code."
    ],
@@ -1638,8 +1638,8 @@
    "note": "reviewer brief; the reviewer's tools include Bash"
   },
   {
-   "id": "perma-change-57",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-57",
+   "file": "commands/change.md",
    "sentences": [
     "Claim: exactly the moves in the approved prediction, [binding.reviews + binding.reviewName, filled, + binding.gates.predictedMoves.prediction]; every must-not-move output byte-identical; the evidence no longer shows the failure."
    ],
@@ -1648,8 +1648,8 @@
    "note": "the reviewer brief's claim line; the gate refuses a must-not-move output that moved, and an unpredicted move"
   },
   {
-   "id": "perma-change-58",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-58",
+   "file": "commands/change.md",
    "sentences": [
     "These are the only names a findings file may have (runtime/record-contracts.json, rounds); the stop hook refuses any other."
    ],
@@ -1658,8 +1658,8 @@
    "note": "reviewer brief; the same rule as refactor-reviewer-05"
   },
   {
-   "id": "perma-change-66",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-66",
+   "file": "commands/change.md",
    "sentences": [
     "Close refuses a code commit of the work order that no round's prediction commit comes before (by commit time; bakehouse `docs/PREDICT-GATE.md`)."
    ],
@@ -1668,8 +1668,8 @@
    "note": "a fix round's code before its prediction: test_predict_gate.CloseOrder.test_a_fix_rounds_code_before_its_prediction_refuses; rounds before ORDER_FROM keep their result"
   },
   {
-   "id": "perma-change-61",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-61",
+   "file": "commands/change.md",
    "sentences": [
     "With no step-9 line, it says so and refuses."
    ],
@@ -1677,8 +1677,8 @@
    "proof": "test_predict_gate.CloseMerged.test_merged_close_refuses_with_no_step_9_close"
   },
   {
-   "id": "perma-change-62",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-62",
+   "file": "commands/change.md",
    "sentences": [
     "In a lane clone with no records pointer, give `--repo <the main clone>`; the seal refuses without it."
    ],
@@ -1686,8 +1686,8 @@
    "proof": "test_seal.SealTest.test_refuses_when_no_project_is_found_and_takes_repo"
   },
   {
-   "id": "perma-change-63",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-63",
+   "file": "commands/change.md",
    "sentences": [
     "Never set `OPS_TS` or `OPS_COMMIT` for a seal: it refuses them."
    ],
@@ -1695,8 +1695,8 @@
    "proof": "test_seal.SealTest.test_refuses_ops_ts_and_ops_commit_and_its_refusal_is_not_backdated"
   },
   {
-   "id": "perma-change-64",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-64",
+   "file": "commands/change.md",
    "sentences": [
     "It refuses a decision that does not approve this work order's revise."
    ],
@@ -1704,8 +1704,8 @@
    "proof": "test_seal.SealTest.test_revise_applies_the_decision_rule"
   },
   {
-   "id": "perma-change-65",
-   "file": "runtime/commands/perma-change.md",
+   "id": "bakehouse-change-65",
+   "file": "commands/change.md",
    "sentences": [
     "It refuses a prediction that has not changed."
    ],
@@ -1713,8 +1713,8 @@
    "proof": "test_seal.SealTest.test_revise_refuses_an_unchanged_or_never_sealed_prediction"
   },
   {
-   "id": "perma-refactor-39",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-39",
+   "file": "commands/refactor.md",
    "sentences": [
     "Options must include: restructure (in steps: pure move, phase split, meaning changes, vocabulary), in REDESIGN mode a redesign of the owning step, a smaller part of it, and accept.",
     "For each: the gate (byte-identical or predicted moves), hours, tokens, what it leaves unsolved, and any meaning the owner must define first, with the moves it would cause."
@@ -1724,8 +1724,8 @@
    "note": "architect brief; the same rule as architect.md's 'Always give at least'"
   },
   {
-   "id": "perma-refactor-40",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-40",
+   "file": "commands/refactor.md",
    "sentences": [
     "Do not push or open a pull request."
    ],
@@ -1734,8 +1734,8 @@
    "note": "engineer brief; the same rule as refactor-engineer.md's 'Do not push and do not open a pull request.'"
   },
   {
-   "id": "perma-refactor-41",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-41",
+   "file": "commands/refactor.md",
    "sentences": [
     "Scratch dir: [PM: a folder under the system temp directory, outside the repo, named by the tracker id, never by the user's name]."
    ],
@@ -1744,8 +1744,8 @@
    "note": "the PM fills the field"
   },
   {
-   "id": "perma-refactor-42",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-42",
+   "file": "commands/refactor.md",
    "sentences": [
     "Do not edit code."
    ],
@@ -1754,8 +1754,8 @@
    "note": "reviewer brief; the reviewer's tools include Bash"
   },
   {
-   "id": "perma-refactor-43",
-   "file": "runtime/commands/perma-refactor.md",
+   "id": "bakehouse-refactor-43",
+   "file": "commands/refactor.md",
    "sentences": [
     "These are the only names a findings file may have (runtime/record-contracts.json, rounds); the stop hook refuses any other."
    ],
@@ -1765,17 +1765,17 @@
   },
   {
    "id": "design-author-08",
-   "file": "runtime/agents/design-author.md",
+   "file": "agents/design-author.md",
    "sentences": [
     "\\*\\*)' <file> # bold openers: must not rise, and should be 0 grep -nE '^#{2,4} [^0-9]' <file> # unnumbered headings: must be empty (front matter exempt) wc -w <file>"
    ],
    "enforcer": "reviewer",
-   "proof": "runtime/agents/design-reviewer.md: grep -cE '^(\\*\\*|- \\*\\*|[0-9]+\\. \\*\\*)' <file> grep -nE '^#{2,4} [^0-9]' <file>",
+   "proof": "agents/design-reviewer.md: grep -cE '^(\\*\\*|- \\*\\*|[0-9]+\\. \\*\\*)' <file> grep -nE '^#{2,4} [^0-9]' <file>",
    "note": "a comment in the bash block: bold openers must not rise, unnumbered headings must be empty; design-reviewer runs the same two greps"
   },
   {
    "id": "design-author-09",
-   "file": "runtime/agents/design-author.md",
+   "file": "agents/design-author.md",
    "sentences": [
     "Do not commit."
    ],
@@ -1784,8 +1784,8 @@
    "note": "design-author's tools include Bash, so it can commit"
   },
   {
-   "id": "perma-health-16",
-   "file": "runtime/commands/perma-health.md",
+   "id": "bakehouse-health-16",
+   "file": "commands/health.md",
    "sentences": [
     "Never push."
    ],
@@ -1795,84 +1795,84 @@
  ],
  "notRules": [
   {
-   "file": "runtime/commands/perma-change.md",
+   "file": "commands/change.md",
    "sentence": "Someone wrote it before this job starts: the owner, or a repo procedure that found the tool must change.",
    "why": "describes who writes a work order; 'must change' is the tool's need, not an obligation"
   },
   {
-   "file": "runtime/commands/perma-health.md",
+   "file": "commands/health.md",
    "sentence": "The pattern needs a comment opener before the word, so a setting named `shortcut:`, a string and a URL do not match.",
    "why": "explains what the search pattern matches; 'do not match' describes the regex"
   },
   {
-   "file": "runtime/commands/perma-refactor.md",
+   "file": "commands/refactor.md",
    "sentence": "If step 1's branch does not exist either, the plan was never opened: go to step 6.",
    "why": "a re-entry branch: 'the plan was never opened' describes a state"
   },
   {
-   "file": "runtime/agents/absence-check.md",
+   "file": "agents/absence-check.md",
    "sentence": "## The failure you exist to catch On 2026-09-13 a long session made three wrong claims of absence, and all three failed identically: a search was run, it returned nothing, and **the search itself was never tested**.",
    "why": "a heading and the incident narrative: 'was never tested' describes 2026-09-13"
   },
   {
-   "file": "runtime/agents/architect.md",
+   "file": "agents/architect.md",
    "sentence": "Fix commits do not show it, so restructure measurements cannot see it.",
    "why": "explains why restructure measurements cannot see a redesign problem"
   },
   {
-   "file": "runtime/agents/blast-radius.md",
+   "file": "agents/blast-radius.md",
    "sentence": "- **The same rule, second attempt.** The check asked \"does the rule's own logic already contain this phrase?\" — but the phrase was in the logic *because the problem had already been fixed*, so the check read the fix as proof there was never a problem and **deleted the fix**.",
    "why": "the incident narrative of the second case"
   },
   {
-   "file": "runtime/agents/count-check.md",
+   "file": "agents/count-check.md",
    "sentence": "It is the most common error in this work and it is always cheap to catch, because a second method takes a minute and disagrees loudly.",
    "why": "describes the error: 'always cheap to catch'"
   },
   {
-   "file": "runtime/agents/design-author.md",
+   "file": "agents/design-author.md",
    "sentence": "Use when a design's text must change.",
    "why": "when to dispatch the agent, from its description"
   },
   {
-   "file": "runtime/agents/design-reviewer.md",
+   "file": "agents/design-reviewer.md",
    "sentence": "--- You review a design as the engineer who must build from it and be paged when it fails.",
    "why": "the role's framing: 'must build from it'"
   },
   {
-   "file": "runtime/agents/design-reviewer.md",
+   "file": "agents/design-reviewer.md",
    "sentence": "Can any step run twice, or never?",
    "why": "a question in the review's lens table"
   },
   {
-   "file": "runtime/agents/design-reviewer.md",
+   "file": "agents/design-reviewer.md",
    "sentence": "Severity | Severity | Meaning | |---|---| | ANDON | Building as written causes wrong data in a system of record, a duplicate, or a lost item — stop | | HIGH | A defined path is wrong or missing and a person or a later step must compensate | | MEDIUM | An edge is unhandled or ambiguous; safe but untidy | | LOW | Style, wording, or a missing reference | ## 4.",
    "why": "the severity table: definitions"
   },
   {
-   "file": "runtime/agents/human-expert.md",
+   "file": "agents/human-expert.md",
    "sentence": "## What you never do",
    "why": "a heading: the rules are the items under it"
   },
   {
-   "file": "runtime/commands/perma-change.md",
+   "file": "commands/change.md",
    "sentence": "Must not move: [work order: mustNotMove].",
    "why": "a brief field label holding a placeholder; in the engineer and the reviewer brief"
   },
   {
-   "file": "runtime/commands/perma-change.md",
+   "file": "commands/change.md",
    "sentence": "Runs that must not run in parallel: [binding.gates.oneAtATime, or \"none named\"].",
    "why": "a brief field label holding a placeholder the PM fills"
   },
   {
-   "file": "runtime/commands/perma-refactor.md",
+   "file": "commands/refactor.md",
    "sentence": "Runs that must not run in parallel: [binding.gates.oneAtATime, or \"none named\"].",
    "why": "a brief field label holding a placeholder the PM fills"
   }
  ],
  "copies": [
   {
-   "file": "runtime/commands/perma-change.md",
+   "file": "commands/change.md",
    "sentence": "Never edit a test or an output to make a gate pass.",
    "under": [
     "The predicted-moves gate",
@@ -1880,7 +1880,7 @@
    ]
   },
   {
-   "file": "runtime/commands/perma-change.md",
+   "file": "commands/change.md",
    "sentence": "Must not move: [work order: mustNotMove].",
    "under": [
     "Engineer brief",
@@ -1888,7 +1888,7 @@
    ]
   },
   {
-   "file": "runtime/commands/perma-health.md",
+   "file": "commands/health.md",
    "sentence": "It never starts work.",
    "under": [
     "(top)",
@@ -1896,7 +1896,7 @@
    ]
   },
   {
-   "file": "runtime/commands/perma-refactor.md",
+   "file": "commands/refactor.md",
    "sentence": "Never edit a test or an output to make a gate pass.",
    "under": [
     "The two gate types",

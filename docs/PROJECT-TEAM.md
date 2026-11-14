@@ -16,7 +16,7 @@
 
 ## What it is
 
-The PM role (`runtime/roles/pm.md`) holds the thread for one owner. The project team is what the PM
+The PM role (`skills/pm/SKILL.md`) holds the thread for one owner. The project team is what the PM
 hands work to: named roles, filled by agents, running two jobs behind gates, plus a health watch
 that says where to look. The `dev-team` skill is the playbook for running it: whether to do a piece of
 work yourself or hand it to one agent or several, which model, and which checker to pass before a
@@ -720,14 +720,14 @@ python3 runtime/records-check.py --repo <repo> [--binding <binding.json>] \
 
 ## The rule register
 
-`runtime/rules.json` lists every rule sentence in the 13 process prompts (`runtime/roles/pm.md`, the
-`/bakehouse:change`, `/bakehouse:health` and `/bakehouse:refactor` commands, and every file in `runtime/agents/`)
+`runtime/rules.json` lists every rule sentence in the 13 process prompts (`skills/pm/SKILL.md`, the
+`/bakehouse:change`, `/bakehouse:health` and `/bakehouse:refactor` commands, and every file in `agents/`)
 and says who enforces each one:
 
 | `enforcer` | Means | `proof` |
 |---|---|---|
 | `code` | a tool or hook refuses | the runtime test that shows the refusal, `<module>.<Class>.<test>` |
-| `reviewer` | a review role's brief checks it | `<review brief path>: <the line that checks it>`; the brief is `runtime/agents/design-reviewer.md` or `runtime/agents/refactor-reviewer.md` |
+| `reviewer` | a review role's brief checks it | `<review brief path>: <the line that checks it>`; the brief is `agents/design-reviewer.md` or `agents/refactor-reviewer.md` |
 | `prompt` | neither | who or what checks it; `code exists, no proof test: <path> …` when a tool refuses and no test shows it |
 
 A rule sentence is a piece of a prompt between sentence ends, list-line starts and fence marker
@@ -758,7 +758,7 @@ Limits:
 - The test checks that a proof exists, not that it proves the rule. A `code` proof may name any
   test that loads; a rule may be relabelled, or moved to `notRules`. Only a reader of the
   rules.json diff catches that.
-- A new command file, or an agent file in a subfolder of `runtime/agents/`, is not read. The three
+- A new command file, or an agent file in a subfolder of `agents/`, is not read. The three
   commands are the owner's scope; a fourth needs the owner to add it.
 - A rule word split by emphasis (`Do **not**`), a curly apostrophe (`don’t`), and a following
   sentence with no rule word that weakens a rule (`Unless asked.`) are not read. Neither is any
@@ -772,7 +772,7 @@ Limits:
 
 ## Ownership
 
-- **`owned: true`** — jobs run, the ops ledger records them, and `runtime/repo-hooks.sh` writes a
+- **`owned: true`** — jobs run, the ops ledger records them, and `bakehouse setup` writes a
   post-commit hook into the repo's local hooks folder, which git never commits. A hook without the
   team's marker is never overwritten.
 - **`owned: false`** — the repo belongs to another party. The health watch drafts a proposal for
@@ -820,7 +820,7 @@ byte-for-byte.
 
 An agent that stops at its turn cap is recorded as an `agent-run` with outcome `turn-cap`: `count` is
 the turns it used, as the harness reported them, and the note starts `briefed <N|-> of cap <M>`, the turns
-its brief gave it and its agent type's `maxTurns` (`runtime/agents/<name>.md`). ops-event.sh keeps both as
+its brief gave it and its agent type's `maxTurns` (`agents/<name>.md`). ops-event.sh keeps both as
 `turnsBriefed` and `turnCap`, and refuses a turn-cap event without them. A cap hit means the brief asked
 for more work than fits the agent type, so before each dispatch the PM states a turn estimate against
 the cap beside the token estimate, and splits or cuts a brief that does not fit.

@@ -864,7 +864,7 @@ class CloseLedger(RepoFixture):
 
 
 class CloseMerged(RepoFixture):
-    """`close <work-order> --merged`, /perma-change step 10 (owner D2): only step 9's sha256 values. Close's
+    """`close <work-order> --merged`, /bakehouse:change step 10 (owner D2): only step 9's sha256 values. Close's
     helpers without its tests."""
 
     put, trio, commit, close, sha = Close.put, Close.trio, Close.commit, Close.close, Close.sha

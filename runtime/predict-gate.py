@@ -90,7 +90,7 @@ CLOSE_OVERRIDE = "PREDICT_GATE_CLOSE_OVERRIDE"
 TRAILER = "Prediction-approved"
 DECISION_ID = re.compile(r"d\d{8}-[0-9a-f]{6}")
 # The code-order rules judge only rounds whose prediction is first committed on or after this day:
-# records made before /perma-change said to commit the prediction first
+# records made before /bakehouse:change said to commit the prediction first
 # keep their result. Move it to the day the install takes this change if that is later.
 ORDER_FROM = "2026-11-04"
 ABSENT = object()

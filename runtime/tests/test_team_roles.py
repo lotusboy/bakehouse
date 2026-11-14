@@ -75,7 +75,7 @@ class Fixture(unittest.TestCase):
 
     def env(self):
         e = {k: v for k, v in os.environ.items()
-             if not k.startswith(("BAKEHOUSE_", "CLAUDE_PROJECT_DIR", "OPS_", "PERMA_"))}
+             if not k.startswith(("BAKEHOUSE_", "CLAUDE_PROJECT_DIR", "OPS_"))}
         e.update(GIT, HOME=str(self.home), BAKEHOUSE_MACHINE_DIR=str(self.machine))
         if self.bin:
             e["PATH"] = f"{self.bin}:{e['PATH']}"

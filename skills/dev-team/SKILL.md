@@ -46,7 +46,7 @@ Two cases always justify an agent, and are the most neglected:
 **The brief is the lever.** A thin brief gives a confident wrong answer. Every brief carries the goal and
 what "done" means; what is already known; where to start; what must not change and how to check it;
 what the agent must not do (commit, push, start further agents); and the shape of the report. The PM
-role (`runtime/roles/pm.md` §2) adds what a brief for new or changed code carries.
+role (`skills/pm/SKILL.md` §2) adds what a brief for new or changed code carries.
 
 **An agent's report is a claim, not a result.** Check it before it is reported or committed.
 
@@ -120,7 +120,7 @@ dispatching anything more.
 
 ## Before spending
 
-The spend rule is the PM role's (`runtime/roles/pm.md` §2): **one agent** for a bounded task — say so and
+The spend rule is the PM role's (`skills/pm/SKILL.md` §2): **one agent** for a bounded task — say so and
 go, unless the owner has asked to approve every one; **more than one agent, or any fan-out** — name the
 agents, the rough cost and the alternative, and wait for a yes. **A yes to the work is not a yes to the
 fan-out.** Never retry a failed fan-out automatically. The owner's usage limit is usually the binding
