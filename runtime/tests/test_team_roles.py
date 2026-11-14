@@ -38,7 +38,7 @@ def project(repo, binding):
     (repo / ".team").mkdir()
     (repo / ".team" / "binding.json").write_text(json.dumps(binding))
     records = repo.parent / f"{repo.name}.team-records"
-    git("worktree", "add", "-q", "--orphan", "-b", "team-records", str(records))
+    git("worktree", "add", "-q", "--orphan", "-b", "bakehouse-records", str(records))
     git("config", "bakehouse.records", str(records))
     return records
 

@@ -263,6 +263,11 @@ def setup_pointer(top: Path, main_clone: str, root, env, pre_commit) -> int:
     if main is None:
         say(f"{main_clone} is not a clone with a team. Refused: give the main clone.")
         return 1
+    roots = [set(git(w, "rev-list", "--max-parents=0", "HEAD").stdout.split()) for w in (top, main.root)]
+    if not roots[0] & roots[1]:
+        say(f"{main.root} shares no root commit with {top}, so it is not a clone of this project. Refused: give "
+            "this project's main clone.")
+        return 1
     git(top, "config", "bakehouse.records", str(main.records))
     say(f"bakehouse.records = {main.records} (the records of {main.root})")
     return finish(locator.find(top, env), root, env, pre_commit)

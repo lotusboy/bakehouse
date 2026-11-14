@@ -28,6 +28,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 NO_TEAM, SETUP_NEEDED = 3, 4
+RECORDS_BRANCH = "bakehouse-records"
 
 
 class SetupNeeded(Exception):
@@ -145,16 +146,24 @@ def find(folder=None, env=os.environ) -> Project | None:
         if not side or not os.path.lexists(Path(side) / "binding.json"):
             return None
         team = Path(side)
+    if _git(top, "symbolic-ref", "-q", "HEAD") == f"refs/heads/{RECORDS_BRANCH}":
+        return None  # inside the records worktree (known by its branch): nothing to do here
     rec = _git(top, "config", "--get", "bakehouse.records")
-    if rec and Path(rec).resolve() == top.resolve():
-        return None  # inside the records worktree: nothing to do here
     if not rec:
         raise SetupNeeded(f"{top} has a team binding but no records folder: run `bakehouse setup` in the "
                           "main clone, or `bakehouse setup --pointer <main clone>` in a lane clone")
     records = Path(rec)
-    if not records.is_dir() or toplevel(records) is None or toplevel(records).resolve() != records.resolve():
-        raise SetupNeeded(f"{top}: the records folder {records} is missing or is not a records checkout "
-                          "(the main clone may have moved): run `bakehouse setup` again")
+    if not records.is_absolute():  # a hand-set relative pointer is read from the repo root
+        records = Path(os.path.normpath(top / records))
+    if records.resolve() == top.resolve() or top.resolve() in records.resolve().parents:
+        raise SetupNeeded(f"{top}: the records folder {records} is the project's own folder or inside it, and "
+                          "records never live in the project tree: run `bakehouse setup` in the main clone, or "
+                          "`bakehouse setup --pointer <main clone>` in a lane clone")
+    if not records.is_dir() or toplevel(records) is None or toplevel(records).resolve() != records.resolve() \
+            or _git(records, "symbolic-ref", "-q", "HEAD") != f"refs/heads/{RECORDS_BRANCH}":
+        raise SetupNeeded(f"{top}: the records folder {records} is missing or is not a records checkout (a "
+                          f"worktree on the branch {RECORDS_BRANCH}; the main clone may have moved): run "
+                          "`bakehouse setup` again")
     return Project(root=top, team=team, records=records)
 
 

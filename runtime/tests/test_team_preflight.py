@@ -42,7 +42,7 @@ class Fixture(unittest.TestCase):
         # a scratch project: .team/binding.json and a records worktree named by git config bakehouse.records
         (self.repo / ".team").mkdir()
         self.binding = self.repo / ".team" / "binding.json"
-        for args in (("worktree", "add", "-q", "--orphan", "-b", "team-records", str(t / "repo.team-records")),
+        for args in (("worktree", "add", "-q", "--orphan", "-b", "bakehouse-records", str(t / "repo.team-records")),
                      ("config", "bakehouse.records", str(t / "repo.team-records"))):
             subprocess.run(["git", "-C", str(self.repo), *args], check=True, capture_output=True)
         # scratch install: results never depend on this machine's agents, plugins or tables

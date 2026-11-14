@@ -21,7 +21,7 @@ class Fixture(unittest.TestCase):
         (self.repo / ".team").mkdir(parents=True)
         self.git("init", "-q")
         # a scratch project: .team/binding.json and a records worktree named by git config bakehouse.records
-        self.git("worktree", "add", "-q", "--orphan", "-b", "team-records", str(records))
+        self.git("worktree", "add", "-q", "--orphan", "-b", "bakehouse-records", str(records))
         self.git("config", "bakehouse.records", str(records))
         self.binding = self.repo / ".team" / "binding.json"
         self.register = records / "registers" / "health.json"

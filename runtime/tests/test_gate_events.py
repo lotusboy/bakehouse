@@ -49,7 +49,7 @@ class Scratch(unittest.TestCase):
         (self.work / ".team").mkdir()
         (self.work / ".team" / "binding.json").write_text(json.dumps(self.binding))
         self.records = t / "work.team-records"
-        self.git("worktree", "add", "-q", "--orphan", "-b", "team-records", str(self.records))
+        self.git("worktree", "add", "-q", "--orphan", "-b", "bakehouse-records", str(self.records))
         self.git("config", "bakehouse.records", str(self.records))
         self.ledger = self.records / "ops" / "events.jsonl"
         self.env = {

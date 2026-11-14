@@ -41,7 +41,7 @@ class Ratify(unittest.TestCase):
         self.proj, records = self.t / "proj", self.t / "proj.team-records"
         (self.proj / ".team").mkdir(parents=True)
         (self.proj / ".team" / "binding.json").write_text("{}")
-        for args in (["init", "-q"], ["worktree", "add", "-q", "--orphan", "-b", "team-records", str(records)],
+        for args in (["init", "-q"], ["worktree", "add", "-q", "--orphan", "-b", "bakehouse-records", str(records)],
                      ["config", "bakehouse.records", str(records)]):
             subprocess.run(["git", "-C", str(self.proj), *args], check=True, capture_output=True)
         self.ledger = records / "ratifications" / "ledger.jsonl"

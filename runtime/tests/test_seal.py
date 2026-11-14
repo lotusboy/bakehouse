@@ -39,7 +39,7 @@ def team(repo: Path, binding: dict, env: dict) -> Path:
     (repo / ".team").mkdir(exist_ok=True)
     (repo / ".team" / "binding.json").write_text(json.dumps(binding))
     rec = repo.with_name(f"{repo.name}.team-records")
-    for a in (["worktree", "add", "-q", "--orphan", "-b", "team-records", str(rec)],
+    for a in (["worktree", "add", "-q", "--orphan", "-b", "bakehouse-records", str(rec)],
               ["config", "bakehouse.records", str(rec)]):
         subprocess.run(["git", "-C", str(repo), *a], check=True, env=env, capture_output=True)
     return rec

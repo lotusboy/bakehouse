@@ -83,7 +83,7 @@ class Sealed(unittest.TestCase):
             GIT_COMMITTER_EMAIL="t@t",
         )
         for a in (  # the records worktree, where seals anchor; its branch has a first commit, as a branch does
-            ["-C", str(self.repo), "worktree", "add", "-q", "--orphan", "-b", "team-records", str(self.records)],
+            ["-C", str(self.repo), "worktree", "add", "-q", "--orphan", "-b", "bakehouse-records", str(self.records)],
             ["-C", str(self.repo), "config", "bakehouse.records", str(self.records)],
             ["-C", str(self.records), "commit", "-q", "--allow-empty", "-m", "scratch records"],
         ):

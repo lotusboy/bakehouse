@@ -34,7 +34,7 @@ class Fixture(unittest.TestCase):
             (repo / ".team").mkdir()
             (repo / ".team" / "binding.json").write_text(json.dumps({"owned": owned}))
             rec = t / f"{repo.name}.team-records"
-            git(repo, "worktree", "add", "-q", "--orphan", "-b", "team-records", str(rec))
+            git(repo, "worktree", "add", "-q", "--orphan", "-b", "bakehouse-records", str(rec))
             git(repo, "config", "bakehouse.records", str(rec))
             self.records[repo] = rec
         self.env = dict(os.environ, **GIT)

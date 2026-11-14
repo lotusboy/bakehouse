@@ -34,7 +34,7 @@ class Fixture(unittest.TestCase):
         (self.repo / "runs").mkdir(parents=True)
         (self.repo / ".team").mkdir()
         # a scratch project: .team/binding.json and a records worktree named by git config bakehouse.records
-        for args in (["init", "-q"], ["worktree", "add", "-q", "--orphan", "-b", "team-records", str(records)],
+        for args in (["init", "-q"], ["worktree", "add", "-q", "--orphan", "-b", "bakehouse-records", str(records)],
                      ["config", "bakehouse.records", str(records)]):
             subprocess.run(["git", "-C", str(self.repo), *args], check=True, capture_output=True)
         self.binding = self.repo / ".team" / "binding.json"

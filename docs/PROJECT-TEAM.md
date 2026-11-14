@@ -46,7 +46,9 @@ places:
 1. **Project facts**, committed with the project: `.team/` in the repository. A repository another
    party owns keeps them in a sidecar folder instead, named by its git config `bakehouse.sidecar`.
 2. **Team records**: the records folder, a git worktree of an orphan branch of the project repository,
-   in a sibling folder. Its git config `bakehouse.records` names it; `bakehouse setup` makes it.
+   in a sibling folder. Its git config `bakehouse.records` names it; `bakehouse setup` makes it. The
+   locator accepts it only when it is outside the project tree and checked out on the branch
+   `bakehouse-records`; a relative pointer is read from the repository root.
 3. **Machine state**: the machine folder, `$XDG_STATE_HOME/bakehouse`, else
    `~/.local/state/bakehouse` (`BAKEHOUSE_MACHINE_DIR` replaces it). It holds the logs, the locks, the
    seen-agents file, the personal role table and the role choice. It is never in git.

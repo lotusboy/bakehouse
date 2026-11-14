@@ -153,7 +153,7 @@ class RepoFixture(unittest.TestCase):
         self.binding.parent.mkdir()
         self.binding.write_text(json.dumps({"owned": True}))
         self.records = t / "repo.team-records"
-        self.git("worktree", "add", "-q", "--orphan", "-b", "team-records", str(self.records))
+        self.git("worktree", "add", "-q", "--orphan", "-b", "bakehouse-records", str(self.records))
         self.git("config", "bakehouse.records", str(self.records))
         self.ledger = self.records / "ops/events.jsonl"
         self.run_dir = self.repo / "runs" / "x"

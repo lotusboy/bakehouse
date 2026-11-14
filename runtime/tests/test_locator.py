@@ -33,8 +33,8 @@ class Base(unittest.TestCase):
         (self.repo / ".team" / "binding.json").write_text("{}")
 
     def records(self):
-        rec = self.tmp / "proj.team-records"
-        git(self.repo, "worktree", "add", "-q", "--orphan", "-b", "team-records", str(rec))
+        rec = self.tmp / "proj.bakehouse-records"
+        git(self.repo, "worktree", "add", "-q", "--orphan", "-b", "bakehouse-records", str(rec))
         git(self.repo, "config", "bakehouse.records", str(rec))
         return rec
 
@@ -93,6 +93,51 @@ class TestFind(Base):
         self.bind()
         rec = self.records()
         self.assertIsNone(locator.find(rec, env={}))
+
+    def test_a_records_folder_on_another_branch_needs_setup(self):
+        self.bind()
+        rec = self.tmp / "proj.other"
+        git(self.repo, "worktree", "add", "-q", "--orphan", "-b", "other", str(rec))
+        git(self.repo, "config", "bakehouse.records", str(rec))
+        with self.assertRaises(locator.SetupNeeded) as e:
+            locator.find(self.repo, env={})
+        self.assertIn("bakehouse-records", str(e.exception))
+
+    def test_a_records_folder_in_the_project_tree_needs_setup(self):
+        self.bind()
+        git(self.repo, "config", "bakehouse.records", str(self.repo))
+        with self.assertRaises(locator.SetupNeeded) as e:
+            locator.find(self.repo, env={})
+        self.assertIn("is the project's own folder or inside it", str(e.exception))
+        inner = self.repo / "rec"
+        git(self.repo, "worktree", "add", "-q", "--orphan", "-b", "bakehouse-records", str(inner))
+        git(self.repo, "config", "bakehouse.records", str(inner))
+        with self.assertRaises(locator.SetupNeeded):
+            locator.find(self.repo, env={})
+
+    def test_the_records_worktree_is_known_by_its_branch_not_by_the_pointer(self):
+        # a sidecar team: the records worktree shares the repo's config, so it sees the sidecar binding too
+        side = self.tmp / "sidecar"
+        side.mkdir()
+        (side / "binding.json").write_text("{}")
+        git(self.repo, "config", "bakehouse.sidecar", str(side))
+        rec = self.records()
+        lane = self.tmp / "lane"
+        git(self.tmp, "clone", "-q", str(self.repo), str(lane))
+        lane_rec = self.tmp / "lane.bakehouse-records"
+        git(lane, "worktree", "add", "-q", "--orphan", "-b", "bakehouse-records", str(lane_rec))
+        git(self.repo, "config", "bakehouse.records", str(lane_rec))
+        self.assertEqual(locator.find(self.repo, env={}).records, lane_rec)
+        self.assertIsNone(locator.find(rec, env={}))
+
+    def test_a_relative_pointer_is_read_from_the_repo_root(self):
+        self.bind()
+        rec = self.records()
+        git(self.repo, "config", "bakehouse.records", "../proj.bakehouse-records")
+        (self.repo / "sub").mkdir()
+        for where in (self.repo, self.repo / "sub"):
+            with self.subTest(where=where):
+                self.assertEqual(locator.find(where, env={}).records, rec)
 
     def test_claude_project_dir_wins_over_the_folder(self):
         self.bind()

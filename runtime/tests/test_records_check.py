@@ -32,7 +32,7 @@ class Fixture(unittest.TestCase):
         self.repo, self.records = t / "repo", t / "repo.team-records"
         (self.repo / ".team").mkdir(parents=True)
         self.git("init", "-q")
-        self.git("worktree", "add", "-q", "--orphan", "-b", "team-records", str(self.records))
+        self.git("worktree", "add", "-q", "--orphan", "-b", "bakehouse-records", str(self.records))
         self.git("config", "bakehouse.records", str(self.records))
         self.binding = self.repo / ".team" / "binding.json"
         self.ledger = self.records / "ops" / "events.jsonl"
@@ -636,7 +636,7 @@ class TestTemplates(unittest.TestCase):
             (repo / ".team" / "binding.json").write_text(
                 json.dumps({"owned": True, "reviews": "records/", "reviewName": "{date}-{id}-step{n}-review"}))
             subprocess.run(["git", "init", "-q", str(repo)], check=True)
-            for args in (("worktree", "add", "-q", "--orphan", "-b", "team-records", str(t / "repo.team-records")),
+            for args in (("worktree", "add", "-q", "--orphan", "-b", "bakehouse-records", str(t / "repo.team-records")),
                          ("config", "bakehouse.records", str(t / "repo.team-records"))):
                 subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
             hook.LOG = t / "log.txt"

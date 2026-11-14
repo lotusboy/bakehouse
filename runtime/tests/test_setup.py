@@ -262,6 +262,16 @@ class Pointer(Base):
         self.assertEqual(self.config(lane, "bakehouse.records"), "")
         self.assertFalse(self.hook(lane, "pre-commit").exists())
 
+    def test_pointer_refuses_a_main_clone_of_another_project(self):
+        other = self.make_repo("other", {"owned": True, "name": "other"})
+        self.setup_in(other)
+        lane = self.lane()
+        rc, out = self.setup_in(lane, "--pointer", str(other))
+        self.assertNotEqual(rc, 0)
+        self.assertIn(f"{other} shares no root commit with {lane}", out)
+        self.assertEqual(self.config(lane, "bakehouse.records"), "")
+        self.assertFalse(self.hook(lane, "pre-commit").exists())
+
     def test_pointer_refuses_a_folder_with_no_team(self):
         lane = self.lane()
         plain = self.make_repo("plain", None)

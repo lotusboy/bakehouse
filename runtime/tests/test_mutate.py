@@ -376,7 +376,7 @@ class TestRun(Fixture):
         (self.repo / ".team").mkdir()
         (self.repo / ".team" / "binding.json").write_text(self.binding.read_text())
         records = Path(self.tmp.name) / "repo.team-records"
-        for args in (("worktree", "add", "-q", "--orphan", "-b", "team-records", str(records)),
+        for args in (("worktree", "add", "-q", "--orphan", "-b", "bakehouse-records", str(records)),
                      ("config", "bakehouse.records", str(records))):
             subprocess.run(["git", "-C", str(self.repo), *args], check=True, capture_output=True)
         p = subprocess.run(argv, capture_output=True, text=True, check=False, env=env)
