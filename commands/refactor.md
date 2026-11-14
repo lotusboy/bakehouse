@@ -423,6 +423,8 @@ Both: run BASE against BASE first. Scratch dir: [PM: a folder under the system t
   A clone of this repository (a lane clone, or a clone made for a run): before any bakehouse tool in
   it, run `bakehouse setup --pointer [PM: the main clone's full path]`. Without it every team tool
   there refuses, and heavy-run's lane events are lost.
+  A lane's commands carry `BAKEHOUSE_LANE=[PM: the lane]` and `BAKEHOUSE_WO={id}`: heavy-run.sh takes that
+  lane's lock and lane-event.sh labels its events with them. The older lane variable names are not read.
 Previous step's pre-mortem: [tracker: step {n}-1's pre-mortem, or "first step"] — each item needs a
 test that fails on the mutation.
 Leave alone: [binding.leaveAlone, or "none named"].

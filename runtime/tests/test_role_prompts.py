@@ -75,6 +75,7 @@ class TestRecordsAndLanes(unittest.TestCase):
     def setUp(self):
         self.pm = (RUNTIME.parent / "skills" / "pm" / "SKILL.md").read_text()
         self.change = (RUNTIME.parent / "commands" / "change.md").read_text()
+        self.refactor = (RUNTIME.parent / "commands" / "refactor.md").read_text()
 
     def test_m6_the_pm_commits_the_records_after_each_close_and_before_the_session_ends(self):
         b = bullet(self.pm, "The records folder is always committed: after each close, and before the session ends.")
@@ -100,7 +101,7 @@ class TestRecordsAndLanes(unittest.TestCase):
         self.assertEqual(staged, ["decisions/ledger.jsonl", "spend/ledger.jsonl"])
 
     def test_m7_the_lane_variables_are_named_where_lanes_are_set(self):
-        for text in (self.pm, self.change):
+        for text in (self.pm, self.change, self.refactor):
             self.assertIn("BAKEHOUSE_LANE=", text)
             self.assertIn("BAKEHOUSE_WO=", text)
             self.assertIn("The older lane variable names are not read", " ".join(text.split()))
