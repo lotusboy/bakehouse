@@ -142,6 +142,19 @@ class TestFind(Base):
         self.assertEqual(locator.find(self.repo, env={}).records, lane_rec)
         self.assertIsNone(locator.find(rec, env={}))
 
+    def test_a_clone_with_a_binding_on_a_branch_named_like_the_records_is_still_a_team(self):
+        # S16 fix2 P2-6: "inside the records worktree" needs the branch and no .team/binding.json at the top
+        self.bind()
+        rec = self.records()
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-q", "-m", "bind")
+        lane = self.tmp / "lane"
+        git(self.tmp, "clone", "-q", str(self.repo), str(lane))
+        git(lane, "config", "bakehouse.records", str(rec))
+        git(lane, "checkout", "-q", "-b", "bakehouse-records")
+        self.assertEqual(locator.find(lane, env={}).records, rec)
+        self.assertIsNone(locator.find(rec, env={}))
+
     def test_a_relative_pointer_is_read_from_the_repo_root(self):
         self.bind()
         rec = self.records()

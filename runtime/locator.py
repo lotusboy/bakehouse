@@ -10,7 +10,7 @@ Every hook and script asks this module, so path identity is computed once (desig
 4. The team records are in the folder named by git config `bakehouse.records`, which `bakehouse setup`
    writes: the records worktree beside the main clone, or, for a lane clone, the main clone's one.
 5. No repo, or no binding: the repo has no team, and the caller does nothing. Inside the records
-   worktree itself the answer is the same, so the git hooks do nothing there.
+   worktree itself (on the records branch, with no `.team/binding.json` at its top) the answer is the same.
 
 There is no registry and no text matching of paths. git gives the repo's real path; the records path
 is compared after resolving both sides.
@@ -146,8 +146,9 @@ def find(folder=None, env=os.environ) -> Project | None:
         if not side or not os.path.lexists(Path(side) / "binding.json"):
             return None
         team = Path(side)
-    if _git(top, "symbolic-ref", "-q", "HEAD") == f"refs/heads/{RECORDS_BRANCH}":
-        return None  # inside the records worktree (known by its branch): nothing to do here
+    if team != top / ".team" and _git(top, "symbolic-ref", "-q", "HEAD") == f"refs/heads/{RECORDS_BRANCH}":
+        # inside the records worktree (known by its branch, with no binding of its own): nothing to do here
+        return None
     rec = _git(top, "config", "--get", "bakehouse.records")
     if not rec:
         raise SetupNeeded(f"{top} has a team binding but no records folder: run `bakehouse setup` in the "
