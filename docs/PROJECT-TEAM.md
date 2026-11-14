@@ -935,6 +935,32 @@ refusals can be counted per tool and per check. The event is ops-event.sh's, wit
   `os._exit`, a bare `exit()`, an aliased `sys`, a return placed after a covered branch, or an exit code
   passed through a variable.
 
+## Reading team state
+
+`bakehouse status --json [--since <ISO time>] [--repo <folder>]` is the one way anything outside the
+tool reads team state. It reads the ops ledger and the decision ledger of the project the locator
+finds for the folder (default: the current one). It writes nothing. Without `--json` it prints the same
+content as short plain lines.
+
+The JSON object:
+
+| Field | Holds |
+|---|---|
+| `format` | `1`. A later release adds fields; it does not change these. |
+| `team` | `true` |
+| `project`, `records` | the repository root, and its records folder |
+| `workOrders` | each work order with events in the ops ledger and no `work-order-closed` event: `workOrder`, `events` (how many), `latestRound` (the `round` of its latest event that has one, else `null`), `latestKind` and `latestAt` (the kind and `ts` of its latest event) |
+| `waitingDecisions` | each decision asked, not decided autonomously, and not answered: `id`, `category`, `question`, `askedAt` |
+| `closedSince` | each `work-order-closed` event at or after `--since` (all of them without it): `workOrder`, `closedAt`, `commit` (the commit the close event names), `overridden` (`true` when the close was the owner's override) |
+
+`predict-gate.sh close` writes a `work-order-closed` event only when the close passes, or when it
+fails and the owner's override is recorded first.
+
+Exit codes match the locator's. 0: the state was printed. 3: no team here; `--json` prints
+`{"format": 1, "team": false}`. 4: setup is needed; the locator's message is on stderr. 1: a ledger is
+broken (the ops ledger as `verify-chain` judges it, or a decision ledger line that is not a JSON
+object); stderr names it. 2: bad usage.
+
 ## Known limits in this release
 
 - Only one repository has run the jobs. The binding's field list is complete for that repo and a

@@ -2,6 +2,7 @@
 """bakehouse: the team's command. The plugin's bin/ is on the Bash tool's PATH. Standard library only.
 
   bakehouse setup [--pointer <main clone>]   make this clone ready for its team (runtime/bakehouse_setup.py)
+  bakehouse status [--json] [--since <ISO time>] [--repo <folder>]   the team's state (runtime/bakehouse_status.py)
 """
 import importlib
 import sys
@@ -9,7 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "runtime"))
-COMMANDS = {"setup": "bakehouse_setup"}
+COMMANDS = {"setup": "bakehouse_setup", "status": "bakehouse_status"}
 
 
 def main(argv) -> int:
