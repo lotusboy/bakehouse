@@ -198,14 +198,18 @@ def finish(project, root, env, pre_commit) -> int:
     return 0 if ok else 1
 
 
-def is_records_checkout(top: Path, folder: Path) -> bool:
-    """`folder` is a worktree of this repo, at its own top, on the records branch."""
+def is_worktree_here(top: Path, folder: Path) -> bool:
+    """`folder` is a worktree of this repo, at its own top."""
     if not folder.is_dir() or locator.toplevel(folder) is None or locator.toplevel(folder).resolve() != folder.resolve():
         return False
     common = [git(w, "rev-parse", "--path-format=absolute", "--git-common-dir").stdout.strip() for w in (top, folder)]
-    if not common[0] or Path(common[0]).resolve() != Path(common[1]).resolve():
-        return False
-    return git(folder, "symbolic-ref", "-q", "HEAD").stdout.strip() == f"refs/heads/{BRANCH}"
+    return bool(common[0]) and Path(common[0]).resolve() == Path(common[1]).resolve()
+
+
+def is_records_checkout(top: Path, folder: Path) -> bool:
+    """`folder` is a worktree of this repo, at its own top, on the records branch."""
+    return is_worktree_here(top, folder) and \
+        git(folder, "symbolic-ref", "-q", "HEAD").stdout.strip() == f"refs/heads/{BRANCH}"
 
 
 def links_here(top: Path, folder: Path) -> bool:
@@ -323,6 +327,11 @@ def make_records(top: Path) -> Path | None:
             if links_here(top, folder):
                 if not repair(top, folder):
                     return None
+            elif is_worktree_here(top, folder):
+                say(f"{folder} is this repo's records worktree, but it is not on the branch {BRANCH} (a detached "
+                    f"HEAD, as in a rebase, or another branch). Refused, nothing changed. Run "
+                    f"`git -C {folder} switch {BRANCH}`, then `bakehouse setup` again.")
+                return None
             else:
                 say(f"{folder} exists and is not this repo's {BRANCH} checkout. Refused: move it away, then run "
                     "`bakehouse setup` again.")

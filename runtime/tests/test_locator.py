@@ -103,6 +103,18 @@ class TestFind(Base):
             locator.find(self.repo, env={})
         self.assertIn("bakehouse-records", str(e.exception))
 
+    def test_a_records_worktree_off_its_branch_is_told_to_switch_back(self):
+        # S16 fix2 P2-1: detached (a rebase, a checkout of an old commit) or on another branch
+        self.bind()
+        rec = self.records()
+        git(rec, "commit", "-q", "--allow-empty", "-m", "first")
+        git(rec, "commit", "-q", "--allow-empty", "-m", "second")
+        for args in (("checkout", "-q", "--detach", "HEAD~1"), ("switch", "-q", "-c", "other")):
+            git(rec, *args)
+            with self.assertRaises(locator.SetupNeeded) as e:
+                locator.find(self.repo, env={})
+            self.assertIn(f"run `git -C {rec} switch bakehouse-records`", str(e.exception))
+
     def test_a_records_folder_in_the_project_tree_needs_setup(self):
         self.bind()
         git(self.repo, "config", "bakehouse.records", str(self.repo))

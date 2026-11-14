@@ -263,6 +263,23 @@ class Setup(Base):
         self.assertEqual(locator.find(self.repo, env={}).records, moved)
         self.assertTrue((moved / "decisions" / "ledger.jsonl").is_file())
 
+    def test_a_records_worktree_off_its_branch_is_told_to_switch_back_never_moved_away(self):
+        # S16 fix2 P2-1
+        self.setup_in(self.repo)
+        rec = self.records(self.repo)
+        self.git(rec, "commit", "-q", "--allow-empty", "-m", "second")
+        self.uncommitted_record(rec)
+        self.git(rec, "checkout", "-q", "--detach", "HEAD~1")
+        rc, out = self.setup_in(self.repo)
+        self.assertEqual(rc, 1, out)
+        self.assertIn(f"`git -C {rec} switch bakehouse-records`", out)
+        self.assertNotIn("move it away", out)
+        self.assertTrue((rec / "decisions" / "ledger.jsonl").is_file())
+        self.git(rec, "switch", "-q", "bakehouse-records")
+        rc, out = self.setup_in(self.repo)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(locator.find(self.repo, env={}).records, rec)
+
     def test_a_local_records_branch_is_checked_out_not_made_again(self):
         self.setup_in(self.repo)
         rec = self.records(self.repo)

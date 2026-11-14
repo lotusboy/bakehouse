@@ -159,11 +159,13 @@ def find(folder=None, env=os.environ) -> Project | None:
         raise SetupNeeded(f"{top}: the records folder {records} is the project's own folder or inside it, and "
                           "records never live in the project tree: run `bakehouse setup` in the main clone, or "
                           "`bakehouse setup --pointer <main clone>` in a lane clone")
-    if not records.is_dir() or toplevel(records) is None or toplevel(records).resolve() != records.resolve() \
-            or _git(records, "symbolic-ref", "-q", "HEAD") != f"refs/heads/{RECORDS_BRANCH}":
+    if not records.is_dir() or toplevel(records) is None or toplevel(records).resolve() != records.resolve():
         raise SetupNeeded(f"{top}: the records folder {records} is missing or is not a records checkout (a "
                           f"worktree on the branch {RECORDS_BRANCH}; the main clone may have moved): run "
                           "`bakehouse setup` again")
+    if _git(records, "symbolic-ref", "-q", "HEAD") != f"refs/heads/{RECORDS_BRANCH}":
+        raise SetupNeeded(f"{top}: the records folder {records} is not on the branch {RECORDS_BRANCH} (a detached "
+                          f"HEAD, as in a rebase, or another branch): run `git -C {records} switch {RECORDS_BRANCH}`")
     return Project(root=top, team=team, records=records)
 
 
