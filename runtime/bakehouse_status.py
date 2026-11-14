@@ -17,7 +17,8 @@ A work-order-closed event is written by `predict-gate.sh close` only when the cl
 the owner's override is recorded first; such a close's note starts OVERRIDDEN.
 
 Exit 0; 3 no team here (JSON: {"format": 1, "team": false}); 4 setup needed (the locator's message on
-stderr); 1 a broken ledger (named on stderr); 2 bad usage.
+stderr); 1 a broken ledger, or a line status cannot read (named on stderr); 2 bad usage, a --repo that is
+not a folder inside a git repository included.
 """
 
 from __future__ import annotations
@@ -59,30 +60,40 @@ def broken(path: Path, ops: bool) -> str | None:
     return None
 
 
+class Unreadable(Exception):
+    """A ledger line that reads whole but that status cannot use: (the ledger, the error)."""
+
+
 def state(project, since) -> dict:
-    events = [ops_ledger.parse(x) for x in ops_ledger.lines_of(project.ops_ledger.read_bytes())] \
-        if project.ops_ledger.is_file() else []
-    by_wo, closed = {}, []
-    for ev in events:
-        wo = ev.get("task")
-        if not wo:
-            continue
-        by_wo.setdefault(wo, []).append(ev)
-        at = when(ev.get("ts"))
-        if ev.get("kind") == CLOSED_KIND and (since is None or (at is not None and at >= since)):
-            closed.append({"workOrder": wo, "closedAt": ev.get("ts"), "commit": ev.get("commit"),
-                           "overridden": (ev.get("note") or "").startswith(OVERRIDDEN)})
-    open_wos = []
-    for wo, evs in by_wo.items():
-        if any(e.get("kind") == CLOSED_KIND for e in evs):
-            continue
-        rounds = [e["round"] for e in evs if e.get("round")]
-        open_wos.append({"workOrder": wo, "events": len(evs), "latestRound": rounds[-1] if rounds else None,
-                         "latestKind": evs[-1].get("kind"), "latestAt": evs[-1].get("ts")})
-    decided, _ = decision.decisions(project)
-    waiting = [{"id": d["ask"]["id"], "category": d["ask"].get("category"), "question": d["ask"].get("question"),
-                "askedAt": d["ask"].get("ts")}
-               for d in decided.values() if not d["ask"].get("autonomous") and not d["answers"]]
+    try:
+        events = [ops_ledger.parse(x) for x in ops_ledger.lines_of(project.ops_ledger.read_bytes())] \
+            if project.ops_ledger.is_file() else []
+        by_wo, closed = {}, []
+        for ev in events:
+            wo = ev.get("task")
+            if not wo:
+                continue
+            by_wo.setdefault(wo, []).append(ev)
+            at = when(ev.get("ts"))
+            if ev.get("kind") == CLOSED_KIND and (since is None or (at is not None and at >= since)):
+                closed.append({"workOrder": wo, "closedAt": ev.get("ts"), "commit": ev.get("commit"),
+                               "overridden": (ev.get("note") or "").startswith(OVERRIDDEN)})
+        open_wos = []
+        for wo, evs in by_wo.items():
+            if any(e.get("kind") == CLOSED_KIND for e in evs):
+                continue
+            rounds = [e["round"] for e in evs if e.get("round")]
+            open_wos.append({"workOrder": wo, "events": len(evs), "latestRound": rounds[-1] if rounds else None,
+                             "latestKind": evs[-1].get("kind"), "latestAt": evs[-1].get("ts")})
+    except Exception as e:  # noqa: BLE001 - any line shape status cannot use is reported, never a traceback
+        raise Unreadable(project.ops_ledger, e) from e
+    try:
+        decided, _ = decision.decisions(project)
+        waiting = [{"id": d["ask"]["id"], "category": d["ask"].get("category"), "question": d["ask"].get("question"),
+                    "askedAt": d["ask"].get("ts")}
+                   for d in decided.values() if not d["ask"].get("autonomous") and not d["answers"]]
+    except Exception as e:  # noqa: BLE001
+        raise Unreadable(project.decisions_ledger, e) from e
     return {"format": 1, "team": True, "project": str(project.root), "records": str(project.records),
             "workOrders": open_wos, "waitingDecisions": waiting, "closedSince": closed}
 
@@ -118,6 +129,9 @@ def main(argv, root) -> int:
         if since is None:
             print(f"bakehouse status: --since {since_arg!r} is not an ISO time", file=sys.stderr)
             return 2
+    if folder is not None and (not Path(folder).is_dir() or locator.toplevel(folder) is None):
+        print(f"bakehouse status: --repo {folder} is not a folder inside a git repository", file=sys.stderr)
+        return 2
     env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"}
     try:
         project = locator.find(folder or Path.cwd(), env)
@@ -133,6 +147,11 @@ def main(argv, root) -> int:
         if why:
             print(f"bakehouse status: the ledger {path} is BROKEN: {why}", file=sys.stderr)
             return 1
-    s = state(project, since)
+    try:
+        s = state(project, since)
+    except Unreadable as e:
+        print(f"bakehouse status: the ledger {e.args[0]} cannot be read: a line has a shape status cannot use "
+              f"({e.args[1]!r})", file=sys.stderr)
+        return 1
     print(json.dumps(s, ensure_ascii=False, indent=2) if as_json else plain(s, since_arg))
     return 0

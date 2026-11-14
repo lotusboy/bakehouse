@@ -187,6 +187,29 @@ class Status(unittest.TestCase):
         self.assertEqual(rc, 3, out + err)
         self.assertIn("no team here", out)
 
+    def test_a_repo_that_is_not_a_folder_in_a_git_repo_is_bad_usage(self):
+        plain = self.tmp / "plain"
+        plain.mkdir()
+        for where in (self.tmp / "no" / "such", self.repo / ".team" / "binding.json", plain):
+            with self.subTest(where=where):
+                rc, out, err = self.status("--json", "--repo", str(where))
+                self.assertEqual((rc, out), (2, ""), err)
+                self.assertIn(f"--repo {where} is not a folder inside a git repository", err)
+
+    def test_a_ledger_line_status_cannot_read_is_named_and_exits_1(self):
+        self.ops.write_bytes(chained(OPS + [{"ts": "2026-11-03T10:00:00+00:00", "kind": "note", "task": ["a"]}]))
+        rc, out, err = self.status("--json")
+        self.assertEqual((rc, out), (1, ""), err)
+        self.assertIn(f"the ledger {self.ops} cannot be read", err)
+        self.assertNotIn("Traceback", err)
+        self.ops.write_bytes(chained(OPS))
+        with self.decisions.open("a") as f:
+            f.write('{"kind": "ask", "question": "q"}\n')
+        rc, out, err = self.status("--json")
+        self.assertEqual((rc, out), (1, ""), err)
+        self.assertIn(f"the ledger {self.decisions} cannot be read", err)
+        self.assertNotIn("Traceback", err)
+
     def test_setup_needed_gives_the_locators_message_and_exits_4(self):
         self.git(self.repo, "config", "--unset", "bakehouse.records")
         rc, out, err = self.status("--json")

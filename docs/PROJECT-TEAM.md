@@ -968,7 +968,8 @@ fails and the owner's override is recorded first.
 Exit codes match the locator's. 0: the state was printed. 3: no team here; `--json` prints
 `{"format": 1, "team": false}`. 4: setup is needed; the locator's message is on stderr. 1: a ledger is
 broken (the ops ledger as `verify-chain` judges it, or a decision ledger line that is not a JSON
-object); stderr names it. 2: bad usage.
+object), or holds a line whose shape status cannot use; stderr names it. 2: bad usage, or a `--repo`
+that is not a folder inside a git repository.
 
 ## Known limits in this release
 
