@@ -22,7 +22,17 @@ The plugin is switched on per project, never for every repo on the machine.
    claude plugin install bakehouse --marketplace lotusboy/bakehouse --scope project
    ```
 
-2. Commit the `.claude/settings.json` change it makes, so each clone of the project uses the team.
+2. The install writes `enabledPlugins` into the project's `.claude/settings.json`. Add the marketplace
+   beside it, so a clone on another machine knows where to fetch the plugin, then commit the file:
+
+   ```json
+   {
+     "extraKnownMarketplaces": {
+       "bakehouse": { "source": { "source": "github", "repo": "lotusboy/bakehouse" } }
+     },
+     "enabledPlugins": { "bakehouse@bakehouse": true }
+   }
+   ```
 3. Describe the project for the team in `.team/binding.json` (see `docs/PROJECT-TEAM.md`).
 4. In the main clone, run `bakehouse setup` from a Claude Code session (the plugin's `bin/` is on the
    Bash tool's PATH). It makes the records worktree beside the clone, on the branch
