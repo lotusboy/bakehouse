@@ -1680,7 +1680,7 @@
    "id": "bakehouse-change-62",
    "file": "commands/change.md",
    "sentences": [
-    "In a lane clone with no records pointer, give `--repo <the main clone>`; the seal refuses without it."
+    "A clone of the project runs `bakehouse setup --pointer <the main clone>` first; without it the seal refuses (or give `--repo <the main clone>`)."
    ],
    "enforcer": "code",
    "proof": "test_seal.SealTest.test_refuses_when_no_project_is_found_and_takes_repo"
@@ -1711,6 +1711,15 @@
    ],
    "enforcer": "code",
    "proof": "test_seal.SealTest.test_revise_refuses_an_unchanged_or_never_sealed_prediction"
+  },
+  {
+   "id": "bakehouse-change-67",
+   "file": "commands/change.md",
+   "sentences": [
+    "Without it every team tool there refuses, and heavy-run's lane events are lost."
+   ],
+   "enforcer": "code",
+   "proof": "test_heavy_run.HeavyRun.test_no_records_pointer_still_runs_the_job_and_says_each_lost_event"
   },
   {
    "id": "bakehouse-refactor-39",
@@ -1762,6 +1771,15 @@
    "enforcer": "code",
    "proof": "test_team_roles.TestReviewerStop.test_a_findings_file_under_another_name_is_sent_back",
    "note": "reviewer brief; the same rule as refactor-reviewer-05"
+  },
+  {
+   "id": "bakehouse-refactor-45",
+   "file": "commands/refactor.md",
+   "sentences": [
+    "Without it every team tool there refuses, and heavy-run's lane events are lost."
+   ],
+   "enforcer": "code",
+   "proof": "test_heavy_run.HeavyRun.test_no_records_pointer_still_runs_the_job_and_says_each_lost_event"
   },
   {
    "id": "design-author-08",

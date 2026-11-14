@@ -265,8 +265,9 @@ branch), `BASE` and the record folder. Commit by path, with the trailer. Fill th
    baseline seals it at that commit: `predict-gate.sh seal {id} <round> <file>`, `<round>` being
    `first` or the round label. When the PM commits it in the main checkout, the project is found
    from the file's repository. The engineer seals each measured file the moment it writes it, with the measure
-   report: `predict-gate.sh seal {id} <round> <measured file> --report <measure report>`. In a lane
-   clone with no records pointer, give `--repo <the main clone>`; the seal refuses without it. Never set `OPS_TS` or `OPS_COMMIT` for a seal: it refuses them.
+   report: `predict-gate.sh seal {id} <round> <measured file> --report <measure report>`. A clone of
+   the project runs `bakehouse setup --pointer <the main clone>` first; without it the seal refuses (or give
+   `--repo <the main clone>`). Never set `OPS_TS` or `OPS_COMMIT` for a seal: it refuses them.
    The engineer commits each round's first code through `predict-gate.sh seal-code {id} <round> --
    <git commit args>`, which commits the staged code and seals that commit in one step; close compares
    that seal with the round's prediction seal. That commit is not amended or rebased afterwards; a later
@@ -510,6 +511,9 @@ command, pass and when]. The gates that prove the need: [work order: gates].
 Run BASE against BASE first. Scratch dir: [PM: a folder under the system temp directory, outside
 the repo, named by the work order id, never by the user's name].
   Runs that must not run in parallel: [binding.gates.oneAtATime, or "none named"].
+  A clone of this repository (a lane clone, or a clone made for a run): before any bakehouse tool in
+  it, run `bakehouse setup --pointer [PM: the main clone's full path]`. Without it every team tool
+  there refuses, and heavy-run's lane events are lost.
 Leave alone: [binding.leaveAlone, or "none named"].
 Tracker (only when the binding says owned is true): in your last commit, write your result entry in
 the item {id} in [binding.tracker.file]: the record folder, the prediction file, each gate's result,

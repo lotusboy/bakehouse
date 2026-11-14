@@ -420,6 +420,9 @@ Gate (predicted moves): every gate in [binding.gates.predictedMoves.gates, resol
 Both: run BASE against BASE first. Scratch dir: [PM: a folder under the system temp directory,
   outside the repo, named by the tracker id, never by the user's name].
   Runs that must not run in parallel: [binding.gates.oneAtATime, or "none named"].
+  A clone of this repository (a lane clone, or a clone made for a run): before any bakehouse tool in
+  it, run `bakehouse setup --pointer [PM: the main clone's full path]`. Without it every team tool
+  there refuses, and heavy-run's lane events are lost.
 Previous step's pre-mortem: [tracker: step {n}-1's pre-mortem, or "first step"] — each item needs a
 test that fails on the mutation.
 Leave alone: [binding.leaveAlone, or "none named"].

@@ -12,12 +12,14 @@
 # $BAKEHOUSE_WO label the events (see lane-event.sh). The command's exit code is returned.
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
+# The job runs whether or not its lane event is written; a lost event is said, never hidden.
+lost() { echo "heavy-run.sh: warning: the $1 lane event was not written (in a clone of the project, run \`bakehouse setup --pointer <main clone>\` first)" >&2; }
 if [ "${1:-}" = "--held" ]; then
   shift; res="$1"; t_wait="$2"; shift 2
   now=$(date +%s)
-  "$HERE/lane-event.sh" resource-started resource="$res" waitedS=$((now - t_wait)) >/dev/null 2>&1 || true
+  "$HERE/lane-event.sh" resource-started resource="$res" waitedS=$((now - t_wait)) >/dev/null 2>&1 || lost resource-started
   "$@"; rc=$?
-  "$HERE/lane-event.sh" resource-ended resource="$res" heldS=$(( $(date +%s) - now )) exit=$rc >/dev/null 2>&1 || true
+  "$HERE/lane-event.sh" resource-ended resource="$res" heldS=$(( $(date +%s) - now )) exit=$rc >/dev/null 2>&1 || lost resource-ended
   exit $rc
 fi
 [ $# -ge 2 ] || { echo "usage: heavy-run.sh <resource> <command> [args ...]" >&2; exit 2; }
@@ -26,7 +28,7 @@ LOCKS="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import locator
   || { echo "heavy-run.sh: cannot find the machine folder (python3 and runtime/locator.py are needed)" >&2; exit 2; }
 mkdir -p "$LOCKS"
 t0=$(date +%s)
-"$HERE/lane-event.sh" resource-waited resource="$res" >/dev/null 2>&1 || true
+"$HERE/lane-event.sh" resource-waited resource="$res" >/dev/null 2>&1 || lost resource-waited
 lock="$LOCKS/$res.lane${BAKEHOUSE_LANE:-main}.lock"
 if command -v lockf >/dev/null 2>&1; then
   exec lockf -k "$lock" "$0" --held "$res" "$t0" "$@"
