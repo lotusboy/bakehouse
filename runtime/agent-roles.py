@@ -688,11 +688,15 @@ def first_prompt(path):
 def unsealed_moves(folders, where, named):
     """The top-level moves files of the record folders whose bytes no seal in their project's ops ledger names:
     the project of `where`, the path the hook's binding lookup used (the cwd, or the record line's path:
-    named). Fail-open, like the rest of this hook: an error reads as sealed, and says so."""
+    named), found by the binding's own rule (lookup_paths). Fail-open, like the rest of this hook: an error
+    reads as sealed, and says so."""
     try:
         gate = predict_gate()
-        led, why = (team_roles.locate("ops_ledger", str(where), log, env=NAMED_ENV if named else os.environ)
-                    if where else (None, None))
+        led, why = None, None
+        for at in lookup_paths(where, named) if where else []:
+            led, why = team_roles.locate("ops_ledger", at, log, env=NAMED_ENV)
+            if led or why:
+                break
         if not led:
             log(f"SEAL check skipped: no project for {where}" + (f" ({why})" if why else ""))
             return []

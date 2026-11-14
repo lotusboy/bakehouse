@@ -421,6 +421,14 @@ class TestPredictionRecord(Fixture):
         self.assertIn('"decision": "block"', out, "the cwd is the symlinked path")
         self.assertIn("moves file(s) with no seal in the ops ledger", out)
 
+    def test_the_seal_check_judges_the_repo_when_the_project_dir_is_a_parent_that_is_no_repo(self):
+        # S16 fix2 ANDON-B: the seal check finds its ledger by the binding's own rule (the cwd's repo, then the
+        # launch project), never through CLAUDE_PROJECT_DIR in the env
+        self.project_dir = Path(self.tmp.name).resolve()
+        out = self.engineer_stop("Work order T7: x.", files={"moves.prediction.json": self.OKP}, seal=False)
+        self.assertIn('"decision": "block"', out)
+        self.assertIn("moves file(s) with no seal in the ops ledger", out)
+
     def test_f7_an_unsealed_measured_file_beside_a_sealed_prediction_sends_the_engineer_back(self):
         self.folder.mkdir(parents=True, exist_ok=True)
         (self.folder / "moves.measured.json").write_text('{"tests:passed": 11}')
