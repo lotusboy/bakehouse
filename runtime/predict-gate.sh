@@ -10,7 +10,6 @@
 #   predict-gate.sh revise|retire <work-order> <round> <file> --decision <id> [--repo DIR]
 #   predict-gate.sh seal-code <work-order> <round> [--repo DIR] -- <git commit args>   # commit + seal the first code
 #   predict-gate.sh verify-chain [--repo DIR | --ledger FILE]   # the ledger's first broken link
-#   predict-gate.sh install-hook <repo>     # pre-commit hook in that repo; never run automatically
 #   predict-gate.sh hook                    # what the hook runs
 #
 # Format, outcomes and exit codes: runtime/predict-gate.py docstring and docs/PREDICT-GATE.md.

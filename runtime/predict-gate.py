@@ -15,7 +15,6 @@ Standard library only. Usage (normally through predict-gate.sh):
   predict-gate.py seal-code WORK-ORDER ROUND [--repo DIR] -- GIT-COMMIT-ARGS   # the round's first code commit
   predict-gate.py verify-chain [--repo DIR | --ledger FILE]
   predict-gate.py hook                     # run by the pre-commit hook, inside the repo
-  predict-gate.py install-hook REPO
 
 The three files:
   P  moves.prediction.json (or .yaml when PyYAML is installed). Written before the first edit.
@@ -86,7 +85,6 @@ ROUND = r"((?:[.-][A-Za-z0-9][A-Za-z0-9_.-]*)?)"
 PREDICTION_RE = re.compile(rf"^moves\.prediction{ROUND}\.(?:json|ya?ml)$")
 MEASURED_RE = re.compile(rf"^moves\.measured{ROUND}\.json$")
 LEGACY_ESCAPE = re.compile(r"\[\[\]|\[\]\]")
-HOOK_MARKER = "# installed-by: permanence runtime/predict-gate.sh"
 HISTORY = "history"
 CLOSE_OVERRIDE = "PREDICT_GATE_CLOSE_OVERRIDE"
 TRAILER = "Prediction-approved"
@@ -1497,39 +1495,7 @@ def run_verify_chain(repo_arg: str | None, ledger_arg: str | None) -> int:
     return 0 if ok else 1
 
 
-def install_hook(repo_arg: str, gate: Path) -> int:
-    p = git(repo_arg, "rev-parse", "--show-toplevel", check=False)
-    if p.returncode != 0:
-        print(f"install-hook: {repo_arg} is not a git repository")
-        return 2
-    repo = Path(p.stdout.strip())
-    hp = git(repo, "config", "--get", "core.hooksPath", check=False).stdout.strip()
-    if hp:
-        print(f"install-hook: {repo} sets core.hooksPath ({hp}), so git ignores .git/hooks. Not "
-              f"installed. Add this line to {hp}/pre-commit instead:\n  \"{gate}\" hook || exit 1")
-        return 1
-    hook = Path(git(repo, "rev-parse", "--path-format=absolute", "--git-path", "hooks").stdout.strip()) / "pre-commit"
-    if (hook.exists() or hook.is_symlink()) and HOOK_MARKER not in hook.read_text(errors="replace"):
-        print(f"install-hook: {hook} exists and was not written by Permanence. Left alone. Add this "
-              f"line to it instead:\n  \"{gate}\" hook || exit 1")
-        return 1
-    hook.parent.mkdir(parents=True, exist_ok=True)
-    if hook.is_symlink():
-        hook.unlink()
-    hook.write_text(
-        "#!/bin/sh\n"
-        f"{HOOK_MARKER}\n"
-        "# Refuses a commit whose staged moves.measured.json shows a move its moves.prediction.json\n"
-        "# did not predict. Owner-approved exception: PREDICT_GATE_OVERRIDE=\"<reason>\" git commit ...\n"
-        "# (recorded in the ops ledger). Delete this file to remove the gate.\n"
-        f"exec \"{gate}\" hook\n")
-    hook.chmod(0o755)
-    print(f"install-hook: {hook} written")
-    return 0
-
-
 def main(argv) -> int:
-    gate = Path(__file__).resolve().with_name("predict-gate.sh")
     if not argv or argv[0] in ("-h", "--help"):
         print(__doc__)
         return 0 if argv else 2
@@ -1616,8 +1582,6 @@ def main(argv) -> int:
             return run_verify_chain(a.repo, a.ledger)
         if cmd == "hook":
             return run_hook()
-        if cmd == "install-hook" and len(rest) == 1:
-            return install_hook(rest[0], gate)
     except BadInput as e:
         print(f"predict-gate: bad input: {e}", file=sys.stderr)
         if where:
@@ -1630,7 +1594,6 @@ def main(argv) -> int:
           "       predict-gate.sh revise|retire <work-order> <round> <file> --decision <id> [--repo DIR]\n"
           "       predict-gate.sh seal-code <work-order> <round> [--repo DIR] -- <git commit args>\n"
           "       predict-gate.sh verify-chain [--repo DIR | --ledger FILE]\n"
-          "       predict-gate.sh install-hook <repo>\n"
           "       predict-gate.sh hook", file=sys.stderr)
     return 2
 

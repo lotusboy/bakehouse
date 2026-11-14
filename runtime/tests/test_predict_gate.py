@@ -175,6 +175,12 @@ class RepoFixture(unittest.TestCase):
         return subprocess.run([str(GATE), *args], capture_output=True,
                               text=True, env=env or self.env)
 
+    def install_hook(self):
+        """The gate's own pre-commit line; how `bakehouse setup` installs it is tested in test_setup."""
+        hook = self.repo / ".git/hooks/pre-commit"
+        hook.write_text(f'#!/bin/sh\nexec "{GATE}" hook\n')
+        hook.chmod(0o755)
+
     def events(self):
         return [json.loads(x) for x in self.ledger.read_text().splitlines()] if self.ledger.exists() else []
 
@@ -201,10 +207,8 @@ class Ledger(RepoFixture):
         self.assertEqual(p.returncode, 0)
         self.assertFalse(self.ledger.exists())
 
-    def test_install_hook_and_commit(self):
-        self.assertEqual(self.gate("install-hook", str(self.repo)).returncode, 0)
-        hook = self.repo / ".git/hooks/pre-commit"
-        self.assertIn("installed-by: permanence runtime/predict-gate.sh", hook.read_text())
+    def test_hook_and_commit(self):
+        self.install_hook()
         # 1. unpredicted move: refused
         self.write({"moves": []}, {**BASE, "gaps:unfaithful-logic": 11})
         self.git("add", "-A")
@@ -230,34 +234,19 @@ class Ledger(RepoFixture):
         self.assertNotEqual(self.git("commit", "-m", "z", check=False).returncode, 0)
 
     def test_hook_ignores_commits_without_a_measured_file(self):
-        self.gate("install-hook", str(self.repo))
+        self.install_hook()
         (self.run_dir / "moves.prediction.json").write_text(json.dumps({"moves": []}))
         (self.run_dir / "measured.json").write_text(json.dumps({"some": {"nested": 1}}))
         self.git("add", "-A")
         self.assertEqual(self.git("commit", "-m", "prediction first", check=False).returncode, 0)
 
     def test_hook_refuses_measured_without_prediction_or_baseline(self):
-        self.gate("install-hook", str(self.repo))
+        self.install_hook()
         (self.run_dir / "moves.measured.json").write_text(json.dumps(BASE))
         self.git("add", "-A")
         p = self.git("commit", "-m", "x", check=False)
         self.assertNotEqual(p.returncode, 0)
         self.assertIn("moves.prediction.json, moves.baseline.json is not in the index", p.stdout + p.stderr)
-
-    def test_install_hook_leaves_a_foreign_hook_alone(self):
-        hook = self.repo / ".git/hooks/pre-commit"
-        hook.write_text("#!/bin/sh\necho mine\n")
-        p = self.gate("install-hook", str(self.repo))
-        self.assertEqual(p.returncode, 1)
-        self.assertIn("was not written by Permanence", p.stdout)
-        self.assertEqual(hook.read_text(), "#!/bin/sh\necho mine\n")
-
-    def test_install_hook_skips_hooks_path(self):
-        self.git("config", "core.hooksPath", ".githooks")
-        p = self.gate("install-hook", str(self.repo))
-        self.assertEqual(p.returncode, 1)
-        self.assertIn("core.hooksPath", p.stdout)
-        self.assertFalse((self.repo / ".git/hooks/pre-commit").exists())
 
 
 class Close(RepoFixture):
@@ -465,7 +454,7 @@ class Friction(RepoFixture):
         self.assertIn("no moves.prediction.fix9.json beside", p.stderr)
 
     def test_hook_checks_a_fix_round_and_refuses_an_unpaired_measurement(self):
-        self.gate("install-hook", str(self.repo))
+        self.install_hook()
         self.write({"moves": []}, BASE)
         (self.run_dir / "moves.prediction.fix1.json").write_text(json.dumps({"moves": []}))
         (self.run_dir / "moves.measured.fix1.json").write_text(json.dumps({**BASE, "rules:fired": 130}))
@@ -1087,7 +1076,7 @@ class HookRecord(RepoFixture):
 
     def setUp(self):
         super().setUp()
-        self.gate("install-hook", str(self.repo))
+        self.install_hook()
 
     def put(self, name, data):
         (self.run_dir / name).parent.mkdir(parents=True, exist_ok=True)

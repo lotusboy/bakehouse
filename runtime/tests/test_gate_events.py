@@ -57,10 +57,8 @@ class Scratch(unittest.TestCase):
             for k, v in os.environ.items()
             if not k.startswith(("PREDICT_GATE", "OPS_", "SPEND_", "DECISION_", "BAKEHOUSE_", "CLAUDE_PROJECT_DIR"))
         }
-        # PERMA_DIR: the tools of later groups still read it until they are converted; an empty scratch
-        # folder, so none of them can reach a real one
         self.env.update(
-            GIT, BAKEHOUSE_MACHINE_DIR=str(self.machine), PERMA_DIR=str(t / "no-permanence"),
+            GIT, BAKEHOUSE_MACHINE_DIR=str(self.machine),
             DECISION_NOW="2026-01-02T12:00:00+00:00",
         )
 
@@ -473,7 +471,9 @@ class TestRefusalsWriteOneEvent(SpendScratch):
         self.assertEqual(len(self.events()), 3)
 
     def test_predict_gate_hook_refusal_writes_one_event_per_commit(self):
-        self.assertEqual(self.pg("install-hook", str(self.work)).returncode, 0)
+        hook = self.work / ".git" / "hooks" / "pre-commit"
+        hook.write_text(f'#!/bin/sh\nexec "{self.rt / "predict-gate.sh"}" hook\n')
+        hook.chmod(0o755)
         for name in ("2026-01-02-T8-step1-review", "2026-01-02-T9-step1-review"):
             self.trio(
                 self.work / "runs" / name,
@@ -1487,7 +1487,6 @@ EXCLUDED = {
         "run_close",
         "return",
     ): "boundary 3: the close itself could not be recorded",
-    ("predict-gate.py", "install_hook", "return"): "boundary 5: an installer",
     (
         "predict-gate.py",
         "main",
@@ -1501,7 +1500,6 @@ EXCLUDED_COUNT = {
     ("spend.py", "resolve_project", "fail without a gate"): 2,
     ("predict-gate.py", "run_check", "return"): 2,
     ("predict-gate.py", "run_close", "return"): 1,
-    ("predict-gate.py", "install_hook", "return"): 3,
     ("predict-gate.py", "main", "return"): 1,
 }
 
