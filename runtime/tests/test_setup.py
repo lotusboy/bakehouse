@@ -441,6 +441,23 @@ class Pointer(Base):
         self.assertEqual(self.config(lane, "bakehouse.records"), "")
         self.assertFalse(self.hook(lane, "pre-commit").exists())
 
+    def test_pointer_accepts_a_shallow_lane_whose_head_the_main_clone_holds(self):
+        # S16 fix2 P2-3: a shallow clone's root is its cut-off commit, so its HEAD is looked up instead
+        for i in range(3):
+            self.git(self.repo, "commit", "-q", "--allow-empty", "-m", f"c{i}")
+        self.setup_in(self.repo)
+        lane = self.tmp / "shallow"
+        self.git(self.tmp, "clone", "-q", "--depth", "1", f"file://{self.repo}", str(lane))
+        rc, out = self.setup_in(lane, "--pointer", str(self.repo))
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(locator.find(lane, env={}).records, self.records(self.repo))
+        # a shallow clone of another project is still refused
+        other = self.make_repo("other", {"owned": True, "name": "other"})
+        self.setup_in(other)
+        rc, out = self.setup_in(lane, "--pointer", str(other))
+        self.assertEqual(rc, 1, out)
+        self.assertIn(f"{other} does not hold {lane}'s HEAD commit", out)
+
     def test_pointer_refuses_a_folder_with_no_team(self):
         lane = self.lane()
         plain = self.make_repo("plain", None)
