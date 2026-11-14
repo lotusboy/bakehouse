@@ -13,6 +13,16 @@ body).
 | `/bakehouse:refactor` | Restructures one part behind byte-identical gates. |
 | `/bakehouse:change` | Makes one change from a work order behind predicted-moves gates. |
 
+## `bakehouse`, in the Bash tool
+
+The plugin's `bin/` is on the Bash tool's PATH, so these run from any Bash command in a session.
+
+| Command | What it does |
+|---|---|
+| `bakehouse setup [--pointer <main clone>] [--pre-commit]` | Makes a clone ready for its team (`bakehouse_setup.py`, below). |
+| `bakehouse status [--json] [--since <ISO time>] [--repo <folder>]` | The team's state (`bakehouse_status.py`, below). |
+| `bakehouse run <script> [args]` | Runs `runtime/<script>` with the args, and exits with its exit code. The plugin folder changes on every update, so a project file that names a plugin script (a binding command, a project's own script) names it this way: `bakehouse run health-signal.py ...`. A `.py` script runs under the same python as `bakehouse`. A name with a `/`, or one that is not a file in `runtime/`, is refused (exit 2). |
+
 ## Scripts in `runtime/`
 
 You rarely run these by hand: hooks and commands call them. Each script's header comment is its full
