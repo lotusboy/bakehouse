@@ -60,9 +60,26 @@ def enabled_plugins(cwd):
     return [k for k, v in enabled.items() if v]
 
 
+def own_agents(env=os.environ):
+    """The running plugin's own agents, as `<plugin name>:<agent name>`: a hook that runs is proof its plugin is
+    switched on, whatever the settings files say (S16 fix2). The plugin name is the one in
+    $CLAUDE_PLUGIN_ROOT/.claude-plugin/plugin.json; the harness reports a plugin agent with that prefix."""
+    root = env.get("CLAUDE_PLUGIN_ROOT")
+    if not root:
+        return set()
+    try:
+        plugin = json.load(open(Path(root, ".claude-plugin", "plugin.json"))).get("name")
+    except (OSError, ValueError, AttributeError):
+        return set()
+    if not isinstance(plugin, str) or not plugin:
+        return set()
+    return {f"{plugin}:{n}" for f in Path(root, "agents").glob("*.md") if (n := frontmatter_name(f))}
+
+
 def installed_agents(cwd):
-    """Every agent name this session could dispatch: built-ins, user, project, enabled plugins."""
-    names = set(BUILT_IN)
+    """Every agent name this session could dispatch: built-ins, user, project, the running plugin's own,
+    enabled plugins."""
+    names = set(BUILT_IN) | own_agents()
     top = project_top(cwd)
     for d in (Path.home() / ".claude" / "agents", top / ".claude" / "agents"):
         for f in d.glob("*.md"):

@@ -65,6 +65,7 @@ class Fixture(unittest.TestCase):
         self.hook = HOOK
         self.bin = None  # a folder put first on PATH, holding a test's own git
         self.project_dir = None  # $CLAUDE_PROJECT_DIR, which the harness sets for a plugin hook
+        self.plugin_root = None  # $CLAUDE_PLUGIN_ROOT, which the harness sets for a plugin hook
         self.install("refactor-engineer", "refactor-reviewer", "architect", "design-author", "absence-check",
                      "blast-radius")
         # self.repo has opted in; self.other has no binding
@@ -83,6 +84,8 @@ class Fixture(unittest.TestCase):
             e["PATH"] = f"{self.bin}:{e['PATH']}"
         if self.project_dir:
             e["CLAUDE_PROJECT_DIR"] = str(self.project_dir)
+        if self.plugin_root:
+            e["CLAUDE_PLUGIN_ROOT"] = str(self.plugin_root)
         return e
 
     def install(self, *names):
@@ -1483,6 +1486,18 @@ class TestTheHooksFolder(Fixture):
         (sibling / ".claude" / "settings.json").write_text(json.dumps({"enabledPlugins": {"bakehouse@t": True}}))
         self.project_scope(self.repo)
         self.assertEqual(self.dispatch("role:architect", cwd=sibling), "DENY")
+
+    def test_the_running_plugins_own_agents_are_installed_wherever_the_cwd_is(self):
+        # S16 fix2 ANDON-A (ii): a hook that runs is proof its plugin is on, so the agents in $CLAUDE_PLUGIN_ROOT/agents
+        # count as installed, named <plugin name>:<agent name> (the name in .claude-plugin/plugin.json)
+        lane = Path(self.tmp.name).resolve() / "repo-lane1"
+        project(lane, {"owned": True, "roles": {}})
+        self.project_scope(self.repo)
+        self.project_dir = self.repo
+        self.assertEqual(self.dispatch("role:reviewer", cwd=lane)["subagent_type"], "general-purpose")
+        self.plugin_root = RUNTIME.parent
+        self.assertEqual(self.dispatch("role:reviewer", cwd=lane)["subagent_type"], "bakehouse:refactor-reviewer")
+        self.assertEqual(self.dispatch("role:expert", cwd=lane)["subagent_type"], "bakehouse:human-expert")
 
     def test_a_folder_outside_the_repo_takes_the_launch_projects_binding(self):
         # S16 fix2 ANDON-A: the cwd's repo has no team, so the launch project's binding is read, the stricter of
