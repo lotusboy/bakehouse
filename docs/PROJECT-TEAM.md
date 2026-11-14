@@ -60,12 +60,12 @@ A role names a job. An agent fills a role. A job dispatches `role:<job>:<role>`,
 
 | Role | Does | Shipped agent |
 |---|---|---|
-| `architect` | lays out a restructure-or-accept decision for one part | `architect` |
-| `engineer` | makes the change behind its job's gate | `refactor-engineer` |
-| `reviewer` | reviews the diff and runs the risky case | `refactor-reviewer` |
-| `absence-check`, `count-check`, `blast-radius` | check a claim of absence, a count, the reach of a change | the agent of the same name |
-| `design-author`, `design-reviewer` | write and review a design | the agent of the same name |
-| `expert` | an independent reading of one question about what a source means, standing in for a human expert in the project's field; it reads blind and advises, never rules | `human-expert` |
+| `architect` | lays out a restructure-or-accept decision for one part | `bakehouse:architect` |
+| `engineer` | makes the change behind its job's gate | `bakehouse:refactor-engineer` |
+| `reviewer` | reviews the diff and runs the risky case | `bakehouse:refactor-reviewer` |
+| `absence-check`, `count-check`, `blast-radius` | check a claim of absence, a count, the reach of a change | `bakehouse:` and the role's name |
+| `design-author`, `design-reviewer` | write and review a design | `bakehouse:` and the role's name |
+| `expert` | an independent reading of one question about what a source means, standing in for a human expert in the project's field; it reads blind and advises, never rules | `bakehouse:human-expert` |
 | `code-review` | single-pass code review | none shipped; falls back to the built-in `general-purpose` agent |
 
 Resolution checks these levels in order. At each level the key `<job>:<role>` is tried before
@@ -91,9 +91,9 @@ Outside a repository with a binding, the shipped table acts only on a `role:` di
 change a dispatch made by plain agent name, and it never sends an agent back for a run record. The
 owner's own table in the machine folder is the owner's explicit choice and applies everywhere.
 
-The shipped agents have plain names (`architect`, `design-author`, …). If the owner already has
-their own agent with one of those names, the install leaves theirs in place and says so; that role
-is then filled by the owner's agent.
+The shipped agents are the plugin's (`agents/`), so the harness names them `bakehouse:<agent>`, and
+the shipped table names them so. The hooks accept a plugin agent reported with or without its
+`bakehouse:` prefix. To fill a role with an agent of the owner's own, name it in the owner's table.
 
 ## The binding
 

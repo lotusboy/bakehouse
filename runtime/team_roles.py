@@ -232,6 +232,11 @@ def known_role(spec, lvls):
     return any(k in table for _, table in lvls for k in keys)
 
 
+def is_agent(agent_type, name):
+    """True when agent_type is the agent `name`: a plugin agent may be reported with or without its plugin prefix."""
+    return agent_type == name or name.split(":")[-1] == agent_type
+
+
 def role_of(agent_type, tables):
     """(role name, entry) of the first table entry listing agent_type as a provider."""
     if not agent_type:
@@ -241,7 +246,6 @@ def role_of(agent_type, tables):
             if not isinstance(r, dict):
                 continue
             for p in providers(r):
-                # a plugin agent may be reported with or without its plugin prefix
-                if agent_type == p or p.split(":")[-1] == agent_type:
+                if is_agent(agent_type, p):
                     return name, r
     return None, None

@@ -632,13 +632,19 @@ class TestRefusalsWriteOneEvent(SpendScratch):
         )
 
     def home(self):
+        """A scratch HOME where the two agents are user agents and the bakehouse plugin's (`bakehouse:<name>`,
+        as the shipped table names them)."""
         h = self.root / "home"
         if not h.exists():
             (h / ".claude" / "agents").mkdir(parents=True)
+            (h / "plugin" / "agents").mkdir(parents=True)
             for n in ("refactor-engineer", "refactor-reviewer"):
-                (h / ".claude" / "agents" / f"{n}.md").write_text(
-                    f"---\nname: {n}\n---\n"
-                )
+                for d in (h / ".claude" / "agents", h / "plugin" / "agents"):
+                    (d / f"{n}.md").write_text(f"---\nname: {n}\n---\n")
+            (h / ".claude" / "settings.json").write_text(json.dumps({"enabledPlugins": {"bakehouse@t": True}}))
+            (h / ".claude" / "plugins").mkdir()
+            (h / ".claude" / "plugins" / "installed_plugins.json").write_text(json.dumps(
+                {"plugins": {"bakehouse@t": [{"scope": "user", "installPath": str(h / "plugin")}]}}))
         return h
 
     def pre(self, st, prompt, cwd=None):

@@ -21,6 +21,8 @@ sys.path.insert(0, str(RUNTIME))
 import team_roles  # noqa: E402
 
 HOOK = RUNTIME / "agent-roles.py"
+# The agents the plugin ships (agents/); the shipped table names them bakehouse:<name>.
+SHIPPED = {f.stem for f in (RUNTIME.parent / "agents").glob("*.md")}
 GIT = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
 
 
@@ -84,11 +86,22 @@ class Fixture(unittest.TestCase):
         return e
 
     def install(self, *names):
+        """Each name as a user agent; a shipped agent also as the bakehouse plugin's, `bakehouse:<name>`, which
+        is how the shipped table names it."""
+        plugin = self.home / "plugin"
         for n in names:
             (self.home / ".claude" / "agents" / f"{n}.md").write_text(f"---\nname: {n}\n---\n")
+            if n in SHIPPED:
+                (plugin / "agents").mkdir(parents=True, exist_ok=True)
+                (plugin / "agents" / f"{n}.md").write_text(f"---\nname: {n}\n---\n")
+        (self.home / ".claude" / "settings.json").write_text(json.dumps({"enabledPlugins": {"bakehouse@t": True}}))
+        (self.home / ".claude" / "plugins").mkdir(exist_ok=True)
+        (self.home / ".claude" / "plugins" / "installed_plugins.json").write_text(json.dumps(
+            {"plugins": {"bakehouse@t": [{"scope": "user", "installPath": str(plugin)}]}}))
 
     def uninstall(self, name):
         (self.home / ".claude" / "agents" / f"{name}.md").unlink()
+        (self.home / "plugin" / "agents" / f"{name}.md").unlink(missing_ok=True)
 
     def binding(self, roles):
         self.bpath.write_text(json.dumps({"owned": True, "roles": roles}))
@@ -141,7 +154,7 @@ class TestNoBinding(Fixture):
         self.assertEqual(self.dispatch("refactor-engineer")["model"], "opus")
 
     def test_role_prefix_works_without_a_binding(self):
-        self.assertEqual(self.dispatch("role:engineer", cwd=self.other)["subagent_type"], "refactor-engineer")
+        self.assertEqual(self.dispatch("role:engineer", cwd=self.other)["subagent_type"], "bakehouse:refactor-engineer")
 
     def test_stop_asks_nothing_without_a_binding(self):
         self.assertEqual(self.stop(cwd=str(self.other)), "")
@@ -165,13 +178,13 @@ class TestGate(Fixture):
     """Move 2's gate (design §7), against the shipped table."""
 
     def test_engineer_resolves_to_shipped_default(self):
-        self.assertEqual(self.dispatch("role:engineer")["subagent_type"], "refactor-engineer")
-        self.assertEqual(self.dispatch("role:refactor:engineer")["subagent_type"], "refactor-engineer")
+        self.assertEqual(self.dispatch("role:engineer")["subagent_type"], "bakehouse:refactor-engineer")
+        self.assertEqual(self.dispatch("role:refactor:engineer")["subagent_type"], "bakehouse:refactor-engineer")
 
     def test_binding_override_wins_in_its_repo_only(self):
         self.binding({"engineer": "design-author"})
         self.assertEqual(self.dispatch("role:engineer")["subagent_type"], "design-author")
-        self.assertEqual(self.dispatch("role:engineer", cwd=self.other)["subagent_type"], "refactor-engineer")
+        self.assertEqual(self.dispatch("role:engineer", cwd=self.other)["subagent_type"], "bakehouse:refactor-engineer")
 
     def test_job_qualified_key_wins_over_plain(self):
         self.binding({"engineer": "architect", "change:engineer": "design-author"})
@@ -180,7 +193,7 @@ class TestGate(Fixture):
 
     def test_uninstalled_override_is_skipped_and_logged(self):
         self.binding({"engineer": "no-such-agent"})
-        self.assertEqual(self.dispatch("role:engineer")["subagent_type"], "refactor-engineer")
+        self.assertEqual(self.dispatch("role:engineer")["subagent_type"], "bakehouse:refactor-engineer")
         self.assertIn("SKIP role:engineer: binding roles key 'engineer' names ['no-such-agent']", self.log())
 
     def test_reviewer_falls_back_to_general_purpose(self):
@@ -237,7 +250,7 @@ class TestReview(Fixture):
 
     def assert_resolves(self):
         self.assertEqual(self.dispatch("role:code-review")["subagent_type"], "general-purpose")
-        self.assertEqual(self.dispatch("role:absence-check")["subagent_type"], "absence-check")
+        self.assertEqual(self.dispatch("role:absence-check")["subagent_type"], "bakehouse:absence-check")
 
     def test_p1_slow_resolver_times_out(self):
         # decided (review B2): a locator that does not answer refuses a role: dispatch, naming the locator;
@@ -305,12 +318,12 @@ class TestReview(Fixture):
         self.assertEqual((out["subagent_type"], out["model"]), ("other-agent", "sonnet"))
         self.assertEqual(self.dispatch("role:refactor:engineer")["model"], "opus")
         self.assertEqual(self.dispatch("role:change:engineer", cwd=self.other)["subagent_type"],
-                         "refactor-engineer")
+                         "bakehouse:refactor-engineer")
 
     def test_p3_3_string_providers_name_no_agent(self):
         self.install("a")
         self.personal({"absence-check": {"providers": "abc"}})
-        self.assertEqual(self.dispatch("role:absence-check")["subagent_type"], "absence-check")
+        self.assertEqual(self.dispatch("role:absence-check")["subagent_type"], "bakehouse:absence-check")
         self.assertEqual(team_roles.providers({"providers": "abc"}), [])
 
     def test_p3_3_bad_reviews_skip_the_run_record_check(self):
@@ -472,6 +485,19 @@ class TestPredictionStop(TestPredictionRecord):
         out = self.dispatch_brief("refactor-engineer")["hookSpecificOutput"]["updatedInput"]["prompt"]
         self.assertEqual(out.splitlines()[-1], "[bakehouse:prediction-record]")
         self.assertIn('"decision": "block"', self.engineer_stop(out, files={"prediction.md": "prose"}))
+
+    def test_the_plugin_agent_is_the_change_engineer_with_or_without_its_prefix(self):
+        """The shipped table names the plugin agent bakehouse:refactor-engineer, the subagent_type the harness
+        gives a plugin agent. A stop may report it with or without the prefix; another plugin's agent of the
+        same name is not it."""
+        out = self.dispatch_brief("bakehouse:refactor-engineer")["hookSpecificOutput"]["updatedInput"]["prompt"]
+        self.assertEqual(out.splitlines()[-1], "[bakehouse:prediction-record]")
+        for agent in ("bakehouse:refactor-engineer", "refactor-engineer"):
+            with self.subTest(agent=agent):
+                self.assertIn('"decision": "block"',
+                              self.engineer_stop(out, files={"prediction.md": "prose"}, agent_type=agent))
+        self.assertEqual(self.engineer_stop(out, files={"prediction.md": "prose"}, agent_type="other:refactor-engineer"),
+                         "")
 
     def test_a_refactor_job_with_a_work_order_line_is_not_checked(self):
         brief = "Refactor part X, the follow-up to:\nWork order T6: the earlier change.\n" \

@@ -516,7 +516,7 @@ def pre_tool_use(d):
         engineer = st in change_engineers(binding, cwd)
     elif st not in team_roles.BUILT_IN and prediction_jobs():
         b = bound(cwd)
-        if b and st in change_engineers(b, cwd):
+        if b and any(team_roles.is_agent(st, a) for a in change_engineers(b, cwd)):
             engineer = True
             if work_order(ti.get("prompt"), b):
                 mark, binding = True, b
@@ -704,11 +704,12 @@ def prediction_stop(d):
         if marked:
             log(f"PREDICTION check skipped for {agent}: no binding for {cwd}")
         # a line the fallback cannot place, in a change job's brief, is reported
-        if note and agent in change_engineers(binding, cwd) and dispatched(prompt) is not False and (
+        if note and any(team_roles.is_agent(agent, a) for a in change_engineers(binding, cwd)) \
+                and dispatched(prompt) is not False and (
                 marked or (work_order(prompt, binding) and agent not in team_roles.BUILT_IN)):
             return with_note(None, note)
         return None
-    if agent not in change_engineers(binding, cwd):
+    if not any(team_roles.is_agent(agent, a) for a in change_engineers(binding, cwd)):
         return None
     log(f"PROMPT-SOURCE {agent}: transcript line 1 {'ends' if marked else 'does not end'} with "
         f"{PREDICTION_MARKER} (a marked dispatch shows here whether line 1 holds the rewritten prompt)")

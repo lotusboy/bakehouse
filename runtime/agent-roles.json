@@ -30,19 +30,19 @@
   "roles": {
     "architect": {
       "providers": [
-        "architect"
+        "bakehouse:architect"
       ],
       "model": "opus"
     },
     "engineer": {
       "providers": [
-        "refactor-engineer"
+        "bakehouse:refactor-engineer"
       ],
       "model": "opus"
     },
     "reviewer": {
       "providers": [
-        "refactor-reviewer"
+        "bakehouse:refactor-reviewer"
       ],
       "model": "opus",
       "nested_model": "sonnet",
@@ -50,19 +50,19 @@
     },
     "absence-check": {
       "providers": [
-        "absence-check"
+        "bakehouse:absence-check"
       ],
       "model": "sonnet"
     },
     "count-check": {
       "providers": [
-        "count-check"
+        "bakehouse:count-check"
       ],
       "model": "sonnet"
     },
     "blast-radius": {
       "providers": [
-        "blast-radius"
+        "bakehouse:blast-radius"
       ],
       "model": "sonnet"
     },
@@ -71,13 +71,13 @@
     },
     "design-author": {
       "providers": [
-        "design-author"
+        "bakehouse:design-author"
       ],
       "model": "opus"
     },
     "design-reviewer": {
       "providers": [
-        "design-reviewer"
+        "bakehouse:design-reviewer"
       ],
       "model": "opus",
       "nested_model": "sonnet"
@@ -88,7 +88,7 @@
     },
     "expert": {
       "providers": [
-        "human-expert"
+        "bakehouse:human-expert"
       ],
       "model": "fable"
     }
