@@ -979,6 +979,14 @@ that is not a folder inside a git repository.
   state is kept is not yet decided.
 - `bakehouse setup` refuses a repo another party owns (a sidecar team): R0 does not set up records for
   such a repo, and changes nothing in it (design 05 §4.8 is not yet met).
+- `records-check.py --binding <file>` reads the ledger of the project the locator finds, not a ledger
+  beside that file.
+- `bakehouse status` refuses a decision ledger line that is not a JSON object (exit 1), where
+  `decision.sh` skips such a line with a warning.
+- The locator's git calls have no timeout of their own: a records folder on a stalled mount makes session
+  start wait until the harness's hook timeout.
+- There is one git-hook launcher per machine. Every session start points it at that session's plugin
+  root, so two projects on different plugin versions point it at each other in turn.
 - The binding has no default-branch field and no pull-request tool field. Jobs read the default
   branch from `origin/HEAD` and open a pull request with the repo host's own tool, or hand the owner
   the branch name and the pull request text.

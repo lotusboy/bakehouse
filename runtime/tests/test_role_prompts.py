@@ -84,6 +84,23 @@ class TestRecordsAndLanes(unittest.TestCase):
             self.assertIn("The older lane variable names are not read", " ".join(text.split()))
 
 
+class TestSkillReferences(unittest.TestCase):
+    """S16 M11: a skill names the PM role by its skill name, which resolves from any project; docs/TOOLS.md lists
+    the pm skill and session-start.py."""
+
+    def test_the_method_skills_name_the_pm_skill_by_name(self):
+        for name in ("dev-team", "step-back", "live-prism"):
+            with self.subTest(skill=name):
+                text = (RUNTIME.parent / "skills" / name / "SKILL.md").read_text()
+                self.assertNotIn("skills/pm/SKILL.md", text)
+        self.assertIn("`bakehouse:pm`", (RUNTIME.parent / "skills" / "dev-team" / "SKILL.md").read_text())
+
+    def test_tools_lists_the_pm_skill_and_session_start(self):
+        tools = (RUNTIME.parent / "docs" / "TOOLS.md").read_text()
+        self.assertIn("\n| `pm` |", tools)
+        self.assertIn("\n| `session-start.py` |", tools)
+
+
 class TestReviewerPrompt(unittest.TestCase):
     def test_b4_the_refactor_reviewer_owes_at_least_5_rows(self):
         text = " ".join(

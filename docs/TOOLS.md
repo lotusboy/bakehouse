@@ -53,13 +53,16 @@ Seven tools are a `.sh` file you call and a `.py` file beside it that does the w
 | `ops-gap.sh` | Says how many commits the ops ledger is behind. | nothing |
 | `lane-event.sh`, `heavy-run.sh` | Record parallel work inside one project; run one heavy job under its lane's lock. | `ops/lanes.jsonl`, in the records folder; `locks/`, in the machine folder |
 | `bakehouse_setup.py` | `bakehouse setup`: makes a clone ready for its team. It makes the records worktree and its pointer, and writes the git hooks: pre-commit (`predict-gate.sh hook`) only with `--pre-commit`, and post-commit (`ops-gap.sh`) in repos the owner owns. | the records worktree and git config `bakehouse.records`; `.git/hooks/pre-commit` and `post-commit`; `git-hook`, in the machine folder |
+| `session-start.py` | The plugin's SessionStart hook: keeps the git-hook launcher on the installed plugin, and, in a project with a team, tells the session to load the `bakehouse:pm` skill (the role choice `role`, in the machine folder, can turn that off). | `git-hook`, in the machine folder |
 | `bakehouse_status.py` | `bakehouse status`: the team's state for any reader outside the tool ([PROJECT-TEAM.md](./PROJECT-TEAM.md), "Reading team state"). | nothing |
 
 `agents/` holds the nine agents the team's roles are filled by (`bakehouse:<agent>`). `skills/pm/` holds
-the role the main session can take, the skill `bakehouse:pm`. `skills/` also holds three method skills:
+the role the main session can take, the skill `bakehouse:pm`. `skills/` also holds three method skills. The
+four skills:
 
 | Skill | Use it when |
 |---|---|
+| `pm` | the main session takes the PM role (`bakehouse:pm`); the SessionStart hook asks for it in a project with a team |
 | `dev-team` | deciding whether to do work yourself or hand it to one agent or several, which model, and which checker to run before a finding or a change ships |
 | `step-back` | a chain of work shows strain — an estimate overrunning twice, a fix round producing a new finding of the same kind, a third agent on one item |
 | `live-prism` | one item keeps resisting a fix — look at its real input from at least three sides before writing another rule |

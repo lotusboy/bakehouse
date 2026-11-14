@@ -95,7 +95,7 @@ Where the owner keeps the decision ledger, record the question with `${CLAUDE_PL
 ask` before sending it (category, the options, the recommendation and your confidence), and record the
 owner's reply with `decision.sh answer`. The tool also asks for the evidence you read (`--read`) and,
 for a fix, what feeds the failing step (`--upstream`); the PM role's records section
-(`skills/pm/SKILL.md` §8) lists every flag.
+(the `bakehouse:pm` skill, §8) lists every flag.
 
 **This step-back is what unlocks the next round.** From a task's third fix round, `decision.sh ask`
 refuses without `--stepped-back`, and `spend.sh record --kind architect` refuses a second architect run
