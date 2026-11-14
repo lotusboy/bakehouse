@@ -410,8 +410,9 @@ after the measurement refuses the close.)
   removes an anchored line. A rewrite of the records branch's git history itself (amend, rebase,
   reset of an anchor commit) passes; the reflog shows it.
 
-**Before every commit.** `bakehouse setup` writes a pre-commit hook into the repository's local
-`.git/hooks`, which git never commits. The hook runs `predict-gate.sh hook` through the git-hook
+**Before every commit (opt-in).** `bakehouse setup --pre-commit` writes a pre-commit hook into the
+repository's local `.git/hooks`, which git never commits. Plain `bakehouse setup` does not: the hook is
+never installed automatically. The hook runs `predict-gate.sh hook` through the git-hook
 launcher in the machine folder.
 
 1. The hook acts only when a commit stages a `moves.measured*.json`. One under a `history/` folder is

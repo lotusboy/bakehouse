@@ -52,7 +52,9 @@ class Base(unittest.TestCase):
         self.git(repo, "commit", "-q", "--allow-empty", "-m", "first")
         return repo
 
-    def setup_in(self, cwd, *args):
+    def setup_in(self, cwd, *args, pre_commit=True):
+        """setup, with the opt-in pre-commit hook unless pre_commit=False."""
+        args = (*args, "--pre-commit") if pre_commit else args
         p = subprocess.run([str(BAKEHOUSE), "setup", *args], cwd=cwd, capture_output=True, text=True, env=self.env)
         return p.returncode, p.stdout + p.stderr
 
@@ -171,6 +173,22 @@ class Setup(Base):
         self.assertEqual(rc, 0, out)
         self.assertIn("checked out the branch bakehouse-records", out)
         self.assertEqual(self.git(rec, "rev-parse", "HEAD").stdout, head)
+
+    def test_without_the_flag_the_pre_commit_hook_is_not_installed(self):
+        rc, out = self.setup_in(self.repo, pre_commit=False)
+        self.assertEqual(rc, 0, out)
+        self.assertFalse(os.path.lexists(self.hook(self.repo, "pre-commit")))
+        self.assertEqual(self.hook(self.repo, "post-commit").read_text(), self.hook_text("post-commit"))
+        self.assertIn("bakehouse setup --pre-commit", out)
+
+    def test_a_lane_clone_without_the_flag_gets_no_pre_commit_hook(self):
+        self.setup_in(self.repo)
+        lane = self.tmp / "lane-np"
+        self.git(self.tmp, "clone", "-q", str(self.repo), str(lane))
+        rc, out = self.setup_in(lane, "--pointer", str(self.repo), pre_commit=False)
+        self.assertEqual(rc, 0, out)
+        self.assertFalse(os.path.lexists(self.hook(lane, "pre-commit")))
+        self.assertTrue(self.hook(lane, "post-commit").is_file())
 
     def test_an_unowned_binding_gets_the_pre_commit_hook_only(self):
         """Another party's commits are not the owner's to log (repo-hooks.sh's rule, kept)."""

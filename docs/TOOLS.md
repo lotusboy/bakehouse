@@ -42,7 +42,7 @@ Seven tools are a `.sh` file you call and a `.py` file beside it that does the w
 | `ops-event.sh` | Appends one event to the repo's ops ledger. | `ops/events.jsonl`, in the records folder |
 | `ops-gap.sh` | Says how many commits the ops ledger is behind. | nothing |
 | `lane-event.sh`, `heavy-run.sh` | Record parallel work inside one project; run one heavy job under its lane's lock. | `ops/lanes.jsonl`, in the records folder; `locks/`, in the machine folder |
-| `bakehouse_setup.py` | `bakehouse setup`: makes a clone ready for its team. It makes the records worktree and its pointer, and writes the git hooks: pre-commit (`predict-gate.sh hook`) always, and post-commit (`ops-gap.sh`) in repos the owner owns. | the records worktree and git config `bakehouse.records`; `.git/hooks/pre-commit` and `post-commit`; `git-hook`, in the machine folder |
+| `bakehouse_setup.py` | `bakehouse setup`: makes a clone ready for its team. It makes the records worktree and its pointer, and writes the git hooks: pre-commit (`predict-gate.sh hook`) only with `--pre-commit`, and post-commit (`ops-gap.sh`) in repos the owner owns. | the records worktree and git config `bakehouse.records`; `.git/hooks/pre-commit` and `post-commit`; `git-hook`, in the machine folder |
 | `bakehouse_status.py` | `bakehouse status`: the team's state for any reader outside the tool ([PROJECT-TEAM.md](./PROJECT-TEAM.md), "Reading team state"). | nothing |
 
 `agents/` holds the nine agents the team's roles are filled by (`bakehouse:<agent>`). `skills/pm/` holds

@@ -1,13 +1,15 @@
 """`bakehouse setup`: make a clone ready for its team (design 05 §4.5, §4.6, §4.8, §10.1 item 8). Standard
 library only. Run through bin/bakehouse.
 
-  bakehouse setup                          in the main clone
-  bakehouse setup --pointer <main clone>   in a lane clone
+  bakehouse setup [--pre-commit]                          in the main clone
+  bakehouse setup --pointer <main clone> [--pre-commit]   in a lane clone
 
 In the main clone it makes the records worktree in the sibling folder `<repo>.bakehouse-records`, on the
 orphan branch `bakehouse-records` (checked out instead when the branch already exists, here or on origin),
 and writes git config `bakehouse.records`. In a lane clone it only copies the main clone's pointer. Both
-then write the git-hook launcher in the machine folder and install the two git hooks, which exec it.
+then write the git-hook launcher in the machine folder and install the git hooks, which exec it: the
+post-commit drift report, and the pre-commit gate only with --pre-commit (as Permanence's
+`predict-gate.sh install-hook`, never run automatically; owner ruling 2026-11-14).
 
 The launcher holds one target line naming the plugin root. setup writes it; the plugin's SessionStart
 hook moves the target when the plugin folder changes. The hooks never name the plugin folder, which
@@ -25,7 +27,7 @@ import locator
 
 BRANCH = "bakehouse-records"
 MARKER = "# installed-by: bakehouse"
-USAGE = "usage: bakehouse setup [--pointer <main clone>]"
+USAGE = "usage: bakehouse setup [--pointer <main clone>] [--pre-commit]"
 GITIGNORE = """\
 # The ledger lock files (ops_ledger.lock_path, decision.locked): never committed.
 .*.lock
@@ -111,11 +113,15 @@ def owned(project) -> bool:
         return False
 
 
-def install_hooks(project, launcher: Path) -> bool:
-    """pre-commit always; post-commit only when the binding says "owned": true (another party's commits
-    are not the owner's to log). A hook without the marker is left alone, and core.hooksPath stops the
-    install: each is reported with the line to add instead. False when a hook was not installed."""
-    names = ["pre-commit"]
+def install_hooks(project, launcher: Path, pre_commit: bool) -> bool:
+    """pre-commit only when asked; post-commit only when the binding says "owned": true (another party's
+    commits are not the owner's to log). A hook without the marker is left alone, and core.hooksPath stops
+    the install: each is reported with the line to add instead. False when a hook was not installed."""
+    names = []
+    if pre_commit:
+        names.append("pre-commit")
+    else:
+        say("pre-commit: not installed; the predict-gate commit check is opt-in: bakehouse setup --pre-commit")
     if owned(project):
         names.append("post-commit")
     else:
@@ -161,10 +167,10 @@ def exclude_local_settings(project):
     say(f"{line} added to {path}")
 
 
-def finish(project, root, env) -> int:
+def finish(project, root, env, pre_commit) -> int:
     launcher = write_launcher(root, env)
     say(f"{launcher} written, target {root}")
-    ok = install_hooks(project, launcher)
+    ok = install_hooks(project, launcher, pre_commit)
     if project.team != project.root / ".team":
         exclude_local_settings(project)
     return 0 if ok else 1
@@ -218,7 +224,7 @@ def make_records(top: Path) -> Path | None:
     return folder
 
 
-def setup_main(top: Path, root, env) -> int:
+def setup_main(top: Path, root, env, pre_commit) -> int:
     try:
         project = locator.find(top, env)
     except locator.SetupNeeded:
@@ -230,16 +236,16 @@ def setup_main(top: Path, root, env) -> int:
             return 1
     if project is not None:
         say(f"already set up: records at {project.records}. Installing the hooks again.")
-        return finish(project, root, env)
+        return finish(project, root, env, pre_commit)
     folder = make_records(top)
     if folder is None:
         return 1
     git(top, "config", "bakehouse.records", str(folder))
     say(f"bakehouse.records = {folder}")
-    return finish(locator.find(top, env), root, env)
+    return finish(locator.find(top, env), root, env, pre_commit)
 
 
-def setup_pointer(top: Path, main_clone: str, root, env) -> int:
+def setup_pointer(top: Path, main_clone: str, root, env, pre_commit) -> int:
     try:
         if locator.find(top, env) is None:
             say(f"{top} has no team: no .team/binding.json, and no bakehouse.sidecar in its git config. "
@@ -257,11 +263,13 @@ def setup_pointer(top: Path, main_clone: str, root, env) -> int:
         return 1
     git(top, "config", "bakehouse.records", str(main.records))
     say(f"bakehouse.records = {main.records} (the records of {main.root})")
-    return finish(locator.find(top, env), root, env)
+    return finish(locator.find(top, env), root, env, pre_commit)
 
 
 def main(argv, root) -> int:
     env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"}
+    pre_commit = "--pre-commit" in argv
+    argv = [a for a in argv if a != "--pre-commit"]
     if argv and not (len(argv) == 2 and argv[0] == "--pointer"):
         print(USAGE)
         return 2
@@ -270,5 +278,5 @@ def main(argv, root) -> int:
         say(f"{Path.cwd()} is not inside a git repository")
         return 1
     if argv:
-        return setup_pointer(top, argv[1], root, env)
-    return setup_main(top, root, env)
+        return setup_pointer(top, argv[1], root, env, pre_commit)
+    return setup_main(top, root, env, pre_commit)
