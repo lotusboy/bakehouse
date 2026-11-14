@@ -65,7 +65,7 @@ class Base(unittest.TestCase):
         return Path(self.git(repo, "rev-parse", "--path-format=absolute", "--git-path", "hooks").stdout.strip()) / name
 
     def hook_text(self, name):
-        return f"#!/bin/sh\n# installed-by: bakehouse\nexec {shlex.quote(str(self.launcher))} {name}\n"
+        return bakehouse_setup.hook_stub(self.launcher, name)
 
     def records(self, repo):
         return repo.parent / f"{repo.name}.bakehouse-records"
@@ -447,6 +447,18 @@ class Hooks(Base):
         self.assertEqual(hook.read_text(), self.hook_text("pre-commit"))
         self.assertEqual(target.read_text(), before)
 
+    def test_a_missing_launcher_is_named_by_the_hook(self):
+        self.setup_in(self.repo)
+        self.launcher.unlink()
+        rc, out = self.commit(self.repo, "--allow-empty", "-m", "x")
+        self.assertNotEqual(rc, 0)
+        self.assertIn(f"bakehouse: the git-hook launcher {self.launcher} is missing or not executable", out)
+        self.assertIn("Run `bakehouse setup`", out)
+        p = subprocess.run([str(self.hook(self.repo, "post-commit"))], cwd=self.repo, capture_output=True, text=True,
+                           env=self.env)
+        self.assertEqual(p.returncode, 0)
+        self.assertIn("Run `bakehouse setup`", p.stderr)
+
     def test_the_launcher_with_its_target_gone(self):
         self.setup_in(self.repo)
         bakehouse_setup.write_launcher(self.tmp / "gone", env=self.env)
@@ -475,15 +487,32 @@ class SessionStart(Base):
     def test_retargets_the_launcher_to_the_plugin_root(self):
         bakehouse_setup.write_launcher("/old/root", env=self.env)
         new = self.tmp / "new root"
+        (new / "runtime").mkdir(parents=True)
+        (new / "runtime" / "predict-gate.sh").write_text("#!/bin/sh\n")
         self.run_hook(self.tmp, CLAUDE_PLUGIN_ROOT=str(new))
         self.assertEqual(bakehouse_setup.launcher_target(self.launcher), str(new))
         text = self.launcher.read_text()
         bakehouse_setup.write_launcher(new, env=self.env)
         self.assertEqual(self.launcher.read_text(), text)
 
+    def test_never_retargets_to_a_root_without_the_scripts(self):
+        bakehouse_setup.write_launcher(ROOT, env=self.env)
+        self.run_hook(self.tmp, CLAUDE_PLUGIN_ROOT=str(self.tmp / "elsewhere" / "bakehouse-v0"))
+        self.assertEqual(bakehouse_setup.launcher_target(self.launcher), str(ROOT))
+
     def test_never_creates_the_launcher(self):
         self.run_hook(self.tmp, CLAUDE_PLUGIN_ROOT=str(ROOT))
         self.assertFalse(self.launcher.exists())
+        # nor in a project whose git hooks are not bakehouse's
+        self.run_hook(self.make_repo("plain", None), CLAUDE_PLUGIN_ROOT=str(ROOT))
+        self.assertFalse(self.launcher.exists())
+
+    def test_recreates_a_missing_launcher_for_a_project_with_bakehouse_hooks(self):
+        self.setup_in(self.repo)
+        self.launcher.unlink()
+        self.run_hook(self.repo / ".team", CLAUDE_PLUGIN_ROOT=str(ROOT))
+        self.assertEqual(bakehouse_setup.launcher_target(self.launcher), str(ROOT))
+        self.assertTrue(os.access(self.launcher, os.X_OK))
 
     def test_no_team_prints_nothing(self):
         self.assertEqual(self.run_hook(self.make_repo("plain", None)), "")

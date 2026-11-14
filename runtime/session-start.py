@@ -3,7 +3,9 @@
 hook must never stop a session from starting.
 
 1. Moves the git-hook launcher's target to $CLAUDE_PLUGIN_ROOT when it differs (the plugin folder changes
-   on every update). Only `bakehouse setup` creates the launcher.
+   on every update), only when that root holds runtime/predict-gate.sh. A missing launcher is written again
+   only when this project's git hooks are bakehouse's (`bakehouse setup` wrote them); otherwise only setup
+   creates it.
 2. Finds the project ($CLAUDE_PROJECT_DIR) through the locator, and prints, for the session's context:
    nothing when there is no team; the locator's message when setup is needed; with a team and the role
    choice `pm`, one instruction to load the PM skill; nothing with `none`.
@@ -21,10 +23,29 @@ PM = ("bakehouse: this project has a team. Be its PM: load the `bakehouse:pm` sk
       "for the whole session.")
 
 
+def has_bakehouse_hooks(folder) -> bool:
+    """This project's git hooks folder holds a hook `bakehouse setup` wrote (its marker line)."""
+    p = bakehouse_setup.git(folder, "rev-parse", "--path-format=absolute", "--git-path", "hooks")
+    if p.returncode or not p.stdout.strip():
+        return False
+    for name in ("pre-commit", "post-commit"):
+        try:
+            if bakehouse_setup.MARKER in (Path(p.stdout.strip()) / name).read_text(errors="replace"):
+                return True
+        except OSError:
+            pass
+    return False
+
+
 def retarget(env):
     root = env.get("CLAUDE_PLUGIN_ROOT")
+    if not root or not (Path(root) / "runtime" / "predict-gate.sh").is_file():
+        return
     path = bakehouse_setup.launcher_path(env)
-    if root and path.is_file() and bakehouse_setup.launcher_target(path) != root:
+    if path.is_file():
+        if bakehouse_setup.launcher_target(path) != root:
+            bakehouse_setup.write_launcher(root, env)
+    elif has_bakehouse_hooks(locator.project_dir(None, env)):
         bakehouse_setup.write_launcher(root, env)
 
 

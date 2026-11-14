@@ -108,6 +108,16 @@ def write_launcher(root, env=os.environ) -> Path:
     return path
 
 
+def hook_stub(launcher: Path, name: str) -> str:
+    """The git hook: it execs the launcher, and names `bakehouse setup` when the launcher is missing (the
+    pre-commit hook then stops the commit, as a missing gate does; the post-commit hook does not)."""
+    q = shlex.quote(str(launcher))
+    return (f"#!/bin/sh\n{MARKER}\n"
+            f"[ -x {q} ] || {{ echo \"bakehouse: the git-hook launcher \"{q}\" is missing or not executable, so the {name} hook "
+            f"cannot run. Run \\`bakehouse setup\\` to write it again.\" >&2; exit {1 if name == 'pre-commit' else 0}; }}\n"
+            f"exec {q} {name}\n")
+
+
 def owned(project) -> bool:
     try:
         return json.loads(project.binding.read_text()).get("owned") is True
@@ -161,7 +171,7 @@ def install_hooks(project, launcher: Path, pre_commit: bool) -> bool:
                     f"  {add[n]}")
                 ok = False
                 continue
-        write_atomic(hook, f"#!/bin/sh\n{MARKER}\nexec {shlex.quote(str(launcher))} {n}\n")
+        write_atomic(hook, hook_stub(launcher, n))
         say(f"{hook} written")
     return ok
 
