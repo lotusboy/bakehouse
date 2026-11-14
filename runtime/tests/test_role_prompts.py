@@ -4,7 +4,11 @@ Review B3: the PM's reply shape asked every update for a decision id and a spend
 one-line run-start notice, the short session-start hand-back, and §8 ("none is required"). Review B4:
 the refactor reviewer was told both "at least 5" mutations and "`[]` when you performed none"."""
 
+import os
 import re
+import shlex
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -74,8 +78,26 @@ class TestRecordsAndLanes(unittest.TestCase):
 
     def test_m6_the_pm_commits_the_records_after_each_close_and_before_the_session_ends(self):
         b = bullet(self.pm, "The records folder is always committed: after each close, and before the session ends.")
-        self.assertIn("`git -C <records> add -A && git -C <records> commit -m \"<work order or 'records'>: records\"`", b)
+        self.assertIn("`git -C <records> add -A -- . ':!ops/events.jsonl' && git -C <records> commit -m "
+                      "\"<work order or 'records'>: records\"`", b)
         self.assertEqual(self.pm.count("git -C <records> add -A"), 1)
+
+    def test_p2_2_the_records_commit_stages_everything_but_the_ops_ledger(self):
+        # S16 fix2 P2-2: the seal anchors commit the ops ledger themselves, by path; the PM's add leaves it alone
+        b = bullet(self.pm, "The records folder is always committed: after each close, and before the session ends.")
+        add = b.split("`git -C <records> add", 1)[1].split(" && ", 1)[0]
+        with tempfile.TemporaryDirectory() as t:
+            rec = Path(t)
+            env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": t, "GIT_CONFIG_NOSYSTEM": "1",
+                   "GIT_CONFIG_GLOBAL": str(rec / ".gitconfig")}
+            subprocess.run(["git", "init", "-q", str(rec)], check=True, env=env)
+            for f in ("ops/events.jsonl", "decisions/ledger.jsonl", "spend/ledger.jsonl"):
+                (rec / f).parent.mkdir(exist_ok=True)
+                (rec / f).write_text("{}\n")
+            subprocess.run(f"git -C {shlex.quote(t)} add{add}", shell=True, check=True, env=env)
+            staged = subprocess.run(["git", "-C", t, "diff", "--cached", "--name-only"], capture_output=True,
+                                    text=True, check=True, env=env).stdout.split()
+        self.assertEqual(staged, ["decisions/ledger.jsonl", "spend/ledger.jsonl"])
 
     def test_m7_the_lane_variables_are_named_where_lanes_are_set(self):
         for text in (self.pm, self.change):
