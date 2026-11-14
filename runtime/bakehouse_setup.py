@@ -42,14 +42,8 @@ LAUNCHER = """\
 # `bakehouse setup` writes it; the plugin's SessionStart hook keeps ROOT on the installed plugin.
 # Usage: git-hook pre-commit|post-commit
 ROOT=@ROOT@
-# The records worktree shares its clone's hooks: a commit there runs no team hook.
-rec=$(git config --get bakehouse.records)
-if [ -n "$rec" ]; then
-  top=$(git rev-parse --show-toplevel 2>/dev/null)
-  if [ -n "$top" ] && [ "$(CDPATH= cd -- "$top" && pwd -P)" = "$(CDPATH= cd -- "$rec" 2>/dev/null && pwd -P)" ]; then
-    exit 0
-  fi
-fi
+# The records worktree shares its clone's hooks: a commit there (known by its branch) runs no team hook.
+[ "$(git symbolic-ref -q HEAD)" = refs/heads/bakehouse-records ] && exit 0
 case "$1" in
   pre-commit)
     gate="$ROOT/runtime/predict-gate.sh"
@@ -109,10 +103,12 @@ def write_launcher(root, env=os.environ) -> Path:
 
 
 def hook_stub(launcher: Path, name: str) -> str:
-    """The git hook: it execs the launcher, and names `bakehouse setup` when the launcher is missing (the
-    pre-commit hook then stops the commit, as a missing gate does; the post-commit hook does not)."""
+    """The git hook: it does nothing in the records worktree (known by its branch, as the launcher knows it), else
+    execs the launcher, and names `bakehouse setup` when the launcher is missing (the pre-commit hook then stops
+    the commit, as a missing gate does; the post-commit hook does not)."""
     q = shlex.quote(str(launcher))
     return (f"#!/bin/sh\n{MARKER}\n"
+            f"[ \"$(git symbolic-ref -q HEAD)\" = refs/heads/{BRANCH} ] && exit 0\n"
             f"[ -x {q} ] || {{ echo \"bakehouse: the git-hook launcher \"{q}\" is missing or not executable, so the {name} hook "
             f"cannot run. Run \\`bakehouse setup\\` to write it again.\" >&2; exit {1 if name == 'pre-commit' else 0}; }}\n"
             f"exec {q} {name}\n")

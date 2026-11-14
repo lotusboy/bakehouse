@@ -555,6 +555,30 @@ class Hooks(Base):
         self.assertEqual(p.returncode, 0)
         self.assertIn("Run `bakehouse setup`", p.stderr)
 
+    def records_commit(self):
+        rec = self.records(self.repo)
+        (rec / "ops").mkdir(exist_ok=True)
+        (rec / "ops" / "events.jsonl").write_text("{}\n")
+        self.git(rec, "add", "-A")
+        return self.commit(rec, "-m", "anchor")
+
+    def test_a_records_commit_runs_without_the_launcher(self):
+        # S16 fix2 P2-5: the stub knows the records worktree by its branch, before it checks the launcher
+        self.setup_in(self.repo)
+        self.launcher.unlink()
+        rc, out = self.records_commit()
+        self.assertEqual(rc, 0, out)
+        self.assertNotIn("launcher", out)
+
+    def test_the_launcher_knows_the_records_worktree_by_its_branch(self):
+        # S16 fix2 P2-5: not by comparing its path with the pointer, which may be stale or unset
+        self.setup_in(self.repo)
+        bakehouse_setup.write_launcher(self.fake_root(), env=self.env)
+        self.git(self.repo, "config", "--unset", "bakehouse.records")
+        rc, out = self.records_commit()
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self.marked(), [])
+
     def test_the_launcher_with_its_target_gone(self):
         self.setup_in(self.repo)
         bakehouse_setup.write_launcher(self.tmp / "gone", env=self.env)
