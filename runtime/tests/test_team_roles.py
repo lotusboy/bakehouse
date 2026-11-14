@@ -1113,14 +1113,14 @@ class TestDispatchDecision(DecisionFixture):
                                 or "is not a full path" in why or "holds text after its path" in why, why)
         self.assertEqual(self.logged(), [])
 
-    def test_the_project_dir_gives_the_cwds_binding_and_a_named_path_its_own_repos(self):
-        # the harness sets CLAUDE_PROJECT_DIR for a plugin hook; the hook judges its input's cwd, never that
-        # variable (S16 M2), and a path a brief names from that path's own repository
+    def test_a_cwd_with_no_team_takes_the_launch_projects_binding_and_a_named_path_its_own_repos(self):
+        # the harness sets CLAUDE_PROJECT_DIR (the launch project) for a plugin hook; the hook judges its input's
+        # cwd, and a cwd whose repo has no team takes the launch project's binding (S16 fix2 ANDON-A), while a
+        # path a brief names is judged from that path's own repository
         self.bpath.write_text(json.dumps({"owned": True, "reviews": "records/", "roles": {"engineer": "design-author"}}))
         self.project_dir = self.repo
         self.assertEqual(self.decide("role:engineer", "p", self.other)[0], "ok")
-        self.assertIn("role:engineer -> bakehouse:refactor-engineer (runtime/agent-roles.json key 'engineer')",
-                      self.log())
+        self.assertIn("role:engineer -> design-author (binding roles key 'engineer')", self.log())
         self.project_dir = self.ws
         got, sent = self.decide("role:reviewer", f"Review T7.\nRecord folder: {self.rf}/\n", self.ws)
         self.assertEqual((got, self.logged()[-1]["record"]["folder"]), ("ok", "records/2026-01-03-T7-x"))
@@ -1476,10 +1476,24 @@ class TestTheHooksFolder(Fixture):
         self.project_scope(self.repo)
         self.assertEqual(self.dispatch("role:architect", cwd=sibling), "DENY")
 
-    def test_a_folder_outside_the_repo_is_judged_as_itself(self):
+    def test_a_folder_outside_the_repo_takes_the_launch_projects_binding(self):
+        # S16 fix2 ANDON-A: the cwd's repo has no team, so the launch project's binding is read, the stricter of
+        # the two: its roles, its record-folder refusal, and its reviewer's run-record stop
         self.binding({"engineer": "design-author"})
         self.project_dir = self.repo
-        self.assertEqual(self.dispatch("role:engineer", cwd=self.other)["subagent_type"], "bakehouse:refactor-engineer")
+        self.assertEqual(self.dispatch("role:engineer", cwd=self.other)["subagent_type"], "design-author")
+        ti = {"subagent_type": "bakehouse:refactor-reviewer", "description": "d",
+              "prompt": "Review it.\nRecord folder: axis/runs/x/\n"}
+        self.assertEqual(self.dispatch("x", cwd=self.other, tool_input=ti), "DENY")
+        self.assertIn('"decision": "block"', self.stop(cwd=str(self.other)))
+        self.assertIn("requires a run record", self.stop(cwd=str(self.other)))
+
+    def test_the_cwds_own_team_wins_over_the_launch_projects(self):
+        self.binding({"engineer": "design-author"})
+        theirs = Path(self.tmp.name).resolve() / "theirs"
+        project(theirs, {"owned": True, "roles": {}})
+        self.project_dir = self.repo
+        self.assertEqual(self.dispatch("role:engineer", cwd=theirs)["subagent_type"], "bakehouse:refactor-engineer")
 
     def test_the_repo_is_judged_when_the_project_dir_is_a_parent_that_is_no_repo(self):
         self.binding({"engineer": "design-author"})

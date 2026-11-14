@@ -38,10 +38,11 @@ Each command runs a preflight first and stops before any work if the binding is 
 
 One module, `runtime/locator.py`, finds every file. It takes the project folder from
 `CLAUDE_PROJECT_DIR`, else the working folder, and asks `git rev-parse --show-toplevel` for the
-repository. The dispatch hook (`runtime/agent-roles.py`) never uses `CLAUDE_PROJECT_DIR`: it asks about the
-working folder its hook input names, and reads the plugin's switch-on (`.claude/settings*.json`) and a
-project-scope install from that folder's repository root. There is no registry. The files live in three
-places:
+repository. The dispatch hook (`runtime/agent-roles.py`) first asks about the working folder its hook input
+names. When that folder's repository has no team, it asks about `CLAUDE_PROJECT_DIR` (the folder the session
+was started in), so the stricter of the two holds. It reads the plugin's switch-on (`.claude/settings*.json`)
+and a project-scope install from the working folder's repository root. There is no registry. The files live
+in three places:
 
 1. **Project facts**, committed with the project: `.team/` in the repository. A repository another
    party owns keeps them in a sidecar folder instead, named by its git config `bakehouse.sidecar`.

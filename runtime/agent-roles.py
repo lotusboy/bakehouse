@@ -101,7 +101,8 @@ SEEN = MACHINE / "seen-agents"
 LOG = MACHINE / "logs" / "agent-roles.log"
 DISPATCHES = MACHINE / "logs" / "prediction-dispatch.jsonl"
 # a lookup asks the repo of the path it is given (the hook input's cwd, or a path a brief names), never
-# $CLAUDE_PROJECT_DIR's: the session may have been launched in another folder (S16 M2)
+# through $CLAUDE_PROJECT_DIR in its env: the session may have been launched in another folder (S16 M2). A cwd
+# whose repo has no team falls back to that launch folder's repo by name (lookup_paths, S16 fix2).
 NAMED_ENV = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"}
 MARKER = "[bakehouse:agent-roles]"
 PREDICTION_MARKER = "[bakehouse:prediction-record]"
@@ -147,13 +148,23 @@ class Unreadable(Exception):
 _BINDINGS = {}
 
 
+def lookup_paths(path, named):
+    """The paths a lookup asks, in order, until one has a team: the cwd's repo, then the session's launch
+    project ($CLAUDE_PROJECT_DIR), the stricter of the two (S16 fix2); a path a brief names, its own repo only."""
+    launch = None if named else os.environ.get("CLAUDE_PROJECT_DIR")
+    return [str(path)] + ([launch] if launch else [])
+
+
 def binding_at(path, named=False):
-    """(binding, problem) for the repo at path (team_roles.read_binding), read once per run, the locator
-    given what is left of the run's deadline. named: a path a brief names, not the cwd."""
+    """(binding, problem) for the repo at path (team_roles.read_binding; for the cwd, lookup_paths), read once
+    per run, the locator given what is left of the run's deadline. named: a path a brief names, not the cwd."""
     k = str(path)
     if (k, named) not in _BINDINGS:
-        t = min(team_roles.RESOLVE_TIMEOUT, left())
-        b, why = team_roles.read_binding(k, log, timeout=t, env=NAMED_ENV)
+        for at in lookup_paths(k, named):
+            t = min(team_roles.RESOLVE_TIMEOUT, left())
+            b, why = team_roles.read_binding(at, log, timeout=t, env=NAMED_ENV)
+            if b or why:
+                break
         if why and t < team_roles.RESOLVE_TIMEOUT and ("did not answer" in why or "was not run" in why):
             why = (f"the hook's {RUN_BUDGET_S} s run deadline ran out: earlier calls in this run (a slow locator or "
                    f"git) used {time.monotonic() - START:.1f} s of it, so {why}")
