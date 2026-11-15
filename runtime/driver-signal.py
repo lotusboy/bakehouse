@@ -66,11 +66,14 @@ A run folder's date is the `YYYY-MM-DD` its name starts with; a folder with no d
 
 THE STATE. A family's count is `minRuns` when its coherence is `coherent` or more, else
 `minRunsNameOnly`. A family in its count or more run folders dated inside the window, with no
-decision, is `build-candidate`; under that it is `watch`. A decision (`build`, `adopt` or `accept`,
-with a `date`) is written by a person under the family's `decision` key and is NEVER overwritten. A
-decided family is `decided`, and is raised again (`build-candidate-again`) when its count or more run
-folders dated after the decision and inside the window hold it. Each raised family carries a `flag`:
-its owner and its next step, a build, adopt or accept proposal to the owner.
+decision, is `build-candidate`; under that it is `watch`. A decision (`build`, `adopt`, `accept` or
+`team`, with a `date`) is written by a person under the family's `decision` key and is NEVER
+overwritten. `build` lands a tool in the project; `team` sends the family to bakehouse's own backlog
+instead (the signal cannot tell an app tool from a team tool), and carries `item`, a non-empty string
+naming the backlog item it became. A decided family is `decided`, and is raised again
+(`build-candidate-again`) when its count or more run folders dated after the decision and inside the
+window hold it. Each raised family carries a `flag`: its owner and its next step, a build, adopt,
+accept or team proposal to the owner.
 
 POINT, DON'T CARRY. A decision never moves to another family by itself. A decided id that is no
 longer listed (a cluster whose first file changed, a cluster folded into a name family) is kept as a
@@ -100,12 +103,13 @@ from pathlib import Path
 DEFAULTS = {"threshold": 0.5, "boilerplate": 0.75, "windowDays": 30, "minRuns": 3, "minRunsNameOnly": 5,
             "coherent": 0.5, "maxBytes": 1_000_000, "nested": False, "register": "drivers.json", "owner": "pm",
             "families": []}
-DECISIONS = ("build", "adopt", "accept")
+DECISIONS = ("build", "adopt", "accept", "team")
 SUFFIXES = (".py", ".sh")
 SHINGLE, MIN_SHINGLES, BOILERPLATE_FLOOR, MAX_WINDOW = 6, 30, 10, 3650
 SKIPS = ("symlinks", "tooLarge", "unreadable")
 ROUND_WORDS = {"fix", "fx", "fr", "new", "old", "tmp", "final"}
-NEXT = "propose to the owner: build one shared tool, adopt an existing one, or accept the copies"
+NEXT = ("propose to the owner: build one shared tool, adopt an existing one, accept the copies, or make it a team "
+        "tool (an item in bakehouse's own backlog)")
 NEXT_PRIOR = ("not new: an earlier decision covers some of these files (see priorDecision); propose to the owner "
               "to confirm it by writing a decision on this family's own id, or to decide afresh")
 DATED = re.compile(r"^(\d{4}-\d{2}-\d{2})")
@@ -358,6 +362,9 @@ def read_register(path):
 def check_decision(fid, d):
     if (not isinstance(d, dict) or d.get("decision") not in DECISIONS or not isinstance(d.get("date"), str)):
         fail(f"families.{fid}.decision needs a date and one of {' | '.join(DECISIONS)}, got {d!r}")
+    if d["decision"] == "team" and not (isinstance(d.get("item"), str) and d["item"].strip()):
+        fail(f"families.{fid}.decision is team, so it needs an item: the bakehouse backlog item it became, "
+             f"got {d!r}")
     try:
         return date.fromisoformat(d["date"])
     except ValueError:
