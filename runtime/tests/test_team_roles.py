@@ -1580,6 +1580,10 @@ class TestTheHooksFolder(Fixture):
         link.symlink_to(self.repo)
         self.project_scope(link)
         self.assertEqual(self.dispatch("role:architect")["subagent_type"], "bakehouse:architect")
+        # R0.1 S15-1: a project reached through a symlinked folder resolves, from either side
+        self.assertEqual(self.dispatch("role:architect", cwd=link)["subagent_type"], "bakehouse:architect")
+        self.project_scope(self.repo)
+        self.assertEqual(self.dispatch("role:architect", cwd=link)["subagent_type"], "bakehouse:architect")
         # /a/proj2 is not /a/proj
         sibling = Path(f"{self.repo}2")
         project(sibling, {"owned": True, "roles": {}})
