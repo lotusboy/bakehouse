@@ -48,7 +48,8 @@ THE TWO RULES. Content, not presence: an empty file always fails.
       the latest step proof (a `byte-identical*`, or a meaning-change step's measured file), is
       flagged `refactor.byte-identical`.
   (b) `<job>.<artefact>`: every record folder that marks a job holds each active artefact the job
-      requires: a prediction that predict-gate's own checker accepts and that names a move; each
+      requires: a prediction that predict-gate's own checker accepts and that names a move (or declares
+      "noMoves": true beside a measured pair that moved 0 keys); each
       prediction round's baseline and measured file, as flat JSON; a reviewer's mutation record in
       the mutation-record format (check_mutations), one beside each findings file (the artefact's
       `per`: findings.md owes mutations.json, findings-fix1.md owes mutations-fix1.json); each findings
@@ -706,8 +707,11 @@ def check_folder(files, job, read: Reader, gates: set = frozenset(), rows: dict 
                     out.append((rid, kind, f"{n} is empty"))
                     continue
                 try:
-                    if not pg.check_prediction(pg.load(Path(n), text), Path(n))["moves"]:
-                        out.append((rid, kind, f"{n} names no move"))
+                    pred = pg.check_prediction(pg.load(Path(n), text), Path(n))
+                    moved = None if pred["moves"] else pg.pair_moved(
+                        n, pred, lambda x: x in files, lambda x: read.text(files[x]))
+                    if why := pg.no_move_refusal(len(pred["moves"]), pred["noMoves"], moved):
+                        out.append((rid, kind, f"{n} {why}"))
                 except pg.BadInput as e:
                     out.append((rid, kind, f"{n} does not parse under predict-gate's checker: {e}"))
         elif kind in ("baseline", "measured"):

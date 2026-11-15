@@ -37,8 +37,9 @@ round chained on another measurement, e.g. "moves.measured.built-v5.json"); move
 moves.baseline.json. `check` finds P and B beside M from M's round when they are not given.
 
 close WORK-ORDER: see docs/PREDICT-GATE.md, "Closing a work order". Reads the record folder from git
-at HEAD; refuses unless every top-level prediction names a move and passes against its own round's
-measured file, and every top-level measured file is part of a pair. history/ is listed, never checked.
+at HEAD; refuses unless every top-level prediction names a move (or declares "noMoves": true, beside a
+pair that moved 0 keys) and passes against its own round's measured file, and every top-level measured
+file is part of a pair. history/ is listed, never checked.
 Four exceptions need the owner's decision, cited in a `Prediction-approved: <decision id>` git
 trailer on the commit that made them and answered in the project's decision ledger before that
 commit: a prediction changed after its measurement; a commit touching history/ that is not before
@@ -159,12 +160,17 @@ def key_matcher(pat: str):
 def check_prediction(p, path: Path) -> dict:
     if not isinstance(p, dict):
         raise BadInput(f"{path} must be one object with 'moves' and 'mustNotMove'")
-    unknown = set(p) - {"moves", "mustNotMove", "tolerance", "about", "baseline"}
+    unknown = set(p) - {"moves", "mustNotMove", "tolerance", "about", "baseline", "noMoves"}
     if unknown:
         raise BadInput(f"{path}: unknown field(s) {sorted(unknown)}")
     moves, mnm = p.get("moves") or [], p.get("mustNotMove") or []
     if not isinstance(moves, list) or not isinstance(mnm, list):
         raise BadInput(f"{path}: 'moves' and 'mustNotMove' must be lists")
+    no_moves = p.get("noMoves", False)
+    if not isinstance(no_moves, bool):
+        raise BadInput(f"{path}: 'noMoves' must be true or false")
+    if no_moves and moves:
+        raise BadInput(f"{path}: 'noMoves' is true and the prediction lists {len(moves)} move(s); give one or the other")
     tol = p.get("tolerance", 0)
     if not isinstance(tol, (int, float)) or tol < 0:
         raise BadInput(f"{path}: 'tolerance' must be a number >= 0")
@@ -193,7 +199,41 @@ def check_prediction(p, path: Path) -> dict:
             raise BadInput(f"{path}: every mustNotMove entry must be a key")
         if any(m["what"] == k for m in moves):
             raise BadInput(f"{path}: {k!r} is both in mustNotMove and predicted to move")
-    return {"moves": moves, "mustNotMove": mnm, "tolerance": tol, "baseline": base}
+    return {"moves": moves, "mustNotMove": mnm, "tolerance": tol, "baseline": base, "noMoves": no_moves}
+
+
+def no_move_refusal(named: int, no_moves: bool, moved) -> str | None:
+    """Why a prediction that names no move is refused; None when it is accepted. named: the moves it names;
+    moved: the keys its measured pair moved, or None when it has no readable pair. A prediction that names
+    no move is accepted only when it declares "noMoves": true and its measured pair moved 0 keys. Shared by
+    close, records-check and the stop check."""
+    if named:
+        return None
+    if not no_moves:
+        return ("names no move: a change predicts what it moves (a round that moves nothing declares "
+                '"noMoves": true)')
+    if moved is None:
+        return ("declares noMoves and has no measured pair: noMoves is accepted only beside its measured pair, "
+                "showing 0 moved keys")
+    if moved:
+        return f"declares noMoves, and {moved} key(s) moved: each one is an unpredicted move"
+    return None
+
+
+def pair_moved(pred_name: str, pred: dict, exists, text) -> int | None:
+    """The keys the prediction's measured pair moved, or None when the measured file or the baseline of its
+    round is absent or does not read. exists(name) and text(name) read the files beside the prediction."""
+    rnd = PREDICTION_RE.match(pred_name).group(1)
+    meas_n = f"moves.measured{rnd}.json"
+    base_n = pred["baseline"] or baseline_name(rnd, exists)
+    if not (exists(meas_n) and exists(base_n)):
+        return None
+    try:
+        base = flat(load(Path(base_n), text(base_n)), Path(base_n))
+        meas = flat(load(Path(meas_n), text(meas_n)), Path(meas_n))
+    except (BadInput, OSError, ValueError):
+        return None
+    return compare(pred, base, meas)["moved"]
 
 
 def _num(v) -> bool:
@@ -382,7 +422,7 @@ def run_check(pred_path: Path, base_path: Path, meas_path: Path, override: str, 
     meas = flat(load(meas_path, texts.get("measured")), meas_path)
     r = compare(pred, base, meas)
     if result is not None:
-        result.update(r, named=len(pred["moves"]))
+        result.update(r, named=len(pred["moves"]), noMoves=pred["noMoves"])
     print(report(r, {"prediction": pred_path, "baseline": base_path, "measured": meas_path}))
     if not r["failures"]:
         if override:
@@ -1183,8 +1223,8 @@ def run_close(wo: str, repo_arg: str | None, binding_arg: str | None, merged: bo
             if rc:
                 refused.append(f"{rel(pred)}: check exit {rc}")
                 continue
-            if not result["named"]:
-                refused.append(f"{rel(pred)} names no move. A change predicts what it moves.")
+            if why := no_move_refusal(result["named"], result["noMoves"], result["moved"]):
+                refused.append(f"{rel(pred)} {why}")
                 continue
             if result["moved"] == 0 and result["named"]:
                 refused.append(f"{rel(pred)}: 0 keys moved, and the prediction names {result['named']} move(s). "

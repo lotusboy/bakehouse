@@ -228,6 +228,12 @@ class TestRecordRule(Fixture):
         f = self.rec(**{"moves.prediction.json": json.dumps({"moves": [], "mustNotMove": ["x"]})})
         self.assertIn("names no move", f[("T1", "change.prediction")]["what"][0])
 
+    def test_s1_a_no_moves_prediction_passes_only_with_a_zero_move_pair(self):
+        f = self.rec(**{"moves.prediction.json": json.dumps({"noMoves": True}), "moves.measured.json": BASE})
+        self.assertNotIn(("T1", "change.prediction"), f)
+        f = self.rec(**{"moves.prediction.json": json.dumps({"noMoves": True}), "moves.measured.json": MEAS})
+        self.assertIn("declares noMoves, and 1 key(s) moved", f[("T1", "change.prediction")]["what"][0])
+
     def test_a_measured_file_that_is_not_flat_fails(self):
         f = self.rec(**{"moves.measured.json": json.dumps({"count:x": [2]})})
         self.assertIn("is not flat JSON", f[("T1", "change.measured")]["what"][0])

@@ -57,6 +57,17 @@ class Check(unittest.TestCase):
         self.assertIn("rules:fired: 120 -> 120. Predicted: change of +2. Not met: it did not move.", p.stdout)
         self.assertIn("Not met: no measured key matches it.", p.stdout)
 
+    def test_s1_a_no_moves_prediction_whose_pair_moves_refuses_like_an_unpredicted_move(self):
+        p = self.run_gate({"noMoves": True}, self.after(rules__fired=121))
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn("4. Moved, and nobody predicted it: 1. Each one stops the commit.", p.stdout)
+
+    def test_s1_no_moves_with_a_listed_move_or_not_true_or_false_is_bad_input(self):
+        for pred in ({"noMoves": True, "moves": [{"what": "rules:fired"}]}, {"noMoves": "yes"}):
+            p = self.run_gate(pred, BASE)
+            self.assertEqual(p.returncode, 2, (pred, p.stdout, p.stderr))
+            self.assertIn("noMoves", p.stderr)
+
     def test_moved_to_a_different_value_refuses(self):
         p = self.run_gate({"moves": [{"what": "rules:fired", "delta": 2}]}, self.after(rules__fired=125))
         self.assertEqual(p.returncode, 1)
@@ -761,6 +772,12 @@ class CloseLedger(RepoFixture):
         # a refused close writes one gate-refused event, and nothing else
         self.assertEqual([(e["kind"], e.get("gate")) for e in self.events()],
                          [("gate-refused", "predict-gate:close")] * 2)
+
+    def test_s1_a_declared_no_moves_round_closes(self):
+        self.trio(prediction={"noMoves": True, "mustNotMove": ["rules:*"]}, measured=BASE)
+        p = self.close()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn("Result: CLOSED", p.stdout)
 
     def test_a_named_baseline_committed_with_or_after_its_prediction_refuses_unless_approved(self):
         self.trio()

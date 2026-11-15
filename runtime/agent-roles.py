@@ -51,7 +51,8 @@ Three entry points, all wired by the plugin's hooks:
         record folder its brief names (`Record folder:`, read by record_line; else the binding's folder
         for that id) holds
         a moves.prediction<R>.json that predict-gate's own checker accepts and that names at least one
-        move. Every stop of that agent type logs whether line 1 ends with the marker (PROMPT-SOURCE).
+        move, or declares "noMoves": true beside its measured pair when that pair moved 0 keys. Every
+        stop of that agent type logs whether line 1 ends with the marker (PROMPT-SOURCE).
   --check-new                 (SessionStart) print agents installed since the last check, once.
 
 Measured behaviour this relies on (2026-09-30, in a live session): PreToolUse fires for Agent calls
@@ -598,7 +599,9 @@ def pre_tool_use(d):
         ti["prompt"] = (ti.get("prompt") or "") + (
             f"\n\nBefore you stop, {where} must hold the prediction as moves.prediction.json (a fix round: "
             "moves.prediction.<round>.json, for example moves.prediction.fix1.json), in the format "
-            "`predict-gate.sh check` reads, naming at least one move. A prose prediction may sit beside it. "
+            "`predict-gate.sh check` reads, naming at least one move (a round that moves nothing declares "
+            "\"noMoves\": true, and is accepted beside its measured pair when that pair moved 0 keys). "
+            "A prose prediction may sit beside it. "
             f"The stop hook sends you back once if it is missing, empty or does not parse.\n{PREDICTION_MARKER}")
         notes.append(f"prediction-record rule added ({decided[3] if decided else 'no Record folder line'})")
 
@@ -713,7 +716,8 @@ def unsealed_moves(folders, where, named):
 
 def prediction_stop(d):
     """The change engineer may stop only when its own record folder holds a prediction file that
-    predict-gate's own checker accepts and that names at least one move."""
+    predict-gate's own checker accepts and that names at least one move, or that declares "noMoves": true
+    beside its measured pair when that pair moved 0 keys (predict-gate's no_move_refusal)."""
     prompt = first_prompt(d.get("agent_transcript_path"))
     lines = [x.strip() for x in prompt.splitlines() if x.strip()]
     marked = bool(lines) and lines[-1] == PREDICTION_MARKER
@@ -762,10 +766,14 @@ def prediction_stop(d):
         for p in sorted(f.iterdir()) if f.is_dir() else []:
             if p.is_file() and gate.PREDICTION_RE.match(p.name):
                 try:
-                    if gate.check_prediction(gate.load(p), p)["moves"]:
-                        good.append(p)
+                    pred = gate.check_prediction(gate.load(p), p)
+                    moved = None if pred["moves"] else gate.pair_moved(
+                        p.name, pred, lambda n, f=f: (f / n).is_file(), lambda n, f=f: (f / n).read_text(encoding="utf-8"))
+                    why = gate.no_move_refusal(len(pred["moves"]), pred["noMoves"], moved)
+                    if why:
+                        bad.append(f"{p.name} {why}")
                     else:
-                        bad.append(f"{p.name} names no move: a change predicts what it moves")
+                        good.append(p)
                 except gate.BadInput as e:
                     bad.append(str(e))
     if good and not bad:

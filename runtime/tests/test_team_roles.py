@@ -571,6 +571,22 @@ class TestPredictionStop(TestPredictionRecord):
         self.assertIn('"decision": "block"', self.engineer_stop(brief, files={"prediction.md": "prose"}))
         self.assertEqual(self.engineer_stop(brief, files={"moves.prediction.json": self.OK}), "")
 
+    def test_s1_a_no_moves_prediction_with_its_zero_move_pair_lets_the_engineer_stop(self):
+        pair = json.dumps({"tests:passed": 11})
+        out = self.engineer_stop(self.marked(), files={"moves.prediction.json": json.dumps({"noMoves": True}),
+                                                       "moves.baseline.json": pair, "moves.measured.json": pair})
+        self.assertEqual(out, "")
+        self.assertIn("PREDICTION ok for refactor-engineer", self.log())
+
+    def test_s1_a_no_moves_prediction_needs_its_measured_pair_with_no_move(self):
+        out = self.engineer_stop(self.marked(), files={"moves.prediction.json": json.dumps({"noMoves": True})})
+        self.assertIn('"decision": "block"', out)
+        self.assertIn("declares noMoves and has no measured pair", out)
+        out = self.engineer_stop(self.marked(), files={"moves.baseline.json": json.dumps({"tests:passed": 11}),
+                                                       "moves.measured.json": json.dumps({"tests:passed": 12})})
+        self.assertIn('"decision": "block"', out)
+        self.assertIn("declares noMoves, and 1 key(s) moved", out)
+
     def test_an_empty_prediction_is_refused(self):
         out = self.engineer_stop(self.marked(), files={"moves.prediction.json": json.dumps({"moves": [], "mustNotMove": ["x"]})})
         self.assertIn('"decision": "block"', out)

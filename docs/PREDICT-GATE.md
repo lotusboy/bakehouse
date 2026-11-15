@@ -48,6 +48,12 @@ Rules for the prediction:
 5. `tolerance` is an absolute numeric tolerance. The default is 0.
 6. `baseline` (optional) names the file the prediction is measured against, as a plain file name
    beside it. A chained fix round uses it: `"baseline": "moves.measured.built-v5.json"`.
+7. `noMoves` (optional, `true` or `false`) declares a round that moves nothing:
+   `{"noMoves": true, "mustNotMove": ["out:*"]}`. A prediction with `"noMoves": true` that also lists
+   a move is bad input (exit 2). It is accepted only beside its measured pair, and only when that pair
+   shows 0 moved keys. A key that moves in a `noMoves` round is an unpredicted move, and `check`
+   refuses it (section 4). Close, records-check and the stop check accept it by one rule
+   (`no_move_refusal` in `runtime/predict-gate.py`).
 
 **Run it.**
 
@@ -110,7 +116,8 @@ When close refuses (exit 1). Each reason names the file:
 3. A top-level `moves.measured*` file has no prediction of its own round, and no prediction names it
    as its `baseline`.
 4. A check does not exit 0.
-5. A prediction that names no move. A change predicts what it moves.
+5. A prediction that names no move. A change predicts what it moves. The exception is a prediction
+   that declares `"noMoves": true` (rule 7 of the prediction) and whose measured pair moved 0 keys.
 6. A pair in which 0 keys moved while the prediction names moves. The measured file is stale.
 7. One of the four exceptions below without the owner's approval (see "The owner's approval"):
    - a commit after the measured file's first commit that changes the prediction;
@@ -467,7 +474,8 @@ hard gate.
 4. It checks only the engineer's own record folder: the `Record folder:` line of its brief, else the
    binding's folder for the `Work order <id>:`. Another folder never satisfies it.
 5. It sends the engineer back once unless that folder holds a `moves.prediction*.json` that `check`
-   reads and that names at least one move.
+   reads and that names at least one move. A prediction that declares `"noMoves": true` passes too, when
+   its measured pair is beside it and moved 0 keys.
 5b. Then it sends the engineer back once for any top-level moves file (prediction, baseline
    or measured) whose bytes no `sealed` or `revised` event in its project's ops ledger names: the
    project of the bound repository. The reason names each unsealed file
