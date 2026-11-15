@@ -297,14 +297,15 @@ def known_role(spec, lvls):
     return any(k in table for _, table in lvls for k in keys)
 
 
-def is_agent(agent_type, name, users=frozenset()):
+def is_agent(agent_type, name, users=frozenset):
     """True when agent_type is the agent `name`: a plugin agent may be reported with or without its plugin prefix.
-    A bare name is the plugin's agent only when no user or project agent has that name (users: user_agents);
-    else it is that agent of the user's own (R0.1 S6 #2)."""
-    return agent_type == name or (name.split(":")[-1] == agent_type and agent_type not in users)
+    A bare name is the plugin's agent only when no user or project agent has that name; else it is that agent of
+    the user's own (R0.1 S6 #2). users: a function giving those names (user_agents), called only when a bare name
+    matches a plugin agent's, so a dispatch that needs no such answer runs no git for it."""
+    return agent_type == name or (name.split(":")[-1] == agent_type and agent_type not in users())
 
 
-def role_of(agent_type, tables, users=frozenset()):
+def role_of(agent_type, tables, users=frozenset):
     """(role name, entry) of the first table entry listing agent_type as a provider (is_agent, with users)."""
     if not agent_type:
         return None, None

@@ -496,10 +496,19 @@ def tables():
             team_roles.table_roles(team_roles.shipped_table())]
 
 
+_USERS = {}
+
+
 def users_at(cwd):
-    """The names of the user's and the project's own agents for cwd (team_roles.user_agents): a bare agent name
-    among them is that agent, never a plugin agent of the same name (R0.1 S6 #2)."""
-    return team_roles.user_agents(team_roles.project_top(cwd))
+    """A function giving the names of the user's and the project's own agents for cwd (team_roles.user_agents): a
+    bare agent name among them is that agent, never a plugin agent of the same name (R0.1 S6 #2). Read once per
+    run, and only when asked; the project's folder is found by repo_root, inside the run's deadline."""
+    def users():
+        k = str(cwd)
+        if k not in _USERS:
+            _USERS[k] = team_roles.user_agents(repo_root(k))
+        return _USERS[k]
+    return users
 
 
 def reviews_folder(binding):
