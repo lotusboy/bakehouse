@@ -220,6 +220,38 @@ def no_move_refusal(named: int, no_moves: bool, moved) -> str | None:
     return None
 
 
+def missed_refusals(name: str, missed: list, text: str | None) -> list:
+    """The owner's rule Q3, option C (2026-11-15): close refuses until every predicted move that did not
+    happen (check's section 2) has a one-line reason, written by the engineer, in the round's
+    moves.missed<R>.json beside its measured file: {"<key>": "<reason>"}. A predicted new key that never
+    appears is one of them. name: that file's path in the repository; missed: compare's "missed" rows;
+    text: the file's text at HEAD, or None when it is not there. Each refusal names the file and the key."""
+    keys = {k: why for _, k, _, _, why in missed}
+    if text is None:
+        return [f"{name}: no reason for {k}, a predicted move that did not happen ({why}); the file is not in git "
+                'at HEAD. Write {"<key>": "<reason>"}, one line each, and commit it' for k, why in keys.items()]
+    try:
+        reasons = json.loads(text)
+    except ValueError as e:
+        return [f"{name} is not one JSON object of key -> reason: {e}"]
+    if not isinstance(reasons, dict):
+        return [f"{name} is not one JSON object of key -> reason"]
+    out = []
+    for k, why in keys.items():
+        r = reasons.get(k)
+        if k not in reasons:
+            out.append(f"{name}: no reason for {k}, a predicted move that did not happen ({why})")
+        elif not isinstance(r, str):
+            out.append(f"{name}: the reason for {k} is not text")
+        elif not r.strip():
+            out.append(f"{name}: the reason for {k} is empty")
+        elif len(r.strip().splitlines()) > 1:
+            out.append(f"{name}: the reason for {k} is not one line")
+    out += [f"{name}: {k} was not missed in this round: a reason is written only for a predicted move that did "
+            "not happen" for k in reasons if k not in keys]
+    return out
+
+
 def pair_moved(pred_name: str, pred: dict, exists, text) -> int | None:
     """The keys the prediction's measured pair moved, or None when the measured file or the baseline of its
     round is absent or does not read. exists(name) and text(name) read the files beside the prediction."""
@@ -338,6 +370,9 @@ def report(r: dict, files: dict) -> str:
     section("2. Predicted, and it did not happen (reported; does not stop)",
             [f"{k}: {show(b)} -> {show(a)}. Predicted: {expected(m)}. Not met: {why}.{scope(m)}"
              for m, k, b, a, why in r["missed"]], False)
+    if r["missed"]:  # the owner's rule Q3: close needs a reason for each one
+        lines[-1:] = ["  Close needs a one-line reason for each one, written by the engineer, in the round's "
+                      'moves.missed<R>.json beside the measured file: {"<key>": "<reason>"}.', ""]
     section("3. Predicted to move, and it moved to a different value",
             [f"{k}: {show(b)} -> {show(a)}. Predicted: {expected(m)}. Not met: {why}.{scope(m)}"
              for m, k, b, a, why in r["wrong"]], True)
@@ -1229,6 +1264,11 @@ def run_close(wo: str, repo_arg: str | None, binding_arg: str | None, merged: bo
             if result["moved"] == 0 and result["named"]:
                 refused.append(f"{rel(pred)}: 0 keys moved, and the prediction names {result['named']} move(s). "
                                f"{meas_n} is a stale measurement (it equals the baseline).")
+                continue
+            missed_n = f"moves.missed{rnd}.json"
+            if why := missed_refusals(rel(folder / missed_n), result["missed"],
+                                      text(missed_n) if missed_n in top_names else None):
+                refused += why
                 continue
             hp, hm = sha256(raw(n)), sha256(raw(meas_n))
             again = [f"{x} (sha256 already recorded by the close of {earlier[h]})"

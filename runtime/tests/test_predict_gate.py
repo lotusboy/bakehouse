@@ -304,6 +304,52 @@ class Close(RepoFixture):
         self.assertIn(f"moves.prediction.json sha256:{self.sha('moves.prediction.json')}", ev["note"])
         self.assertIn(f"moves.measured.json sha256:{self.sha('moves.measured.json')}", ev["note"])
 
+    # ---- R0.1 S1, the owner's rule Q3 option C: a predicted move that did not happen is explained ----
+
+    MISSED_P = {"moves": [{"what": "rules:fired", "from": 120, "to": 121},
+                          {"what": "gaps:capture", "range": [370, 370]},
+                          {"what": "rules:new", "to": 1}]}
+
+    def test_s1_q3_close_refuses_a_missed_move_with_no_reason(self):
+        self.trio(prediction=self.MISSED_P)
+        p = self.close()
+        self.assertEqual(p.returncode, 1, p.stdout)
+        # check still reports the section and does not stop
+        self.assertIn("2. Predicted, and it did not happen (reported; does not stop): 2.", p.stdout)
+        self.assertIn("Result: PASS", p.stdout)
+        # a predicted new key that never appears is a missed move too
+        for key in ("gaps:capture", "rules:new"):
+            self.assertIn(f"runs/2026-01-02-T7-step1-review/moves.missed.json: no reason for {key}", p.stdout)
+        self.assertIn("not in git at HEAD", p.stdout)
+
+    def test_s1_q3_each_bad_reason_file_refuses_naming_the_file_and_the_key(self):
+        self.trio(prediction=self.MISSED_P)
+        ok = {"gaps:capture": "held value, written as a move by mistake", "rules:new": "the key is not emitted yet"}
+        for missed, why in (
+            ({"gaps:capture": ok["gaps:capture"]}, "moves.missed.json: no reason for rules:new"),
+            ({**ok, "rules:new": "  "}, "moves.missed.json: the reason for rules:new is empty"),
+            ({**ok, "rules:new": "one\ntwo"}, "moves.missed.json: the reason for rules:new is not one line"),
+            ({**ok, "rules:fired": "x"}, "moves.missed.json: rules:fired was not missed in this round"),
+            (["gaps:capture"], "moves.missed.json is not one JSON object of key -> reason"),
+        ):
+            with self.subTest(missed=missed):
+                self.put("moves.missed.json", missed)
+                p = self.close()
+                self.assertEqual(p.returncode, 1, p.stdout)
+                self.assertIn(why, p.stdout)
+        self.put("moves.missed.json", ok)
+        p = self.close()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+
+    def test_s1_q3_a_fix_rounds_reasons_sit_in_its_own_file(self):
+        self.trio()
+        self.trio(rnd=".fix1", prediction=self.MISSED_P)
+        self.put("moves.missed.json", {"gaps:capture": "x", "rules:new": "y"})
+        p = self.close()
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("moves.missed.fix1.json: no reason for gaps:capture", p.stdout)
+        self.assertIn("moves.missed.json: gaps:capture was not missed in this round", p.stdout)
+
     def test_close_refuses_when_a_check_refuses(self):
         self.trio(measured={**BASE, "rules:fired": 121, "gaps:capture": 371})
         p = self.close()

@@ -11,13 +11,15 @@ engineer judged the move fine and committed. Nothing compared the prediction wit
 before and after the change. It exits non-zero on any move nobody predicted. It is generic: it knows
 no repo. Each key is a name the repo's own measurement scripts emit.
 
-**The three files**, kept together in one run folder:
+**The files**, kept together in one run folder. The fourth, the missed file, is needed only when a
+predicted move did not happen:
 
 | File | Written | Holds |
 |---|---|---|
 | `moves.prediction.json` | before the first edit | the predicted moves |
 | `moves.baseline.json` | measured before the change | flat `{key: value}` |
 | `moves.measured.json` | measured after the change | flat `{key: value}` |
+| `moves.missed.json` | after the measurement, when a predicted move did not happen | `{key: one-line reason}` |
 
 The prediction file is JSON. A `.yaml` file works too, when PyYAML is installed. Example:
 
@@ -63,7 +65,8 @@ runtime/predict-gate.sh check --measured moves.measured.json
 ```
 
 **Rounds.** A fix round writes its own files beside the first round's: `moves.prediction<R>.json`,
-`moves.measured<R>.json` and, when it has its own, `moves.baseline<R>.json`. `<R>` is `.` or `-` and
+`moves.measured<R>.json`, when it has its own, `moves.baseline<R>.json`, and, when it needs one,
+`moves.missed<R>.json`. `<R>` is `.` or `-` and
 a label, such as `.fix3` or `-fix2`. `check --measured moves.measured.fix3.json` finds
 `moves.prediction.fix3.json` by itself. The round's baseline is found in this order:
 
@@ -80,7 +83,8 @@ guesses it from the file names. Without the field, the round is measured against
 It reports six sections:
 
 1. Predicted, and it happened.
-2. Predicted, and it did not happen. This is reported. It does not stop the commit.
+2. Predicted, and it did not happen. This is reported. It does not stop the commit. Close refuses
+   until each one has a reason (see "A predicted move that did not happen", below).
 3. Predicted to move, and it moved to a different value. This stops the commit.
 4. Moved, and nobody predicted it. This stops the commit.
 5. A `mustNotMove` key moved. This stops the commit.
@@ -143,6 +147,24 @@ When close refuses (exit 1). Each reason names the file:
 11. An uncommitted or untracked change under the binding's `signal.codeRoots` (`git status`, untracked
     files included). No record measured it. This applies to every close whose binding names code
     roots, with no cut-off: a dirty tree is wrong for any record.
+12. A predicted move that did not happen and has no reason in the round's missed file (below).
+
+**A predicted move that did not happen.** The owner ruled on 2026-11-15 (rule Q3, option C). `check`
+reports such a move in section 2 and does not stop. Close refuses until every one, in every round, has
+a reason.
+
+1. The reasons sit in `moves.missed<R>.json`, beside the round's measured file. `<R>` is the round's,
+   as for the other moves files: `moves.missed.json`, `moves.missed.fix1.json`.
+2. It is one JSON object: `{"<key>": "<reason>"}`. Each key is a key from section 2 of the round's
+   check. Each reason is one line, written by the engineer.
+3. A predicted new key that never appears is a move that did not happen. Its key is the move's `what`.
+4. Close reads the file from git at `HEAD`, like the other record files.
+5. Close refuses, naming the file and the key, for each of: the file is missing; a key from section 2
+   has no reason; a reason is empty, not text, or more than one line; the file names a key that was not
+   missed in that round. It refuses a file that is not one JSON object, naming the file.
+6. Example. The check reports `tests:passed: 5815 -> 5815. Predicted: after in [5815, 5815]. Not met:
+   it did not move.` The reason might be `{"tests:passed": "held value, written as a move by mistake"}`.
+7. The missed file is not sealed. Close's rule 3 for a sealed work order does not ask for its seal.
 
 On a pass it writes one `work-order-closed` line to the ops ledger. The line carries, for each pair:
 the prediction's sha256 and its commits, the measured file's sha256, the baseline's name and sha256,
