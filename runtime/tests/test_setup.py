@@ -221,6 +221,16 @@ class Setup(Base):
         rc, out = self.setup_in(self.tmp, "--pointer", str(self.repo), "--no-remote-check")
         self.assertEqual(rc, 2, "a lane clone never asks the remote, so the option is bad usage there")
 
+    def test_help_prints_every_option_and_exits_0_changing_nothing(self):
+        rc, out = self.setup_in(self.repo, "--help", pre_commit=False)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("usage: bakehouse setup [--pointer <main clone>] [--pre-commit] [--no-remote-check]", out)
+        for option in ("--pointer <main clone>", "--pre-commit", "--no-remote-check", "--help"):
+            self.assertIn(f"\n  {option} ", out, f"{option} has no line of its own in the usage")
+        self.assertEqual(self.config(self.repo, "bakehouse.records"), "")
+        self.assertFalse(self.records(self.repo).exists())
+        self.assertFalse(self.hook(self.repo, "post-commit").exists())
+
     def test_a_clone_of_the_main_clone_is_told_to_use_the_pointer(self):
         self.setup_in(self.repo)
         clone = self.tmp / "clone"
