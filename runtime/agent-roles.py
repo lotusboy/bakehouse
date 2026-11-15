@@ -491,6 +491,12 @@ def tables():
             team_roles.table_roles(team_roles.shipped_table())]
 
 
+def users_at(cwd):
+    """The names of the user's and the project's own agents for cwd (team_roles.user_agents): a bare agent name
+    among them is that agent, never a plugin agent of the same name (R0.1 S6 #2)."""
+    return team_roles.user_agents(team_roles.project_top(cwd))
+
+
 def reviews_folder(binding):
     """(folder, None) for the binding's `reviews`, or (None, reason) when it is not a safe path."""
     v = binding.get("reviews", DEFAULT_REVIEWS)
@@ -522,6 +528,7 @@ def pre_tool_use(d):
     tabs = tables()
     st = ti.get("subagent_type") or "general-purpose"
     cwd = d.get("cwd") or os.getcwd()
+    users = users_at(cwd)
     notes = []
     role_entry = None
     binding = None
@@ -555,7 +562,7 @@ def pre_tool_use(d):
         engineer = st in change_engineers(binding, cwd)
     elif st not in team_roles.BUILT_IN and prediction_jobs():
         b = bound(cwd)
-        if b and any(team_roles.is_agent(st, a) for a in change_engineers(b, cwd)):
+        if b and any(team_roles.is_agent(st, a, users) for a in change_engineers(b, cwd)):
             engineer = True
             if work_order(ti.get("prompt"), b):
                 mark, binding = True, b
@@ -568,7 +575,7 @@ def pre_tool_use(d):
     # The record folder of an agent the stop checks is decided here, once, from the cwd the PM dispatched
     # from, and logged for its stop; a line that cannot be decided is refused before any work runs.
     decided = None
-    if mark or (team_roles.role_of(st, tabs)[1] or {}).get("run_record"):
+    if mark or (team_roles.role_of(st, tabs, users)[1] or {}).get("run_record"):
         bcwd = binding if binding is not None else bound(cwd)
         dec = dispatch_decision(before, cwd, mark or by_role or bool(bcwd))
         if dec and dec[0] == "refuse":
@@ -587,11 +594,12 @@ def pre_tool_use(d):
     # that has opted in with a binding: anywhere else a same-named agent may be the user's own
     # (review 2026-10-11, H2). The owner's own table (the personal one) is their explicit choice and
     # applies everywhere.
-    if binding is None and (team_roles.role_of(st, tabs)[1] or team_roles.role_of(d.get("agent_type"), tabs)[1]):
+    if binding is None and (team_roles.role_of(st, tabs, users)[1]
+                            or team_roles.role_of(d.get("agent_type"), tabs, users)[1]):
         binding = bound(cwd)
         if not binding:
             tabs = tabs[:1]
-    rname, r = team_roles.role_of(st, tabs)
+    rname, r = team_roles.role_of(st, tabs, users)
     if not r and role_entry:
         # an agent no table lists takes only the dispatched role's model
         r = {"model": role_entry.get("model")}
@@ -629,7 +637,7 @@ def pre_tool_use(d):
 
     parent = d.get("agent_type")
     if parent:
-        pname, pr = team_roles.role_of(parent, tabs)
+        pname, pr = team_roles.role_of(parent, tabs, users)
         cap = (pr or {}).get("nested_model")
         if isinstance(cap, str) and cap and is_above(ti.get("model"), cap):
             notes.append(f"nested spawn by {parent}: model {ti.get('model')} -> {cap}")
@@ -651,7 +659,8 @@ def team_dispatch(d):
     dispatching), or a brief with a `Work order <id>:` line or a line labelled as a record folder."""
     ti = d.get("tool_input") or {}
     st, prompt, tabs = ti.get("subagent_type") or "general-purpose", ti.get("prompt") or "", tables()
-    return (st.startswith("role:") or any(team_roles.role_of(a, tabs)[0] for a in (st, d.get("agent_type")))
+    users = users_at(d.get("cwd") or os.getcwd())
+    return (st.startswith("role:") or any(team_roles.role_of(a, tabs, users)[0] for a in (st, d.get("agent_type")))
             or bool(WORK_ORDER.search(prompt) or RECORD_LABEL.search(prompt)))
 
 
@@ -755,6 +764,7 @@ def prediction_stop(d):
     marked = bool(lines) and lines[-1] == PREDICTION_MARKER
     agent = d.get("agent_type")
     cwd = d.get("cwd") or os.getcwd()
+    users = users_at(cwd)
     binding = binding_at(cwd)[0]
     line, note = stop_line(prompt, cwd, binding)
     kind = line[0] if line else None
@@ -765,12 +775,12 @@ def prediction_stop(d):
         if marked:
             log(f"PREDICTION check skipped for {agent}: no binding for {cwd}")
         # a line the fallback cannot place, in a change job's brief, is reported
-        if note and any(team_roles.is_agent(agent, a) for a in change_engineers(binding, cwd)) \
+        if note and any(team_roles.is_agent(agent, a, users) for a in change_engineers(binding, cwd)) \
                 and dispatched(prompt) is not False and (
                 marked or (work_order(prompt, binding) and agent not in team_roles.BUILT_IN)):
             return with_note(None, note)
         return None
-    if not any(team_roles.is_agent(agent, a) for a in change_engineers(binding, cwd)):
+    if not any(team_roles.is_agent(agent, a, users) for a in change_engineers(binding, cwd)):
         return None
     log(f"PROMPT-SOURCE {agent}: transcript line 1 {'ends' if marked else 'does not end'} with "
         f"{PREDICTION_MARKER} (a marked dispatch shows here whether line 1 holds the rewritten prompt)")
@@ -949,10 +959,11 @@ def subagent_stop(d):
     if out:
         return out
     tabs = tables()
-    rname, r = team_roles.role_of(d.get("agent_type"), tabs)
+    users = users_at(d.get("cwd") or os.getcwd())
+    rname, r = team_roles.role_of(d.get("agent_type"), tabs, users)
     if not r or not r.get("run_record"):
         return None
-    personal = bool(team_roles.role_of(d.get("agent_type"), tabs[:1])[1])
+    personal = bool(team_roles.role_of(d.get("agent_type"), tabs[:1], users)[1])
     started = run_started(d)
     cwd = d.get("cwd") or os.getcwd()
     binding = binding_at(cwd)[0]

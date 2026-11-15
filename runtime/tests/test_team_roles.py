@@ -66,8 +66,11 @@ class Fixture(unittest.TestCase):
         self.bin = None  # a folder put first on PATH, holding a test's own git
         self.project_dir = None  # $CLAUDE_PROJECT_DIR, which the harness sets for a plugin hook
         self.plugin_root = None  # $CLAUDE_PLUGIN_ROOT, which the harness sets for a plugin hook
-        self.install("engineer", "reviewer", "architect", "design-author", "absence-check",
-                     "blast-radius")
+        # the agents whose bare names the tests dispatch as bakehouse's are the plugin's only (R0.1 S6 #2: a bare
+        # name is bakehouse's only when no user or project agent has it); the others are also user agents, which
+        # the tests name in a binding or a personal table
+        self.install("engineer", "reviewer", "blast-radius", own=False)
+        self.install("architect", "design-author", "absence-check")
         # self.repo has opted in; self.other has no binding
         self.records = project(self.repo, {"owned": True, "roles": {}})
         self.bpath = self.repo / ".team" / "binding.json"
@@ -88,12 +91,13 @@ class Fixture(unittest.TestCase):
             e["CLAUDE_PLUGIN_ROOT"] = str(self.plugin_root)
         return e
 
-    def install(self, *names):
+    def install(self, *names, own=True):
         """Each name as a user agent; a shipped agent also as the bakehouse plugin's, `bakehouse:<name>`, which
-        is how the shipped table names it."""
+        is how the shipped table names it. own=False: a shipped agent as the plugin's only."""
         plugin = self.home / "plugin"
         for n in names:
-            (self.home / ".claude" / "agents" / f"{n}.md").write_text(f"---\nname: {n}\n---\n")
+            if own or n not in SHIPPED:
+                (self.home / ".claude" / "agents" / f"{n}.md").write_text(f"---\nname: {n}\n---\n")
             if n in SHIPPED:
                 (plugin / "agents").mkdir(parents=True, exist_ok=True)
                 (plugin / "agents" / f"{n}.md").write_text(f"---\nname: {n}\n---\n")
@@ -103,7 +107,7 @@ class Fixture(unittest.TestCase):
             {"plugins": {"bakehouse@t": [{"scope": "user", "installPath": str(plugin)}]}}))
 
     def uninstall(self, name):
-        (self.home / ".claude" / "agents" / f"{name}.md").unlink()
+        (self.home / ".claude" / "agents" / f"{name}.md").unlink(missing_ok=True)
         (self.home / "plugin" / "agents" / f"{name}.md").unlink(missing_ok=True)
 
     def binding(self, roles):
@@ -1500,6 +1504,7 @@ class TestSetupNeededClone(DecisionFixture):
         self.assertEqual(self.decide("my-agent", "Look into it.\n", self.repo / ".team"), ("ok", "Look into it.\n"))
 
     def test_a_team_dispatch_is_still_refused_with_the_setup_message(self):
+        # the bare names reviewer and engineer are bakehouse's here: no user or project agent has them (R0.1 S6 #2)
         for st, brief in (("role:reviewer", "Review it.\n"), ("role:code-review", "Review it.\n"),
                           ("reviewer", "Review it.\n"), ("engineer", "Change it.\n"),
                           ("my-agent", "Work order T7: x\n"), ("my-agent", f"Look.\nRecord folder: {self.rf}/\n"),
@@ -1515,6 +1520,56 @@ class TestSetupNeededClone(DecisionFixture):
         out = subprocess.run(["python3", str(self.hook)], input=json.dumps(d), capture_output=True, text=True,
                              env=self.env(), check=False).stdout
         self.assertEqual(json.loads(out)["hookSpecificOutput"]["permissionDecision"], "deny")
+
+    def test_s6_an_own_agent_named_reviewer_or_engineer_is_not_refused(self):
+        # R0.1 S6 #2: a user or project agent of that name is the one the bare name dispatches; it is not the
+        # team's, so a clone that needs setup passes it, and a dispatch made by it
+        for where in (self.home / ".claude" / "agents", self.repo / ".claude" / "agents"):
+            where.mkdir(parents=True, exist_ok=True)
+            for n in ("reviewer", "engineer"):
+                (where / f"{n}.md").write_text(f"---\nname: {n}\n---\n")
+            for st, brief in (("reviewer", "Review it.\n"), ("engineer", "Change it.\n")):
+                with self.subTest(where=where, st=st):
+                    self.assertEqual(self.decide(st, brief, self.repo), ("ok", brief))
+            d = {"hook_event_name": "PreToolUse", "tool_name": "Agent", "cwd": str(self.repo), "agent_type": "reviewer",
+                 "tool_input": {"subagent_type": "my-agent", "description": "x", "prompt": "Look.\n"}}
+            out = subprocess.run(["python3", str(self.hook)], input=json.dumps(d), capture_output=True, text=True,
+                                 env=self.env(), check=False).stdout
+            self.assertEqual(out, "", where)
+            for n in ("reviewer", "engineer"):
+                (where / f"{n}.md").unlink()
+
+
+class TestOwnAgentWithABakehouseName(Fixture):
+    """R0.1 S6 #2 (Option B): a bare agent name is the bakehouse agent only when no user agent and no project
+    agent has that name. Otherwise it is the user's own, and the hook leaves it alone."""
+
+    WO = {"subagent_type": "engineer", "description": "x", "prompt": "Work order T7: x."}
+
+    def test_without_an_own_agent_the_bare_name_gets_bakehouses_rules(self):
+        self.assertEqual(self.dispatch("reviewer")["model"], "opus")
+        out = self.dispatch("engineer", tool_input=dict(self.WO))
+        self.assertEqual(out["model"], "opus")
+        self.assertEqual(out["prompt"].splitlines()[-1], "[bakehouse:prediction-record]")
+        self.assertIn("requires a run record", self.stop())
+
+    def test_an_own_agent_of_that_name_is_left_alone(self):
+        for where in (self.home / ".claude" / "agents", self.repo / ".claude" / "agents"):
+            where.mkdir(parents=True, exist_ok=True)
+            for n in ("reviewer", "engineer"):
+                (where / f"{n}.md").write_text(f"---\nname: {n}\nmodel: haiku\n---\n")
+            with self.subTest(where=where):
+                # no forced model, no prediction marker, no run-record stop block, no nested-model ceiling
+                self.assertIsNone(self.dispatch("reviewer", tool_input={
+                    "subagent_type": "reviewer", "description": "x", "prompt": "Review it.", "model": "haiku"}))
+                self.assertIsNone(self.dispatch("engineer", tool_input=dict(self.WO)))
+                self.assertEqual(self.stop(), "")
+                self.assertIsNone(self.dispatch("general-purpose", agent_type="reviewer", tool_input={
+                    "subagent_type": "general-purpose", "model": "opus", "prompt": "p"}))
+                # the prefixed name is still bakehouse's
+                self.assertEqual(self.dispatch("bakehouse:reviewer")["model"], "opus")
+            for n in ("reviewer", "engineer"):
+                (where / f"{n}.md").unlink()
 
 
 class TestCheckNewFolder(RecordFixture):

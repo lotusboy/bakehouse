@@ -2,7 +2,7 @@
   "_about": [
     "Agent roles: which agent does each job, and how it must be dispatched. Shipped defaults.",
     "A role names a job, not an agent. 'providers' is an ordered preference list; the first one installed is used.",
-    "Dispatch by role with subagent_type 'role:<role>', or 'role:<job>:<role>' from a team job (for example role:refactor:engineer); or by the agent's own name, and the rules below still apply.",
+    "Dispatch by role with subagent_type 'role:<role>', or 'role:<job>:<role>' from a team job (for example role:refactor:engineer); or by the agent's own name, and the rules below still apply. A bare name (no 'bakehouse:' prefix) is the plugin's agent only when no user agent and no project agent has that name.",
     "Resolution order (docs/PROJECT-TEAM.md, \"Roles\"): the repo binding's 'roles', then the personal agent-roles.json in the machine folder, then this file. At each level the key '<job>:<role>' is tried before '<role>'. A level naming only agents that are not installed is skipped and logged.",
     "When no level matches, a review role (reviewer, code-review) goes to the built-in general-purpose agent, never to the session that did the work. Any other role is denied, and the session does the work itself.",
     "Put an owner- or employer-specific provider in the personal agent-roles.json in the machine folder, never here: this file is published.",

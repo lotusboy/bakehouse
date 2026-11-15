@@ -114,7 +114,10 @@ owner's own table in the machine folder is the owner's explicit choice and appli
 
 The shipped agents are the plugin's (`agents/`), so the harness names them `bakehouse:<agent>`, and
 the shipped table names them so. The hooks accept a plugin agent reported with or without its
-`bakehouse:` prefix. To fill a role with an agent of the owner's own, name it in the owner's table.
+`bakehouse:` prefix. A bare name (for example `reviewer`) counts as the plugin's agent only when no
+user agent (`~/.claude/agents`) and no project agent (`.claude/agents`) has that name. When one does,
+the bare name is that agent: the hooks force no model on it, never send it back at its stop, and do not
+count it as a team dispatch. To fill a role with an agent of the owner's own, name it in the owner's table.
 
 ## The binding
 
