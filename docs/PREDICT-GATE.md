@@ -262,6 +262,14 @@ by these events ("Closing a sealed work order", below).
 7. `predict-gate.sh retire <work-order> <round> <file> --decision <id>` follows a sealed file's move to
    `history/`. The file must be `<the sealed file's folder>/history/<its name>`, hold the bytes it was
    sealed with, and the sealed path must be gone. The event takes that seal's kind and round.
+   **Which seal a retire retires.** One function, `retire_of`, decides it for close, records-check and
+   the sealer. A retire applies to the live seals of its bytes at that path that come before it in the
+   ledger. A seal of the same bytes after the retire is a new, live seal, not a retired one.
+   **A re-measure after a retire.** To measure a round again after its measured file was retired, write
+   the new measured file at the same path, and seal it: `predict-gate.sh seal <work-order> <round>
+   <file> --report <measure report>`. That seal starts a new chain for the path: its first seal stands,
+   as a file's first seal does. The retire's decision is the owner's go for it. No other command is
+   needed. The same holds for a retired prediction or baseline sealed again in its round.
 8. For both, the decision must be asked with `--approves` and `--task <work-order>`, answered before
    the call, and its latest answer must choose the approving option. A decision asked without
    `--approves` never approves a revise or retire: close's older rule for such decisions (named limit
@@ -323,6 +331,9 @@ is whole. It also refuses when the ledger file no longer begins with the ledger 
    event whose decision passes the rule of point 8 again, at the revise's time. The file at `HEAD`
    hashes as its latest seal or revise; or it is gone, and a `retired` event of its latest bytes at
    `<folder>/history/<name>` has an approving decision, and that copy is at `HEAD`.
+   A seal that comes after the retire of the path's latest bytes starts a new chain (a re-measure, point
+   7 of "Sealing"). Its first seal stands. The retire that ended the earlier chain still needs its
+   approving decision, and its copy in `history/` must still be at `HEAD` with the retired bytes.
 3. **Each moves file at `HEAD`** (top level of a record folder) has a committed seal.
 4. **Each sealed measured file whose check REFUSED** is retired.
 5. **A round's prediction is sealed before its code.** Its first seal's commit is an ancestor of the
@@ -397,6 +408,9 @@ after the measurement refuses the close.)
   but a second seal-code of the round is refused, and running it makes one more unsealed commit. The
   code seal's line is already in the ledger file: the next seal of any file, or a commit of the ledger,
   anchors it.
+- L15 (named, not fixed). A re-measure after a retire works once per file name. A second retire of the
+  same name with other bytes overwrites `history/<name>`, so close finds the first retired copy changed
+  and refuses. A further re-measure goes in a new round.
 - L8. Seals anchored on a branch of the records worktree that is never merged into the branch close
   runs on are not seen: close reads `HEAD`'s ledger and `HEAD`'s history. A merge of that branch, even
   one resolved to the other side, brings them back into view.

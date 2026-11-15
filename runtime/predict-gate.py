@@ -808,6 +808,19 @@ def history_path(path: str) -> str:
     return (Path(path).parent / HISTORY / Path(path).name).as_posix()
 
 
+def retire_of(e: dict, evs: list) -> dict | None:
+    """The retired event that retired the seal or revise e, or None when e is live. The one answer to "is
+    this seal retired?", for close, records-check and the sealer. A retire applies to the seals of its bytes
+    at <folder>/history/<name> that come before it in the ledger (evs, in ledger order, holding e itself).
+    A seal of the same bytes after that retire is a new, live seal."""
+    if not isinstance(e.get("path"), str):
+        return None
+    i = next(n for n, x in enumerate(evs) if x is e)
+    want = history_path(e["path"])
+    return next((r for r in evs[i + 1:] if r.get("kind") == "retired" and r.get("sha256") == e.get("sha256")
+                 and r.get("path") == want), None)
+
+
 def blob_sha(repo: Path, ref_path: str) -> str | None:
     p = subprocess.run(["git", "-C", str(repo), "cat-file", "blob", ref_path], capture_output=True, check=False)
     return sha256(p.stdout) if p.returncode == 0 else None
@@ -869,9 +882,8 @@ def sealed_stale(repo: Path, ref: str, evs: list, roots: list | None, wo: str | 
     mine = [e for e in evs if isinstance(e, dict) and e.get("kind") in ol.SEALED_KINDS]
     if not mine:
         return False, None
-    retired = {(r.get("path"), r.get("sha256")) for r in mine if r.get("kind") == "retired"}
     measured = [e for e in mine if e.get("kind") in ("sealed", "revised") and e.get("fileKind") == "measured"
-                and isinstance(e.get("path"), str) and (history_path(e["path"]), e.get("sha256")) not in retired]
+                and isinstance(e.get("path"), str) and not retire_of(e, mine)]
     if not measured or not roots:
         return True, None
     m = measured[-1]
@@ -904,20 +916,29 @@ def sealed_refusals(repo: Path, folders: list, evs: list, decided: dict, wo: str
         return decision_refusal(decided, did, wo, when(e.get("ts")) or now, before=f"the {verb}")
 
     seals = [e for e in evs if e.get("kind") in ("sealed", "revised") and isinstance(e.get("path"), str)]
-    retires = [e for e in evs if e.get("kind") == "retired"]
-
-    def retire_of(path, digest):
-        return next((r for r in reversed(retires) if r.get("sha256") == digest and r.get("path") == history_path(path)),
-                    None)
+    pos = {id(x): n for n, x in enumerate(evs)}
 
     by_path = {}
     for e in seals:
         by_path.setdefault(e["path"], []).append(e)
+    firsts = set()  # id of the first seal of each chain: a retire ends a chain, and a seal after it starts one
     for path, es in sorted(by_path.items()):
         if es[0]["kind"] != "sealed":
             out.append(f"{path}: its first sealed event is a {es[0]['kind']} event, not a seal")
-        cur = es[0].get("sha256")
+        cur, last = es[0].get("sha256"), es[0]
+        firsts.add(id(last))
         for e in es[1:]:
+            r = retire_of(last, evs)
+            if e["kind"] == "sealed" and r is not None and pos[id(r)] < pos[id(e)]:
+                # A2: the path's latest bytes were retired, so this seal is a new first seal (a re-measure)
+                if why := approved(r, "retire"):
+                    out.append(f"{history_path(path)}: retired without the owner's approval: {why}")
+                elif at_head.get(history_path(path)) != cur:
+                    out.append(f"{history_path(path)}, the retired copy, is not at HEAD with its sealed bytes")
+                cur, last = e.get("sha256"), e
+                firsts.add(id(e))
+                continue
+            last = e
             if e.get("sha256") == cur:
                 continue
             if e["kind"] != "revised":
@@ -930,7 +951,7 @@ def sealed_refusals(repo: Path, folders: list, evs: list, decided: dict, wo: str
             if at_head[path] != cur:
                 out.append(f"{path} at HEAD hashes sha256:{str(at_head[path])[:12]}, and its latest seal is "
                            f"sha256:{str(cur)[:12]}: a sealed file changes only through predict-gate.sh revise")
-        elif not (r := retire_of(path, cur)):
+        elif not (r := retire_of(last, evs)):
             out.append(f"{path} is sealed and is not at HEAD, and no retire of it is sealed: a sealed file leaves the "
                        "record only through predict-gate.sh retire, with the owner's decision")
         elif why := approved(r, "retire"):
@@ -942,15 +963,15 @@ def sealed_refusals(repo: Path, folders: list, evs: list, decided: dict, wo: str
             out.append(f"{path} is at HEAD and has no committed seal: predict-gate.sh seal {wo} <round> {path}")
     for e in seals:
         if e.get("fileKind") == "measured" and (e.get("check") or {}).get("result") == "refused" \
-                and not retire_of(e["path"], e.get("sha256")):
+                and not retire_of(e, evs):
             out.append(f"{e['path']}: its sealed check REFUSED (sha256:{str(e.get('sha256'))[:12]}), and it is not "
                        "retired: a refused measurement leaves the record only through predict-gate.sh retire")
-    measured = [e for e in seals if e.get("fileKind") == "measured" and not retire_of(e["path"], e.get("sha256"))]
+    measured = [e for e in seals if e.get("fileKind") == "measured" and not retire_of(e, evs)]
     if not roots:
         return out
     for e in seals:  # a round's prediction is sealed before its code
-        if e["kind"] != "sealed" or e.get("fileKind") != "prediction" or retire_of(e["path"], e.get("sha256")) \
-                or e is not by_path[e["path"]][0]:
+        if e["kind"] != "sealed" or e.get("fileKind") != "prediction" or retire_of(e, evs) \
+                or id(e) not in firsts:
             continue
         m = next((x for x in reversed(measured) if x.get("round") == e.get("round")), None)
         if not m or not m.get("base") or not e.get("commit"):
@@ -1367,8 +1388,7 @@ def run_seal(cmd: str, wo: str, rnd: str, file: str, repo_arg: str | None, repor
         mine = [e for e in events if isinstance(e, dict) and e.get("kind") in ledger_module().SEALED_KINDS
                 and e.get("task") == wo]
         kind, fk = {"seal": "sealed", "revise": "revised", "retire": "retired"}[cmd], fkind
-        retired = {e.get("sha256") for e in mine if e.get("kind") == "retired"}
-        live = [e for e in mine if e.get("kind") != "retired" and e.get("sha256") not in retired]
+        live = [e for e in mine if e.get("kind") != "retired" and not retire_of(e, mine)]
         if cmd == "seal" and fk in ("prediction", "baseline"):
             same = [e for e in live if e.get("round") == rnd and e.get("fileKind") == fk]
             if same and same[-1].get("sha256") != digest:
@@ -1385,9 +1405,8 @@ def run_seal(cmd: str, wo: str, rnd: str, file: str, repo_arg: str | None, repor
             if same_round[-1].get("sha256") == digest:
                 raise BadInput(f"{rel} is unchanged since its last seal or revise: there is nothing to revise")
         if cmd == "retire":
-            hit = [e for e in mine if e.get("kind") != "retired" and e.get("sha256") == digest
-                   and isinstance(e.get("path"), str)
-                   and (Path(e["path"]).parent / HISTORY / Path(e["path"]).name).as_posix() == rel]
+            hit = [e for e in live if e.get("sha256") == digest and isinstance(e.get("path"), str)
+                   and history_path(e["path"]) == rel]
             if not hit:
                 raise BadInput(f"no sealed file of {wo} moved to {rel}: retire takes <the sealed file's folder>/"
                                f"{HISTORY}/<its name>, holding the bytes it was sealed with")

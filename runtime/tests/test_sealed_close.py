@@ -382,6 +382,50 @@ class Sealed(unittest.TestCase):
         self.round_one_refused_then_fix1(retire=True)
         self.assertCloses()
 
+    # ---- R0.1 S1: one place decides "is this seal retired?" ----
+
+    def retire_measured(self, measured=None):
+        """flow(), then the measured file moved to history/ and retired with the owner's approval.
+        Returns (the measured base, the measured head)."""
+        b = self.flow(measured=measured)
+        h = self.git("rev-parse", "HEAD~1")
+        self.commit(
+            "W-1: measurement to history/",
+            mv=[(self.r("moves.measured.json"), self.r("history/moves.measured.json"))],
+        )
+        self.decide(
+            "d20261101-bbbbb2",
+            approves="retire",
+            choice="retire",
+            options=("keep", "retire"),
+        )
+        p = self.gate(
+            "retire",
+            "W-1",
+            "first",
+            str(self.repo / self.r("history/moves.measured.json")),
+            "--decision",
+            "d20261101-bbbbb2",
+        )
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        return b, h
+
+    def test_s1_a1_a_re_measure_with_the_retired_bytes_is_a_live_seal(self):
+        # ANDON A1: the retire applies to the seal it retired; the same bytes sealed after it are live,
+        # so the latest measurement still binds the code at HEAD
+        b, h = self.retire_measured()
+        self.assertEqual(self.measure("first", PASS_M, b, h), 0)
+        self.commit("W-1: re-measured, the same bytes")
+        self.commit("W-1: code after the measurement", {"src/app.py": "v = 3\n"})
+        self.assertRefuses("code came after the latest measurement")
+
+    def test_s1_a2_a_re_measure_after_a_retire_closes(self):
+        # A2: a seal of the path after the retire of its latest bytes starts a new chain
+        b, h = self.retire_measured(measured=FAIL_M)
+        self.assertEqual(self.measure("first", PASS_M, b, h), 0)
+        self.commit("W-1: re-measured")
+        self.assertCloses()
+
     # ---- every repro done to a sealed record refuses ----
 
     def test_a1_a_round_moved_to_history_without_a_retire(self):
