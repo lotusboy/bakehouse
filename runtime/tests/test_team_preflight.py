@@ -233,6 +233,22 @@ class TestOwned(Fixture):
         self.assertEqual(code, 1)
         self.assertIn("'measure.commands.0' uses a '<...>' placeholder", out)
 
+    def test_a_role_table_that_does_not_parse_is_named(self):
+        # S2 fix 2 (preflight's twin of B-N2): check 5 names a broken table; it never reads it as empty
+        rt = self.runtime().resolve()
+        shipped, personal = rt / "agent-roles.json", Path(self.env["BAKEHOUSE_MACHINE_DIR"]) / "agent-roles.json"
+        personal.parent.mkdir(parents=True, exist_ok=True)
+        for broken, other in ((shipped, personal), (personal, shipped)):
+            with self.subTest(broken=broken):
+                shutil.copy2(SCRIPT.parent / "agent-roles.json", shipped)
+                personal.write_text('{"roles": {}}')
+                broken.write_text('{"roles": ')
+                self.owned()
+                code, out = self.pre("refactor", "engine", script=rt / "team-preflight.py")
+                self.assertEqual(code, 1, out)
+                self.assertIn(f"FAIL check 5: the role table {broken} cannot be read", out)
+                self.assertNotIn("the session does it", out)
+
     def test_role_check_reads_the_next_table_before_the_swap(self):
         rt = self.runtime()
         (rt / "agent-roles.json").write_text(json.dumps({"roles": {"old-role": {"providers": ["Plan"]}}}))

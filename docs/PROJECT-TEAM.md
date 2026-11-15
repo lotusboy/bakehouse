@@ -814,7 +814,8 @@ runs read-only git commands; it writes nothing. One line per failure; exit 1 on 
    (`records`), and uses only the closed placeholder list.
 3. Every path field exists in the checkout.
 4. Every pointer finds its key. A gate the repo wrote as prose is listed, not failed.
-5. Every role the job dispatches resolves.
+5. Every role the job dispatches resolves. A role table (the personal one or the shipped one) that cannot
+   be read, does not parse, is not a JSON object or has a `roles` that is not an object fails, named.
 6. For a job when `owned` is false: an unconsumed approval of this exact scope exists.
 
 `startup` mode runs checks 1 to 4, for a session start that knows the repo folder: it exits 0, and the

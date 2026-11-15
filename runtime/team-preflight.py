@@ -312,7 +312,12 @@ def check_signal_rules(sig, repo, job):
 
 
 def check_roles(b, job, repo):
-    """Resolve each role the job dispatches by §5.1 (team_roles.resolve)."""
+    """(fails, notes): resolve each role the job dispatches by §5.1 (team_roles.resolve). A role table that
+    cannot be used fails, named; it is never read as one that names no role (S2 fix 2, as the hook's B-N2)."""
+    broken = [f"check 5: {w}: fix that file" for t in (team_roles.personal_table(), team_roles.shipped_table())
+              if (w := team_roles.table_problem(t))]
+    if broken:
+        return broken, []
     have = team_roles.installed_agents(str(repo))
     lvls = team_roles.levels(b)
     notes = []
@@ -327,7 +332,7 @@ def check_roles(b, job, repo):
         else:
             found = f"{res['agent']} (from {res['where']}, key '{res['key']}')"
         notes.append(f"check 5: role {job}:{role} -> {found}")
-    return notes
+    return [], notes
 
 
 def check_approval(b, job, arg, approvals):
@@ -391,7 +396,9 @@ def main(argv):
         f4, notes = check_pointers(b, repo, job)
         fails += f4
     if job in JOB_ROLES:
-        notes += check_roles(b, job, repo)
+        f5, n5 = check_roles(b, job, repo)
+        fails += f5
+        notes += n5
         if b.get("owned") is False:
             fails += check_approval(b, job, arg, bpath.parent / "approvals.json")
 
