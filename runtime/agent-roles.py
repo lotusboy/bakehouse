@@ -62,7 +62,8 @@ re-entry.
 
 Fail-open, with one exception. A dispatch whose decision needs a binding that cannot be read is
 refused, and the reason names the cause and what to fix (gate dispatch:binding-unreadable): binding.json
-does not parse, is not a JSON object, cannot be read or is a dangling symlink; the project needs setup (the
+does not parse, is not a JSON object, cannot be read or is a dangling symlink, or its `reviews` field is not a
+safe path (a record folder line names a folder in that repo); the project needs setup (the
 locator's message); the project locator cannot be run or does not answer in time. The hook cannot tell
 whether that dispatch is in its care, so it does not guess. Its event is kept in agent-roles.log with its
 cause: the working folder's ledger is found through the input that cannot be read. Every other error lets the
@@ -363,7 +364,13 @@ def place(v):
     path = Path(os.path.normpath(Path(v).expanduser()))
     p = path.resolve()
     b = bound(path, named=True)
-    reviews = reviews_folder(b)[0] if b else None
+    reviews, why = reviews_folder(b) if b else (None, None)
+    if why:
+        # the binding's own field is the cause, never the brief (R0.1 B-N4)
+        where = team_roles.locate("binding", path, log, timeout=min(team_roles.RESOLVE_TIMEOUT, left()),
+                                  env=NAMED_ENV)[0]
+        raise Unreadable(f"the binding {where or 'of the repository ' + str(path)} has a bad field `reviews` "
+                         f"({why}): fix that field")
     if reviews:
         q = path
         while not q.exists() and q != q.parent:

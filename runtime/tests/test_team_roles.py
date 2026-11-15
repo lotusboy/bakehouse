@@ -1450,6 +1450,24 @@ class TestB2UnreadableInput(DecisionFixture):
         self.assertIn("UNREADABLE binding for", self.log())
 
 
+class TestBadReviewsField(DecisionFixture):
+    """R0.1 B-N4: a binding whose `reviews` is not a safe path refuses a dispatch that names a record folder in
+    that repo; the refusal names the binding field and the binding file, never the brief."""
+
+    def test_a_bad_reviews_value_is_named_as_the_binding_field(self):
+        for value in (7, "", "/abs/runs/", "../runs/"):
+            self.bpath.write_text(json.dumps({"owned": True, "reviews": value, "tracker": {"id": "^T[0-9]+$"}}))
+            for st, brief in (("role:reviewer", f"Review T7.\nRecord folder: {self.rf}/\n"),
+                              ("role:change:engineer", f"Work order T7: x\nRecord folder: {self.rf}/\n")):
+                for cwd in (self.ws, self.repo):
+                    with self.subTest(value=value, st=st, cwd=cwd):
+                        got, why = self.decide(st, brief, cwd)
+                        self.assertEqual(got, "DENY")
+                        self.assertIn(f"the binding {self.bpath} has a bad field `reviews`", why)
+                        self.assertIn("Nothing in the brief is the cause", why)
+                        self.assertNotIn("Record folder", why)
+
+
 class TestBrokenRoleTable(Fixture):
     """R0.1 B-N2 (ANDON): a role table that does not parse fails open. The problem is logged and the dispatch
     passes unchanged; the table is never read as one that names no such role."""
