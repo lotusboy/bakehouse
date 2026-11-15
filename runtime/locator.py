@@ -1,9 +1,9 @@
 """The one place bakehouse finds a project and the files it keeps. Standard library only.
 
 Every hook and script asks this module, so path identity is computed once (design 05 §5):
-1. The project folder is $CLAUDE_PROJECT_DIR when set, else the given folder, else the current one.
-   The harness sets the variable for plugin hooks only, not for Bash tool commands or git hooks, so a
-   script run from Bash or git uses the repo git runs in.
+1. The project folder is the given folder, else the current one: the repo git runs in comes first.
+   $CLAUDE_PROJECT_DIR is used only when that folder is in no git repo. The harness sets the variable for
+   plugin hooks only, not for Bash tool commands or git hooks, so it cannot be the first answer.
 2. `git rev-parse --show-toplevel` there gives the repo.
 3. The repo's team facts are in `<repo>/.team/` when `.team/binding.json` exists, else in the sidecar
    folder named by the repo's git config `bakehouse.sidecar` (a repo another party owns).
@@ -126,9 +126,12 @@ FIELDS = sorted(n for n, v in vars(Project).items() if isinstance(v, property)) 
 
 
 def project_dir(folder=None, env=os.environ) -> Path:
-    if env.get("CLAUDE_PROJECT_DIR"):
+    """The folder the project is found from: the given folder, else the current one, when it is in a git repo;
+    else $CLAUDE_PROJECT_DIR when set (R0.1 R2-8: the repo git runs in comes first)."""
+    here = Path(folder) if folder else Path.cwd()
+    if env.get("CLAUDE_PROJECT_DIR") and toplevel(here) is None:
         return Path(env["CLAUDE_PROJECT_DIR"])
-    return Path(folder) if folder else Path.cwd()
+    return here
 
 
 def find(folder=None, env=os.environ) -> Project | None:

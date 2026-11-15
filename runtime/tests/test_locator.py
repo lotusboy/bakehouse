@@ -174,13 +174,33 @@ class TestFind(Base):
             with self.subTest(where=where):
                 self.assertEqual(locator.find(where, env={}).records, rec)
 
-    def test_claude_project_dir_wins_over_the_folder(self):
+    def test_claude_project_dir_is_used_when_the_folder_is_in_no_repo(self):
         self.bind()
         self.records()
         other = self.tmp / "other"
         other.mkdir()
         p = locator.find(other, env={"CLAUDE_PROJECT_DIR": str(self.repo)})
         self.assertEqual(p.root, self.repo)
+
+    def test_the_repo_git_runs_in_wins_over_claude_project_dir(self):
+        # R0.1 R2-8: the folder's repo (else the current folder's) comes first; CLAUDE_PROJECT_DIR only when it
+        # is in no git repo
+        self.bind()
+        self.records()
+        other = self.tmp / "other"
+        other.mkdir()
+        git(other, "init", "-q", "-b", "main")
+        env = {"CLAUDE_PROJECT_DIR": str(self.repo)}
+        self.assertIsNone(locator.find(other, env=env))
+        here = os.getcwd()
+        os.chdir(other)
+        try:
+            self.assertIsNone(locator.find(None, env=env))
+        finally:
+            os.chdir(here)
+        r = subprocess.run([sys.executable, str(LOCATOR), "records", str(other)], capture_output=True, text=True,
+                           env={**ENV, **env})
+        self.assertEqual(r.returncode, locator.NO_TEAM)
 
     def test_a_lane_clone_points_at_the_main_clones_records(self):
         self.bind()

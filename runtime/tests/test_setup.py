@@ -602,7 +602,9 @@ class Hooks(Base):
 
 class SessionStart(Base):
     def run_hook(self, project, **extra):
-        p = subprocess.run(["python3", str(SESSION_START)], capture_output=True, text=True,
+        # run in the project, as the harness runs the hook in the session's folder: the locator asks the
+        # repo git runs in first (R0.1 R2-8)
+        p = subprocess.run(["python3", str(SESSION_START)], capture_output=True, text=True, cwd=str(project),
                            env={**self.env, "CLAUDE_PROJECT_DIR": str(project), **extra})
         self.assertEqual(p.returncode, 0, p.stderr)
         return p.stdout
@@ -726,8 +728,8 @@ class OldPython(Base):
                     "gate_event.py", "predict-gate.py", "records-check.py", "team-preflight.py", "decision.py",
                     "ops_ledger.py")
 
-    def old(self, *args, input=None, **extra):
-        return subprocess.run([str(OLD_PYTHON), *args], capture_output=True, text=True, input=input,
+    def old(self, *args, input=None, cwd=None, **extra):
+        return subprocess.run([str(OLD_PYTHON), *args], capture_output=True, text=True, input=input, cwd=cwd,
                               env={**self.env, "PYTHONDONTWRITEBYTECODE": "1", **extra})
 
     def test_every_module_the_hooks_import_loads(self):
@@ -748,7 +750,7 @@ class OldPython(Base):
 
     def test_session_start_still_prints_the_pm_instruction(self):
         self.setup_in(self.repo)
-        p = self.old(str(SESSION_START), CLAUDE_PROJECT_DIR=str(self.repo))
+        p = self.old(str(SESSION_START), cwd=str(self.repo), CLAUDE_PROJECT_DIR=str(self.repo))
         self.assertEqual((p.returncode, p.stderr), (0, ""))
         self.assertIn("load the `bakehouse:pm` skill", p.stdout)
 
