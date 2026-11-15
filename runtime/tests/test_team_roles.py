@@ -1594,8 +1594,10 @@ class TestCheckNewFolder(RecordFixture):
 
 
 class TestBrokenRoleTable(Fixture):
-    """R0.1 B-N2 (ANDON): a role table that does not parse fails open. The problem is logged and the dispatch
-    passes unchanged; the table is never read as one that names no such role."""
+    """R0.1 B-N2, S6 #3 and #4: a role table that cannot be used is never read as one that names no such role,
+    and never changes a dispatch silently. A role: dispatch is refused, naming the file and the error. A plain-name
+    dispatch skips that table, keeps the shipped table's rules, and says so. A broken shipped table (a bug in the
+    plugin) lets every dispatch pass unchanged, and says so."""
 
     def setUp(self):
         super().setUp()
@@ -1606,22 +1608,60 @@ class TestBrokenRoleTable(Fixture):
             if f.is_file():
                 shutil.copy2(f, self.rt / f.name)
         self.hook = self.rt / "agent-roles.py"
-
-    def test_a_personal_table_that_does_not_parse_passes_the_dispatch_unchanged(self):
-        table = self.machine / "agent-roles.json"
+        self.table = self.machine / "agent-roles.json"
         self.machine.mkdir(exist_ok=True)
-        for text in ('{"roles": ', "[]", '{"roles": []}'):
-            with self.subTest(text=text):
-                table.write_text(text)
-                self.assertIsNone(self.dispatch("role:my-role"))
-                self.assertIsNone(self.dispatch("role:engineer"))
-                self.assertIn(f"the role table {table}", self.log())
 
-    def test_a_shipped_table_that_does_not_parse_passes_the_dispatch_unchanged(self):
+    def raw(self, st, prompt="p", cwd=None):
+        """The hook's whole answer; {} when it gives none."""
+        d = {"hook_event_name": "PreToolUse", "tool_name": "Agent", "cwd": str(cwd or self.repo),
+             "tool_input": {"subagent_type": st, "description": "x", "prompt": prompt}}
+        p = subprocess.run(["python3", str(self.hook)], input=json.dumps(d), capture_output=True, text=True,
+                           env=self.env())
+        self.assertEqual(p.stderr, "")
+        return json.loads(p.stdout) if p.stdout.strip() else {}
+
+    def test_s6_a_role_dispatch_while_the_personal_table_is_broken_is_refused_naming_it(self):
+        for text, why in (('{"roles": ', "cannot be read (Expecting value"), ("[]", "is not a JSON object"),
+                          ('{"roles": []}', "has a `roles` that is not an object")):
+            for st in ("role:my-role", "role:engineer", "role:change:engineer"):
+                with self.subTest(text=text, st=st):
+                    self.table.write_text(text)
+                    h = self.raw(st)["hookSpecificOutput"]
+                    self.assertEqual(h["permissionDecision"], "deny")
+                    self.assertIn(f"the role table {self.table} {why}", h["permissionDecisionReason"])
+        self.assertIn("DENY bakehouse agent-roles: role 'engineer' cannot be resolved", self.log())
+
+    def test_s6_a_plain_name_dispatch_while_the_personal_table_is_broken_keeps_the_shipped_rules_and_says_so(self):
+        self.table.write_text('{"roles": ')
+        out = self.raw("engineer", "Work order T7: x.")
+        ti = out["hookSpecificOutput"]["updatedInput"]
+        self.assertEqual(ti["model"], "opus")
+        self.assertEqual(ti["prompt"].splitlines()[-1], "[bakehouse:prediction-record]")
+        self.assertIn(f"the role table {self.table} cannot be read (Expecting value", out["systemMessage"])
+        self.assertIn("skipped that table", out["systemMessage"])
+        # a dispatch no rule changes is told too: the skipped table might have named it
+        self.assertIn(f"the role table {self.table} cannot be read", self.raw("general-purpose")["systemMessage"])
+
+    def test_s6_a_binding_roles_that_is_not_an_object_is_a_broken_table(self):
+        self.bpath.write_text(json.dumps({"owned": True, "roles": [{"engineer": "design-author"}]}))
+        h = self.raw("role:engineer")["hookSpecificOutput"]
+        self.assertEqual(h["permissionDecision"], "deny")
+        self.assertIn(".team/binding.json has a `roles` that is not an object", h["permissionDecisionReason"])
+        out = self.raw("engineer", "Work order T7: x.")
+        ti = out["hookSpecificOutput"]["updatedInput"]
+        self.assertEqual(ti["model"], "opus")
+        self.assertEqual(ti["prompt"].splitlines()[-1], "[bakehouse:prediction-record]")
+        self.assertIn(".team/binding.json has a `roles` that is not an object", out["systemMessage"])
+
+    def test_a_shipped_table_that_does_not_parse_passes_the_dispatch_unchanged_and_says_so(self):
         table = self.rt / "agent-roles.json"
         table.write_text('{"roles": ')
-        self.assertIsNone(self.dispatch("role:engineer"))
-        self.assertIsNone(self.dispatch("role:architect", cwd=self.other))
+        for st, cwd in (("role:engineer", None), ("role:architect", self.other), ("engineer", None)):
+            with self.subTest(st=st):
+                out = self.raw(st, cwd=cwd)
+                self.assertNotIn("hookSpecificOutput", out)
+                self.assertIn(f"the role table {table} cannot be read", out["systemMessage"])
+                self.assertIn("a bug in bakehouse", out["systemMessage"])
         self.assertIn(f"the role table {table}", self.log())
 
     def test_a_missing_personal_table_is_no_problem(self):

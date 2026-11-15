@@ -146,6 +146,15 @@ def table_problem(path):
     return None
 
 
+def binding_roles_problem(binding):
+    """Why the binding's `roles` cannot be used as a role table, or None: it is there and is not an object.
+    levels() reads such a `roles` as {}, so the dispatch hook and preflight check 5 ask this first (R0.1 S6 #4).
+    The caller names the binding file before it: "the binding <path> " + this."""
+    if isinstance(binding, dict) and "roles" in binding and not isinstance(binding["roles"], dict):
+        return "has a `roles` that is not an object"
+    return None
+
+
 def providers(entry):
     """A binding entry is an agent name, a list of names, or the table form {"providers": [...]}
     (which may also set a model); a table entry is {"providers": [...]}.

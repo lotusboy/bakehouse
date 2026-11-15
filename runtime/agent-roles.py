@@ -63,15 +63,20 @@ made inside subagents and carries agent_id/agent_type of the caller; updatedInpu
 and model; SubagentStop {"decision":"block"} makes the agent continue, with stop_hook_active on
 re-entry.
 
-Fail-open, with one exception. A dispatch whose decision needs a binding that cannot be read is
+Fail-open, with two exceptions (the second is a broken role table, below). A dispatch whose decision needs a
+binding that cannot be read is
 refused, and the reason names the cause and what to fix (gate dispatch:binding-unreadable): binding.json
 does not parse, is not a JSON object, cannot be read or is a dangling symlink, or its `reviews` field is not a
 safe path (a record folder line names a folder in that repo); the project needs setup (the
 locator's message; only a team dispatch is refused for it: a role: dispatch, an agent a role table lists, or a
 brief with a `Work order <id>:` or record folder line); the project locator cannot be run or does not answer in time. The hook cannot tell
 whether that dispatch is in its care, so it does not guess. Its event is kept in agent-roles.log with its
-cause: the working folder's ledger is found through the input that cannot be read. Every other error lets the
-dispatch through unchanged: a broken role table, a crash anywhere in the hook. A stop always fails open:
+cause: the working folder's ledger is found through the input that cannot be read. A broken role table never
+changes a dispatch silently (R0.1 S6 #3): while the personal table, or the binding's `roles` (not an object), cannot
+be used, a role: dispatch is refused, the reason naming the file and the error (gate dispatch:role-table), and any
+other dispatch skips that table, keeps the shipped table's rules and tells the user (systemMessage). A broken
+shipped table is a bug in the plugin: every dispatch passes unchanged, and the user is told. Every other error
+lets the dispatch through unchanged: a crash anywhere in the hook. A stop always fails open:
 an unreadable binding there is read as none. A `Record folder:` line with any text after its path is
 refused at dispatch, showing the line, and reported at a stop, never read; a refused full path under a
 bound repo's reviews puts the dispatch in care. The whole run has one deadline, RUN_BUDGET_S, counted from hook
@@ -517,13 +522,41 @@ def is_above(model, ceiling):
     return m is None or order[m] > order[c]
 
 
+def binding_file(cwd):
+    """The binding file of the project at cwd, found as binding_at finds it (lookup_paths), for a message; None
+    when the locator names none."""
+    for at in lookup_paths(str(cwd), False):
+        where = team_roles.locate("binding", at, log, timeout=min(team_roles.RESOLVE_TIMEOUT, left()), env=NAMED_ENV)[0]
+        if where:
+            return where
+    return None
+
+
+def read_already(cwd):
+    """The cwd's binding when this run has read it already, else None: a dispatch whose decision never needed its
+    binding never reads its `roles`."""
+    return _BINDINGS.get((str(cwd), False), (None, None))[0]
+
+
+def broken_tables(cwd, binding):
+    """Why each role table a dispatch from cwd reads cannot be used (R0.1 S6 #3, #4): the personal table, and the
+    `roles` of binding (the cwd's, when it was read)."""
+    out = [w for w in [team_roles.table_problem(team_roles.personal_table())] if w]
+    why = team_roles.binding_roles_problem(binding)
+    if why:
+        out.append(f"the binding {binding_file(cwd) or 'of the repository ' + str(cwd)} {why}")
+    return out
+
+
 def pre_tool_use(d):
-    # a role table that cannot be used fails open: the dispatch passes unchanged, never read as naming no
-    # such role (R0.1 B-N2)
-    broken = [w for t in (team_roles.personal_table(), team_roles.shipped_table()) if (w := team_roles.table_problem(t))]
-    if broken:
-        log(f"ERROR {'; '.join(broken)}: the dispatch passes unchanged; fix that file")
-        return None
+    # The shipped table is the plugin's own: one that cannot be used is a bug in the plugin. The dispatch passes
+    # unchanged, never read as naming no such role (R0.1 B-N2), and the user is told (R0.1 S6 #3).
+    shipped = team_roles.table_problem(team_roles.shipped_table())
+    if shipped:
+        msg = (f"bakehouse agent-roles: {shipped}. That table is the plugin's own, so this is a bug in bakehouse: "
+               "this dispatch passes unchanged, with no role rule applied. Reinstall or update the plugin.")
+        log(f"ERROR {msg}")
+        return {"systemMessage": msg}
     ti = dict(d.get("tool_input") or {})
     tabs = tables()
     st = ti.get("subagent_type") or "general-purpose"
@@ -541,6 +574,18 @@ def pre_tool_use(d):
     if by_role:
         spec = st[5:]
         binding = bound(cwd)
+        broken = broken_tables(cwd, binding)
+        if broken:
+            # a role: dispatch passed unchanged reaches no agent; resolved without the broken table, it may be
+            # another agent than the owner meant: it is refused, naming the file (R0.1 S6 #3)
+            reason = (f"bakehouse agent-roles: role '{spec}' cannot be resolved, because a role table it reads cannot "
+                      f"be used: {'; '.join(broken)}. Fix that file and dispatch again; nothing in the brief is the "
+                      "cause.")
+            log(f"DENY {reason}")
+            refusal_event("dispatch:role-table", reason, before, cwd)
+            return {"hookSpecificOutput": {"hookEventName": "PreToolUse",
+                                           "permissionDecision": "deny",
+                                           "permissionDecisionReason": reason}}
         lvls = team_roles.levels(binding)
         res = team_roles.resolve(spec, lvls, team_roles.installed_agents(cwd))
         for where, key, provs in res["skipped"]:
@@ -642,6 +687,15 @@ def pre_tool_use(d):
         if isinstance(cap, str) and cap and is_above(ti.get("model"), cap):
             notes.append(f"nested spawn by {parent}: model {ti.get('model')} -> {cap}")
             ti["model"] = cap
+
+    if not by_role:
+        # a broken table was skipped, and the rest applied: the user is told, naming the file (R0.1 S6 #3)
+        skipped = broken_tables(cwd, read_already(cwd))
+        if skipped:
+            msg = (f"bakehouse agent-roles: {'; '.join(skipped)}. This dispatch skipped that table and used the "
+                   "other role tables, so the shipped table's rules still apply; fix that file.")
+            log(f"WARN {msg}")
+            warn = f"{warn} {msg}" if warn else msg
 
     if not notes:
         return {"systemMessage": warn} if warn else None

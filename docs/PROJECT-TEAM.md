@@ -97,7 +97,7 @@ Resolution checks these levels in order. At each level the key `<job>:<role>` is
 A review role never falls to the session that did the work: with no match it goes to
 `general-purpose`. `runtime/team_roles.py` is the one implementation of these rules;
 `runtime/agent-roles.py` enforces them as hooks and logs every change to
-`logs/agent-roles.log` in the machine folder. The hook fails open, with one exception: a dispatch whose decision needs a
+`logs/agent-roles.log` in the machine folder. The hook fails open, with two exceptions. First, a dispatch whose decision needs a
 binding that cannot be read (binding.json does not parse, is not an object, cannot be read or is a
 dangling symlink, or its `reviews` field is not a safe path, for a dispatch whose record folder line names a
 folder in that repo; the project needs setup, with the locator's message, for a team dispatch only; the project locator cannot be
@@ -105,8 +105,13 @@ run or does not answer in time) is refused, and the reason names that
 cause and the file or command to fix (`dispatch:binding-unreadable`). A team dispatch is a `role:` dispatch, a
 dispatch of or by an agent a role table lists, or one whose brief has a `Work order <id>:` line or a record
 folder line; in a clone that needs setup, any other dispatch passes unchanged. When the run's deadline was used up
-by earlier calls, the reason says so. A stop still fails open. The whole hook run has one deadline of 6
-seconds, counted from hook start; each path's binding is read once per run.
+by earlier calls, the reason says so. Second, a role table that cannot be used never changes a dispatch silently.
+While the personal table or the binding's `roles` cannot be used (the table cannot be read, does not parse, is not
+a JSON object, or its `roles` is not an object), a `role:` dispatch is refused, and the reason names the file and
+the error (`dispatch:role-table`). Any other dispatch skips that table, keeps the shipped table's rules (its model,
+the prediction marker), and the user is told in a message that names the file. A shipped table that cannot be used
+is a bug in the plugin: every dispatch passes unchanged, and the user is told. A stop still fails open. The whole
+hook run has one deadline of 6 seconds, counted from hook start; each path's binding is read once per run.
 
 Outside a repository with a binding, the shipped table acts only on a `role:` dispatch. It does not
 change a dispatch made by plain agent name, and it never sends an agent back for a run record. The
@@ -824,7 +829,8 @@ runs read-only git commands; it writes nothing. One line per failure; exit 1 on 
 3. Every path field exists in the checkout.
 4. Every pointer finds its key. A gate the repo wrote as prose is listed, not failed.
 5. Every role the job dispatches resolves. A role table (the personal one or the shipped one) that cannot
-   be read, does not parse, is not a JSON object or has a `roles` that is not an object fails, named.
+   be read, does not parse, is not a JSON object or has a `roles` that is not an object fails, named. So
+   does a binding whose `roles` is not an object.
 6. For a job when `owned` is false: an unconsumed approval of this exact scope exists.
 
 `startup` mode runs checks 1 to 4, for a session start that knows the repo folder: it exits 0, and the
@@ -942,6 +948,7 @@ refusals can be counted per tool and per check. The event is ops-event.sh's, wit
 | `records-check:binding-records` | records-check.py | the binding's `records` object removes or replaces a contract artefact |
 | `records-check:input` | records-check.py | any other bad input, exit 2 |
 | `dispatch:role-unresolved` | agent-roles.py (PreToolUse) | a `role:` dispatch that no level resolves |
+| `dispatch:role-table` | agent-roles.py (PreToolUse) | a `role:` dispatch while a role table it reads cannot be used: the personal `agent-roles.json` cannot be read, does not parse, is not a JSON object or has a `roles` that is not an object, or the binding's `roles` is not an object. The reason names the file and the error |
 | `dispatch:binding-unreadable` | agent-roles.py (PreToolUse) | a dispatch whose decision needs a binding that cannot be read: binding.json does not parse, is not an object, cannot be read or is a dangling symlink, or its `reviews` field is not a safe path (the reason names that field and the binding file); the project needs setup (the locator's message; a team dispatch only, as in "Roles"); the project locator cannot be run or does not answer in time. The reason names the cause and what to fix. Its event is kept in `logs/agent-roles.log` in the machine folder (`GATE-EVENT ... kept in this log`) with its cause, because the working folder's ledger is found through the input that failed |
 | `dispatch:record-folder` | agent-roles.py (PreToolUse) | a `Record folder:` line that cannot be decided |
 | `stop:prediction` | agent-roles.py (SubagentStop) | a change job stops with no machine prediction |

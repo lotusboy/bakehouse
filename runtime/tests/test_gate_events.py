@@ -1174,6 +1174,7 @@ def refusal_forms(runtime=RUNTIME):
 SITE_GATES = [
     ("agent-roles.py", "on_pre_tool_use", "", "dispatch:binding-unreadable"),
     ("agent-roles.py", "pre_tool_use", "", "dispatch:record-folder"),
+    ("agent-roles.py", "pre_tool_use", "", "dispatch:role-table"),
     ("agent-roles.py", "pre_tool_use", "", "dispatch:role-unresolved"),
     ("agent-roles.py", "prediction_stop", "", "stop:prediction"),
     ("agent-roles.py", "prediction_stop", "", "stop:seal"),
@@ -1532,7 +1533,7 @@ class TestGateIds(unittest.TestCase):
         table = set(re.findall(rf"^\| `({self.ID})` \|", section, re.MULTILINE))
         self.assertEqual(sorted(code - table), [], "in code, not in the docs table")
         self.assertEqual(sorted(table - code), [], "in the docs table, not in code")
-        self.assertEqual(len(code), 53)  # 51, plus V12b's new id, V12c's predict-gate:anchor and stop:seal, less decision:questions-ref (R0)
+        self.assertEqual(len(code), 54)  # 51, plus V12b's new id, V12c's predict-gate:anchor and stop:seal, less decision:questions-ref (R0), plus dispatch:role-table (R0.1 S6)
 
     def test_no_refusal_in_decision_or_spend_is_without_a_gate(self):
         """Every fail() outside resolve_project passes a gate id, so a refusal added without one fails here."""

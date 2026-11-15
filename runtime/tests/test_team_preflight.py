@@ -249,6 +249,15 @@ class TestOwned(Fixture):
                 self.assertIn(f"FAIL check 5: the role table {broken} cannot be read", out)
                 self.assertNotIn("the session does it", out)
 
+    def test_s6_a_binding_roles_that_is_not_an_object_is_named(self):
+        # R0.1 S6 #4: the binding-level twin of a broken role table; check 5 never reads it as empty
+        self.owned(roles=[{"engineer": "my-engineer"}])
+        code, out = self.pre("change", "T1")
+        self.assertEqual(code, 1, out)
+        self.assertIn("FAIL check 5: the binding ", out)
+        self.assertIn(".team/binding.json has a `roles` that is not an object: fix that file", out)
+        self.assertNotIn("role change:engineer ->", out)
+
     def test_role_check_reads_the_next_table_before_the_swap(self):
         rt = self.runtime()
         (rt / "agent-roles.json").write_text(json.dumps({"roles": {"old-role": {"providers": ["Plan"]}}}))
