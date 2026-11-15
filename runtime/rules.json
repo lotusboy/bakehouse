@@ -1732,6 +1732,24 @@
    "proof": "test_heavy_run.HeavyRun.test_no_records_pointer_still_runs_the_job_and_says_each_lost_event"
   },
   {
+   "id": "bakehouse-change-68",
+   "file": "commands/change.md",
+   "sentences": [
+    "Close refuses a work order with a predicted move that did not happen and has no reason (bakehouse `docs/PREDICT-GATE.md`, \"A predicted move that did not happen\")."
+   ],
+   "enforcer": "code",
+   "proof": "test_predict_gate.Close.test_s1_q3_close_refuses_a_missed_move_with_no_reason"
+  },
+  {
+   "id": "bakehouse-change-69",
+   "file": "commands/change.md",
+   "sentences": [
+    "For each predicted move that did not happen (section 2 of `predict-gate.sh check`), write one line of reason in moves.missed.json beside the measured file (moves.missed.fix<N>.json for fix round N), as {\"<key>\": \"<reason>\"}: close refuses a missed move with no reason."
+   ],
+   "enforcer": "code",
+   "proof": "test_predict_gate.Close.test_s1_q3_close_refuses_a_missed_move_with_no_reason"
+  },
+  {
    "id": "bakehouse-refactor-39",
    "file": "commands/refactor.md",
    "sentences": [

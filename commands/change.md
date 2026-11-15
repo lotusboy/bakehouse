@@ -106,7 +106,8 @@ the job's re-entry state.
   binding that names anything else. A prose prediction may sit beside it, and nothing checks it.
 - **A round**: a fix round that moves an output writes its own files beside the first round's:
   `moves.prediction.<round>.json`, `moves.measured.<round>.json` and, when it is measured against
-  its own baseline, `moves.baseline.<round>.json` (for example `.fix1`). A round with no baseline of
+  its own baseline, `moves.baseline.<round>.json` (for example `.fix1`), and, when a predicted move
+  did not happen, `moves.missed.<round>.json`. A round with no baseline of
   its own is measured against `moves.baseline.json`. A round chained on an earlier measurement names
   it in its prediction: `"baseline": "moves.measured.built-v5.json"`; nothing guesses it.
 - **`history/`**: a superseded or revised prediction, a prototype measurement and an older
@@ -257,7 +258,8 @@ branch), `BASE` and the record folder. Commit by path, with the trailer. Fill th
    on the branch. The engineer writes the prediction file and commits it by its path before its
    first code edit, then stops and reports. Close refuses a code commit of the work order that no
    round's prediction commit comes before (by commit time; bakehouse `docs/PREDICT-GATE.md`). The role hook sends it back once if the record folder its brief names holds no
-   prediction file that parses and names a move. A dispatch by the agent's plain name is checked
+   prediction file that parses and either names a move or declares `"noMoves": true` with its measured
+   pair beside it showing 0 moved keys. A dispatch by the agent's plain name is checked
    only when the brief keeps its `Work order {id}:` line; otherwise the hook warns. Either way,
    step 9's close is the hard gate.
 
@@ -418,6 +420,14 @@ not a gate.
 5. An unpredicted move stops the job. It goes to the owner, not into a test fix. Never edit a test or
    an output to make a gate pass.
 
+A round that moves nothing says so: its prediction declares `"noMoves": true` and lists no move. It is
+accepted only beside its measured pair, and only when that pair shows 0 moved keys; a key that moves in
+it is an unpredicted move. A predicted move that did not happen (`check` reports it in section 2 and
+does not stop) needs a reason: one line per key in `moves.missed<R>.json` beside the round's measured
+file (`moves.missed.json`, `moves.missed.fix1.json`), as `{"<key>": "<reason>"}`. Close refuses a
+work order with a predicted move that did not happen and has no reason (bakehouse
+`docs/PREDICT-GATE.md`, "A predicted move that did not happen").
+
 Where a gate's `pass` text allows a "predicted", "intended" or "named" move, it means a move in the
 approved prediction file, and nothing else.
 
@@ -495,13 +505,17 @@ command, pass and when]. The gates that prove the need: [work order: gates].
   Before your first edit, write the prediction (shadow run with calls per site and the unreached
   sites; static scan of every stated value, data rows included) to the record folder as
   [the file name in binding.gates.predictedMoves.prediction]: every expected move with its case and its value before
-  and after, and every must-not-move output as unchanged. Commit it by its path, its subject starting
+  and after, and every must-not-move output as unchanged. A round that moves nothing writes
+  "noMoves": true and lists no move; it passes only when its measured pair shows 0 moved keys. Commit it by its path, its subject starting
   with the work-order id, before your first code edit; a fix round's prediction too, before that
   round's first code edit. Then STOP and report it. Switch no site
   until the PM says go. Afterwards read it back exactly; stop on any unpredicted move. Never edit a
   test or an output to make a gate pass.
   The record folder holds, before close: the prediction, moves.baseline.json, moves.measured.json
-  (one of each per round) and result.md. /bakehouse:health flags the record folder when it lacks one or
+  (one of each per round) and result.md. For each predicted move that did not happen (section 2 of
+  `predict-gate.sh check`), write one line of reason in moves.missed.json beside the measured file
+  (moves.missed.fix<N>.json for fix round N), as {"<key>": "<reason>"}: close refuses a missed move
+  with no reason. /bakehouse:health flags the record folder when it lacks one or
   holds one empty: the folder named above, and any other folder of the work order that holds a
   prediction or a result.md (a design folder's flags clear when the work order closes cleanly).
   Every commit subject, a fix round's included, starts with the work-order id: a commit that names
