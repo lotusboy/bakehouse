@@ -125,7 +125,7 @@ class TestSkillReferences(unittest.TestCase):
 
 
 class TestReviewerPrompt(unittest.TestCase):
-    def test_b4_the_refactor_reviewer_owes_at_least_5_rows(self):
+    def test_b4_the_reviewer_owes_at_least_5_rows(self):
         text = " ".join(
             (RUNTIME.parent / "agents" / "reviewer.md").read_text().split()
         )
