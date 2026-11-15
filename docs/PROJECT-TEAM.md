@@ -960,7 +960,7 @@ The JSON object:
 | `format` | `1`. A later release adds fields; it does not change these. |
 | `team` | `true` |
 | `project`, `records` | the repository root, and its records folder |
-| `workOrders` | each work order with events in the ops ledger and no `work-order-closed` event: `workOrder`, `events` (how many), `latestRound` (the `round` of its latest event that has one, else `null`), `latestKind` and `latestAt` (the kind and `ts` of its latest event) |
+| `workOrders` | each open work order: one with a `sealed` event in the ops ledger and no `work-order-closed` event after it (a work order with no seal is not open): `workOrder`, `events` (how many), `latestRound` (the `round` of its latest event that has one, else `null`), `latestKind` and `latestAt` (the kind and `ts` of its latest event) |
 | `waitingDecisions` | each decision asked, not decided autonomously, and not answered: `id`, `category`, `question`, `askedAt` |
 | `closedSince` | each `work-order-closed` event at or after `--since` (all of them without it): `workOrder`, `closedAt`, `commit` (the commit the close event names), `overridden` (`true` when the close was the owner's override) |
 
