@@ -13,6 +13,8 @@ works on one project at a time, on one machine.
 
 ## Install
 
+New here? `docs/GETTING-STARTED.md` takes one project from install to its first `/bakehouse:change` job.
+
 The plugin is switched on per project, never for every repo on the machine.
 
 1. In the project's main clone, install it at project scope (the default, user scope, would switch the
