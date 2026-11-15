@@ -33,10 +33,15 @@ BRANCH = "bakehouse-records"
 MARKER = "# installed-by: bakehouse"
 USAGE = """\
 usage: bakehouse setup [--pointer <main clone>] [--pre-commit] [--no-remote-check]
+  --pointer <main clone>  in a lane clone (any clone but the main one). setup copies the main clone's
+                     records pointer and makes no records worktree.
+  --pre-commit       also install the pre-commit hook, the predict-gate commit check. Without it, setup
+                     installs the post-commit drift report only.
   --no-remote-check  main clone only. By giving it, the owner asserts that origin has never held the
                      bakehouse-records branch. setup then makes a new orphan bakehouse-records branch here without
                      asking origin (for a remote that needs a login setup cannot give). Without it, setup asks
-                     origin first."""
+                     origin first.
+  --help             print this text and exit 0. setup changes nothing."""
 GITIGNORE = """\
 # The ledger lock files (ops_ledger.lock_path, decision.locked): never committed.
 .*.lock
@@ -430,7 +435,10 @@ def setup_pointer(top: Path, main_clone: str, root, env, pre_commit) -> int:
 
 
 def main(argv, root) -> int:
-    env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"}
+    if "--help" in argv:
+        print(USAGE)
+        return 0
+    env ={k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"}
     pre_commit = "--pre-commit" in argv
     remote_check = "--no-remote-check" not in argv
     argv = [a for a in argv if a not in ("--pre-commit", "--no-remote-check")]

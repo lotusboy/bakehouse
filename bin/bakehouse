@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """bakehouse: the team's command. The plugin's bin/ is on the Bash tool's PATH. Standard library only.
 
-  bakehouse setup [--pointer <main clone>]   make this clone ready for its team (runtime/bakehouse_setup.py)
+  bakehouse setup [--pointer <main clone>] [--pre-commit] [--no-remote-check]   make this clone ready for its team
+                                  (runtime/bakehouse_setup.py; bakehouse setup --help lists the options)
   bakehouse status [--json] [--since <ISO time>] [--repo <folder>]   the team's state (runtime/bakehouse_status.py)
   bakehouse run <script> [args]   run runtime/<script> with the args: the stable way to name a plugin script,
                                   since the plugin folder changes on every update
