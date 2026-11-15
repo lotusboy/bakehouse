@@ -57,7 +57,8 @@ Rules for the prediction:
    refuses it (section 4). Close, records-check and the stop check accept it by one rule
    (`no_move_refusal` in `runtime/predict-gate.py`). The stop check adds one case: it also accepts a
    `noMoves` prediction while its round has no measured file yet, because the engineer stops after
-   writing the prediction and before measuring.
+   writing the prediction and before measuring. A `noMoves` round's evidence rests on its measure
+   report, because the stale-measurement check runs only when the prediction names a move.
 
 **Run it.**
 
