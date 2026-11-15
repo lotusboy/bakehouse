@@ -165,10 +165,12 @@ a reason.
 6. Example. The check reports `tests:passed: 5815 -> 5815. Predicted: after in [5815, 5815]. Not met:
    it did not move.` The reason might be `{"tests:passed": "held value, written as a move by mistake"}`.
 7. The missed file is not sealed. Close's rule 3 for a sealed work order does not ask for its seal.
+8. When the round has a missed file, close's `work-order-closed` line carries its path and sha256. So
+   `close --merged` checks it like the other record files, and a reason changed after close refuses.
 
 On a pass it writes one `work-order-closed` line to the ops ledger. The line carries, for each pair:
 the prediction's sha256 and its commits, the measured file's sha256, the baseline's name and sha256,
-and each approved exception with its commit and decision id. It also lists the `history/` files and
+the missed file's name and sha256 when the round has one, and each approved exception with its commit and decision id. It also lists the `history/` files and
 names the ops ledger file; the output also names the decision ledger. A close that
 cannot be recorded is refused. Exit 2 is bad input: an id that does not match, no commit, or a
 repository with no team (below).
@@ -374,10 +376,12 @@ is whole. It also refuses when the ledger file no longer begins with the ledger 
    [--repo DIR] -- <git commit args>`, which runs `git commit` on the staged code (it does not read
    `-a`) and seals that commit as a `sealed` event with fileKind `code`, its parent and its code-root
    trees, anchored like every seal; a second code seal of the round is refused. Close refuses when the
-   round has no code seal, when the round's first prediction seal comes after its code seal in the
+   round has no code seal, when the round's prediction seal comes after its code seal in the
    ledger's order, and when the sealed commit is not the round's first code change (the code just before
    it differs from the measured base). The ledger's order is the sealer's own, so a prediction sealed
-   after its lane code refuses even though the PM seals in the main checkout.
+   after its lane code refuses even though the PM seals in the main checkout. The round's prediction
+   seal is the first seal of its live chain, decided by `retire_of`: after a retire and a new seal,
+   rule 5b judges the new seal, not the retired one.
 6. **The code at `HEAD` is the code the latest measured seal read**, compared by code-root tree. A head
    on `HEAD`'s own first-parent line is compared with `HEAD`. A head a merge brought in is compared with
    that merge's lane parent; and a code commit on `HEAD`'s own line after that merge whose subject's first

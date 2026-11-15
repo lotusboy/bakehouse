@@ -982,6 +982,17 @@ class CloseMerged(RepoFixture):
                            env=dict(self.env, PREDICT_GATE_CLOSE_OVERRIDE="owner go"), check=False)
         self.assertEqual(p.returncode, 1, p.stdout)
 
+    def test_s1_fix1_close_records_the_missed_file_and_merged_refuses_it_changed(self):
+        self.trio(prediction={"moves": [{"what": "rules:fired", "from": 120, "to": 121}, {"what": "rules:new", "to": 1}]})
+        self.put("moves.missed.json", {"rules:new": "the key is not emitted yet"})
+        self.assertEqual(self.close().returncode, 0)
+        self.assertIn(f"moves.missed.json sha256:{self.sha('moves.missed.json')}", self.events()[-1]["note"])
+        self.put("moves.missed.json", {"rules:new": "a reason rewritten after the close"})
+        self.commit()
+        p = self.merged()
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("moves.missed.json: sha256 ", p.stdout)
+
     def test_merged_close_refuses_with_no_step_9_close(self):
         self.trio()
         self.commit()
