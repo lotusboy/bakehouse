@@ -66,8 +66,11 @@ class Fixture(unittest.TestCase):
         self.bin = None  # a folder put first on PATH, holding a test's own git
         self.project_dir = None  # $CLAUDE_PROJECT_DIR, which the harness sets for a plugin hook
         self.plugin_root = None  # $CLAUDE_PLUGIN_ROOT, which the harness sets for a plugin hook
-        self.install("engineer", "reviewer", "architect", "design-author", "absence-check",
-                     "blast-radius")
+        # the agents whose bare names the tests dispatch as bakehouse's are the plugin's only (R0.1 S6 #2: a bare
+        # name is bakehouse's only when no user or project agent has it); the others are also user agents, which
+        # the tests name in a binding or a personal table
+        self.install("engineer", "reviewer", "blast-radius", own=False)
+        self.install("architect", "design-author", "absence-check")
         # self.repo has opted in; self.other has no binding
         self.records = project(self.repo, {"owned": True, "roles": {}})
         self.bpath = self.repo / ".team" / "binding.json"
@@ -88,12 +91,13 @@ class Fixture(unittest.TestCase):
             e["CLAUDE_PLUGIN_ROOT"] = str(self.plugin_root)
         return e
 
-    def install(self, *names):
+    def install(self, *names, own=True):
         """Each name as a user agent; a shipped agent also as the bakehouse plugin's, `bakehouse:<name>`, which
-        is how the shipped table names it."""
+        is how the shipped table names it. own=False: a shipped agent as the plugin's only."""
         plugin = self.home / "plugin"
         for n in names:
-            (self.home / ".claude" / "agents" / f"{n}.md").write_text(f"---\nname: {n}\n---\n")
+            if own or n not in SHIPPED:
+                (self.home / ".claude" / "agents" / f"{n}.md").write_text(f"---\nname: {n}\n---\n")
             if n in SHIPPED:
                 (plugin / "agents").mkdir(parents=True, exist_ok=True)
                 (plugin / "agents" / f"{n}.md").write_text(f"---\nname: {n}\n---\n")
@@ -103,7 +107,7 @@ class Fixture(unittest.TestCase):
             {"plugins": {"bakehouse@t": [{"scope": "user", "installPath": str(plugin)}]}}))
 
     def uninstall(self, name):
-        (self.home / ".claude" / "agents" / f"{name}.md").unlink()
+        (self.home / ".claude" / "agents" / f"{name}.md").unlink(missing_ok=True)
         (self.home / "plugin" / "agents" / f"{name}.md").unlink(missing_ok=True)
 
     def binding(self, roles):
@@ -468,6 +472,7 @@ class TestPredictionRecord(Fixture):
         out = self.engineer_stop(self.marked(), stop_hook_active=True)
         self.assertNotIn("block", out)
         self.assertIn("stopped without a machine prediction", out)
+        self.assertNotIn("cannot close until it has one", out)
 
     def test_prediction_record_unmarked_engineer_is_not_checked(self):
         self.assertEqual(self.engineer_stop(self.dispatch("role:refactor:engineer")["prompt"]), "")
@@ -578,14 +583,31 @@ class TestPredictionStop(TestPredictionRecord):
         self.assertEqual(out, "")
         self.assertIn("PREDICTION ok for engineer", self.log())
 
-    def test_s1_a_no_moves_prediction_needs_its_measured_pair_with_no_move(self):
+    def test_s6_a_no_moves_prediction_before_its_round_is_measured_lets_the_engineer_stop(self):
+        # R0.1 S6 #1: the engineer commits the prediction before its first code edit and stops, so the round has
+        # no measured file yet. A first round; then a fix round beside the first round's measured pair.
         out = self.engineer_stop(self.marked(), files={"moves.prediction.json": json.dumps({"noMoves": True})})
-        self.assertIn('"decision": "block"', out)
-        self.assertIn("declares noMoves and has no measured pair", out)
-        out = self.engineer_stop(self.marked(), files={"moves.baseline.json": json.dumps({"tests:passed": 11}),
+        self.assertEqual(out, "")
+        (self.folder / "moves.prediction.json").unlink()
+        out = self.engineer_stop(self.marked(), files={"moves.prediction.json": self.OKP,
+                                                       "moves.baseline.json": json.dumps({"tests:passed": 11}),
+                                                       "moves.measured.json": json.dumps({"tests:passed": 12}),
+                                                       "moves.prediction.fix4.json": json.dumps({"noMoves": True})})
+        self.assertEqual(out, "")
+        self.assertIn("PREDICTION ok for engineer", self.log())
+
+    def test_s6_a_no_moves_prediction_whose_measured_pair_moved_keys_is_still_refused(self):
+        out = self.engineer_stop(self.marked(), files={"moves.prediction.json": json.dumps({"noMoves": True}),
+                                                       "moves.baseline.json": json.dumps({"tests:passed": 11}),
                                                        "moves.measured.json": json.dumps({"tests:passed": 12})})
         self.assertIn('"decision": "block"', out)
         self.assertIn("declares noMoves, and 1 key(s) moved", out)
+        # the second stop is let through, and the message does not say close cannot happen
+        out = self.engineer_stop(self.marked(), stop_hook_active=True)
+        self.assertNotIn('"decision": "block"', out)
+        self.assertIn("declares noMoves, and 1 key(s) moved", out)
+        self.assertIn("`predict-gate.sh close` is the hard gate", out)
+        self.assertNotIn("cannot close until it has one", out)
 
     def test_an_empty_prediction_is_refused(self):
         out = self.engineer_stop(self.marked(), files={"moves.prediction.json": json.dumps({"moves": [], "mustNotMove": ["x"]})})
@@ -1482,6 +1504,7 @@ class TestSetupNeededClone(DecisionFixture):
         self.assertEqual(self.decide("my-agent", "Look into it.\n", self.repo / ".team"), ("ok", "Look into it.\n"))
 
     def test_a_team_dispatch_is_still_refused_with_the_setup_message(self):
+        # the bare names reviewer and engineer are bakehouse's here: no user or project agent has them (R0.1 S6 #2)
         for st, brief in (("role:reviewer", "Review it.\n"), ("role:code-review", "Review it.\n"),
                           ("reviewer", "Review it.\n"), ("engineer", "Change it.\n"),
                           ("my-agent", "Work order T7: x\n"), ("my-agent", f"Look.\nRecord folder: {self.rf}/\n"),
@@ -1497,6 +1520,56 @@ class TestSetupNeededClone(DecisionFixture):
         out = subprocess.run(["python3", str(self.hook)], input=json.dumps(d), capture_output=True, text=True,
                              env=self.env(), check=False).stdout
         self.assertEqual(json.loads(out)["hookSpecificOutput"]["permissionDecision"], "deny")
+
+    def test_s6_an_own_agent_named_reviewer_or_engineer_is_not_refused(self):
+        # R0.1 S6 #2: a user or project agent of that name is the one the bare name dispatches; it is not the
+        # team's, so a clone that needs setup passes it, and a dispatch made by it
+        for where in (self.home / ".claude" / "agents", self.repo / ".claude" / "agents"):
+            where.mkdir(parents=True, exist_ok=True)
+            for n in ("reviewer", "engineer"):
+                (where / f"{n}.md").write_text(f"---\nname: {n}\n---\n")
+            for st, brief in (("reviewer", "Review it.\n"), ("engineer", "Change it.\n")):
+                with self.subTest(where=where, st=st):
+                    self.assertEqual(self.decide(st, brief, self.repo), ("ok", brief))
+            d = {"hook_event_name": "PreToolUse", "tool_name": "Agent", "cwd": str(self.repo), "agent_type": "reviewer",
+                 "tool_input": {"subagent_type": "my-agent", "description": "x", "prompt": "Look.\n"}}
+            out = subprocess.run(["python3", str(self.hook)], input=json.dumps(d), capture_output=True, text=True,
+                                 env=self.env(), check=False).stdout
+            self.assertEqual(out, "", where)
+            for n in ("reviewer", "engineer"):
+                (where / f"{n}.md").unlink()
+
+
+class TestOwnAgentWithABakehouseName(Fixture):
+    """R0.1 S6 #2 (Option B): a bare agent name is the bakehouse agent only when no user agent and no project
+    agent has that name. Otherwise it is the user's own, and the hook leaves it alone."""
+
+    WO = {"subagent_type": "engineer", "description": "x", "prompt": "Work order T7: x."}
+
+    def test_without_an_own_agent_the_bare_name_gets_bakehouses_rules(self):
+        self.assertEqual(self.dispatch("reviewer")["model"], "opus")
+        out = self.dispatch("engineer", tool_input=dict(self.WO))
+        self.assertEqual(out["model"], "opus")
+        self.assertEqual(out["prompt"].splitlines()[-1], "[bakehouse:prediction-record]")
+        self.assertIn("requires a run record", self.stop())
+
+    def test_an_own_agent_of_that_name_is_left_alone(self):
+        for where in (self.home / ".claude" / "agents", self.repo / ".claude" / "agents"):
+            where.mkdir(parents=True, exist_ok=True)
+            for n in ("reviewer", "engineer"):
+                (where / f"{n}.md").write_text(f"---\nname: {n}\nmodel: haiku\n---\n")
+            with self.subTest(where=where):
+                # no forced model, no prediction marker, no run-record stop block, no nested-model ceiling
+                self.assertIsNone(self.dispatch("reviewer", tool_input={
+                    "subagent_type": "reviewer", "description": "x", "prompt": "Review it.", "model": "haiku"}))
+                self.assertIsNone(self.dispatch("engineer", tool_input=dict(self.WO)))
+                self.assertEqual(self.stop(), "")
+                self.assertIsNone(self.dispatch("general-purpose", agent_type="reviewer", tool_input={
+                    "subagent_type": "general-purpose", "model": "opus", "prompt": "p"}))
+                # the prefixed name is still bakehouse's
+                self.assertEqual(self.dispatch("bakehouse:reviewer")["model"], "opus")
+            for n in ("reviewer", "engineer"):
+                (where / f"{n}.md").unlink()
 
 
 class TestCheckNewFolder(RecordFixture):
@@ -1521,8 +1594,10 @@ class TestCheckNewFolder(RecordFixture):
 
 
 class TestBrokenRoleTable(Fixture):
-    """R0.1 B-N2 (ANDON): a role table that does not parse fails open. The problem is logged and the dispatch
-    passes unchanged; the table is never read as one that names no such role."""
+    """R0.1 B-N2, S6 #3 and #4: a role table that cannot be used is never read as one that names no such role,
+    and never changes a dispatch silently. A role: dispatch is refused, naming the file and the error. A plain-name
+    dispatch skips that table, keeps the shipped table's rules, and says so. A broken shipped table (a bug in the
+    plugin) lets every dispatch pass unchanged, and says so."""
 
     def setUp(self):
         super().setUp()
@@ -1533,22 +1608,60 @@ class TestBrokenRoleTable(Fixture):
             if f.is_file():
                 shutil.copy2(f, self.rt / f.name)
         self.hook = self.rt / "agent-roles.py"
-
-    def test_a_personal_table_that_does_not_parse_passes_the_dispatch_unchanged(self):
-        table = self.machine / "agent-roles.json"
+        self.table = self.machine / "agent-roles.json"
         self.machine.mkdir(exist_ok=True)
-        for text in ('{"roles": ', "[]", '{"roles": []}'):
-            with self.subTest(text=text):
-                table.write_text(text)
-                self.assertIsNone(self.dispatch("role:my-role"))
-                self.assertIsNone(self.dispatch("role:engineer"))
-                self.assertIn(f"the role table {table}", self.log())
 
-    def test_a_shipped_table_that_does_not_parse_passes_the_dispatch_unchanged(self):
+    def raw(self, st, prompt="p", cwd=None):
+        """The hook's whole answer; {} when it gives none."""
+        d = {"hook_event_name": "PreToolUse", "tool_name": "Agent", "cwd": str(cwd or self.repo),
+             "tool_input": {"subagent_type": st, "description": "x", "prompt": prompt}}
+        p = subprocess.run(["python3", str(self.hook)], input=json.dumps(d), capture_output=True, text=True,
+                           env=self.env())
+        self.assertEqual(p.stderr, "")
+        return json.loads(p.stdout) if p.stdout.strip() else {}
+
+    def test_s6_a_role_dispatch_while_the_personal_table_is_broken_is_refused_naming_it(self):
+        for text, why in (('{"roles": ', "cannot be read (Expecting value"), ("[]", "is not a JSON object"),
+                          ('{"roles": []}', "has a `roles` that is not an object")):
+            for st in ("role:my-role", "role:engineer", "role:change:engineer"):
+                with self.subTest(text=text, st=st):
+                    self.table.write_text(text)
+                    h = self.raw(st)["hookSpecificOutput"]
+                    self.assertEqual(h["permissionDecision"], "deny")
+                    self.assertIn(f"the role table {self.table} {why}", h["permissionDecisionReason"])
+        self.assertIn("DENY bakehouse agent-roles: role 'engineer' cannot be resolved", self.log())
+
+    def test_s6_a_plain_name_dispatch_while_the_personal_table_is_broken_keeps_the_shipped_rules_and_says_so(self):
+        self.table.write_text('{"roles": ')
+        out = self.raw("engineer", "Work order T7: x.")
+        ti = out["hookSpecificOutput"]["updatedInput"]
+        self.assertEqual(ti["model"], "opus")
+        self.assertEqual(ti["prompt"].splitlines()[-1], "[bakehouse:prediction-record]")
+        self.assertIn(f"the role table {self.table} cannot be read (Expecting value", out["systemMessage"])
+        self.assertIn("skipped that table", out["systemMessage"])
+        # a dispatch no rule changes is told too: the skipped table might have named it
+        self.assertIn(f"the role table {self.table} cannot be read", self.raw("general-purpose")["systemMessage"])
+
+    def test_s6_a_binding_roles_that_is_not_an_object_is_a_broken_table(self):
+        self.bpath.write_text(json.dumps({"owned": True, "roles": [{"engineer": "design-author"}]}))
+        h = self.raw("role:engineer")["hookSpecificOutput"]
+        self.assertEqual(h["permissionDecision"], "deny")
+        self.assertIn(".team/binding.json has a `roles` that is not an object", h["permissionDecisionReason"])
+        out = self.raw("engineer", "Work order T7: x.")
+        ti = out["hookSpecificOutput"]["updatedInput"]
+        self.assertEqual(ti["model"], "opus")
+        self.assertEqual(ti["prompt"].splitlines()[-1], "[bakehouse:prediction-record]")
+        self.assertIn(".team/binding.json has a `roles` that is not an object", out["systemMessage"])
+
+    def test_a_shipped_table_that_does_not_parse_passes_the_dispatch_unchanged_and_says_so(self):
         table = self.rt / "agent-roles.json"
         table.write_text('{"roles": ')
-        self.assertIsNone(self.dispatch("role:engineer"))
-        self.assertIsNone(self.dispatch("role:architect", cwd=self.other))
+        for st, cwd in (("role:engineer", None), ("role:architect", self.other), ("engineer", None)):
+            with self.subTest(st=st):
+                out = self.raw(st, cwd=cwd)
+                self.assertNotIn("hookSpecificOutput", out)
+                self.assertIn(f"the role table {table} cannot be read", out["systemMessage"])
+                self.assertIn("a bug in bakehouse", out["systemMessage"])
         self.assertIn(f"the role table {table}", self.log())
 
     def test_a_missing_personal_table_is_no_problem(self):

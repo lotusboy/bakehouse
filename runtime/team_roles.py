@@ -82,16 +82,23 @@ def own_agents(env=os.environ):
     return {f"{plugin}:{n}" for f in Path(root, "agents").glob("*.md") if (n := frontmatter_name(f))}
 
 
-def installed_agents(cwd):
-    """Every agent name this session could dispatch: built-ins, user, project, the running plugin's own,
-    enabled plugins."""
-    names = set(BUILT_IN) | own_agents()
-    top = project_top(cwd)
+def user_agents(top):
+    """The names of the user's own agents (~/.claude/agents) and the project's (<top>/.claude/agents); top is
+    project_top(cwd)."""
+    names = set()
     for d in (Path.home() / ".claude" / "agents", top / ".claude" / "agents"):
         for f in d.glob("*.md"):
             n = frontmatter_name(f)
             if n:
                 names.add(n)
+    return names
+
+
+def installed_agents(cwd):
+    """Every agent name this session could dispatch: built-ins, user, project, the running plugin's own,
+    enabled plugins."""
+    top = project_top(cwd)
+    names = set(BUILT_IN) | own_agents() | user_agents(top)
     try:
         installs = json.load(open(Path.home() / ".claude" / "plugins" / "installed_plugins.json"))["plugins"]
     except (OSError, ValueError, KeyError):
@@ -136,6 +143,15 @@ def table_problem(path):
         return f"the role table {path} is not a JSON object"
     if "roles" in t and not isinstance(t["roles"], dict):
         return f"the role table {path} has a `roles` that is not an object"
+    return None
+
+
+def binding_roles_problem(binding):
+    """Why the binding's `roles` cannot be used as a role table, or None: it is there and is not an object.
+    levels() reads such a `roles` as {}, so the dispatch hook and preflight check 5 ask this first (R0.1 S6 #4).
+    The caller names the binding file before it: "the binding <path> " + this."""
+    if isinstance(binding, dict) and "roles" in binding and not isinstance(binding["roles"], dict):
+        return "has a `roles` that is not an object"
     return None
 
 
@@ -281,13 +297,16 @@ def known_role(spec, lvls):
     return any(k in table for _, table in lvls for k in keys)
 
 
-def is_agent(agent_type, name):
-    """True when agent_type is the agent `name`: a plugin agent may be reported with or without its plugin prefix."""
-    return agent_type == name or name.split(":")[-1] == agent_type
+def is_agent(agent_type, name, users=frozenset):
+    """True when agent_type is the agent `name`: a plugin agent may be reported with or without its plugin prefix.
+    A bare name is the plugin's agent only when no user or project agent has that name; else it is that agent of
+    the user's own (R0.1 S6 #2). users: a function giving those names (user_agents), called only when a bare name
+    matches a plugin agent's, so a dispatch that needs no such answer runs no git for it."""
+    return agent_type == name or (name.split(":")[-1] == agent_type and agent_type not in users())
 
 
-def role_of(agent_type, tables):
-    """(role name, entry) of the first table entry listing agent_type as a provider."""
+def role_of(agent_type, tables, users=frozenset):
+    """(role name, entry) of the first table entry listing agent_type as a provider (is_agent, with users)."""
     if not agent_type:
         return None, None
     for table in tables:
@@ -295,6 +314,6 @@ def role_of(agent_type, tables):
             if not isinstance(r, dict):
                 continue
             for p in providers(r):
-                if is_agent(agent_type, p):
+                if is_agent(agent_type, p, users):
                     return name, r
     return None, None

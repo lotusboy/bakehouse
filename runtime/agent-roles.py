@@ -51,7 +51,8 @@ Three entry points, all wired by the plugin's hooks:
         record folder its brief names (`Record folder:`, read by record_line; else the binding's folder
         for that id) holds
         a moves.prediction<R>.json that predict-gate's own checker accepts and that names at least one
-        move, or declares "noMoves": true beside its measured pair when that pair moved 0 keys. Every
+        move, or declares "noMoves": true (accepted while its round has no measured file yet, and beside
+        its measured pair when that pair moved 0 keys). Every
         stop of that agent type logs whether line 1 ends with the marker (PROMPT-SOURCE).
   --check-new                 (SessionStart) print agents installed since the last check, once. It judges
                               the folder locator.hook_folder names ($CLAUDE_PROJECT_DIR, else the hook input's
@@ -62,15 +63,20 @@ made inside subagents and carries agent_id/agent_type of the caller; updatedInpu
 and model; SubagentStop {"decision":"block"} makes the agent continue, with stop_hook_active on
 re-entry.
 
-Fail-open, with one exception. A dispatch whose decision needs a binding that cannot be read is
+Fail-open, with two exceptions (the second is a broken role table, below). A dispatch whose decision needs a
+binding that cannot be read is
 refused, and the reason names the cause and what to fix (gate dispatch:binding-unreadable): binding.json
 does not parse, is not a JSON object, cannot be read or is a dangling symlink, or its `reviews` field is not a
 safe path (a record folder line names a folder in that repo); the project needs setup (the
 locator's message; only a team dispatch is refused for it: a role: dispatch, an agent a role table lists, or a
 brief with a `Work order <id>:` or record folder line); the project locator cannot be run or does not answer in time. The hook cannot tell
 whether that dispatch is in its care, so it does not guess. Its event is kept in agent-roles.log with its
-cause: the working folder's ledger is found through the input that cannot be read. Every other error lets the
-dispatch through unchanged: a broken role table, a crash anywhere in the hook. A stop always fails open:
+cause: the working folder's ledger is found through the input that cannot be read. A broken role table never
+changes a dispatch silently (R0.1 S6 #3): while the personal table, or the binding's `roles` (not an object), cannot
+be used, a role: dispatch is refused, the reason naming the file and the error (gate dispatch:role-table), and any
+other dispatch skips that table, keeps the shipped table's rules and tells the user (systemMessage). A broken
+shipped table is a bug in the plugin: every dispatch passes unchanged, and the user is told. Every other error
+lets the dispatch through unchanged: a crash anywhere in the hook. A stop always fails open:
 an unreadable binding there is read as none. A `Record folder:` line with any text after its path is
 refused at dispatch, showing the line, and reported at a stop, never read; a refused full path under a
 bound repo's reviews puts the dispatch in care. The whole run has one deadline, RUN_BUDGET_S, counted from hook
@@ -490,6 +496,21 @@ def tables():
             team_roles.table_roles(team_roles.shipped_table())]
 
 
+_USERS = {}
+
+
+def users_at(cwd):
+    """A function giving the names of the user's and the project's own agents for cwd (team_roles.user_agents): a
+    bare agent name among them is that agent, never a plugin agent of the same name (R0.1 S6 #2). Read once per
+    run, and only when asked; the project's folder is found by repo_root, inside the run's deadline."""
+    def users():
+        k = str(cwd)
+        if k not in _USERS:
+            _USERS[k] = team_roles.user_agents(repo_root(k))
+        return _USERS[k]
+    return users
+
+
 def reviews_folder(binding):
     """(folder, None) for the binding's `reviews`, or (None, reason) when it is not a safe path."""
     v = binding.get("reviews", DEFAULT_REVIEWS)
@@ -510,17 +531,46 @@ def is_above(model, ceiling):
     return m is None or order[m] > order[c]
 
 
+def binding_file(cwd):
+    """The binding file of the project at cwd, found as binding_at finds it (lookup_paths), for a message; None
+    when the locator names none."""
+    for at in lookup_paths(str(cwd), False):
+        where = team_roles.locate("binding", at, log, timeout=min(team_roles.RESOLVE_TIMEOUT, left()), env=NAMED_ENV)[0]
+        if where:
+            return where
+    return None
+
+
+def read_already(cwd):
+    """The cwd's binding when this run has read it already, else None: a dispatch whose decision never needed its
+    binding never reads its `roles`."""
+    return _BINDINGS.get((str(cwd), False), (None, None))[0]
+
+
+def broken_tables(cwd, binding):
+    """Why each role table a dispatch from cwd reads cannot be used (R0.1 S6 #3, #4): the personal table, and the
+    `roles` of binding (the cwd's, when it was read)."""
+    out = [w for w in [team_roles.table_problem(team_roles.personal_table())] if w]
+    why = team_roles.binding_roles_problem(binding)
+    if why:
+        out.append(f"the binding {binding_file(cwd) or 'of the repository ' + str(cwd)} {why}")
+    return out
+
+
 def pre_tool_use(d):
-    # a role table that cannot be used fails open: the dispatch passes unchanged, never read as naming no
-    # such role (R0.1 B-N2)
-    broken = [w for t in (team_roles.personal_table(), team_roles.shipped_table()) if (w := team_roles.table_problem(t))]
-    if broken:
-        log(f"ERROR {'; '.join(broken)}: the dispatch passes unchanged; fix that file")
-        return None
+    # The shipped table is the plugin's own: one that cannot be used is a bug in the plugin. The dispatch passes
+    # unchanged, never read as naming no such role (R0.1 B-N2), and the user is told (R0.1 S6 #3).
+    shipped = team_roles.table_problem(team_roles.shipped_table())
+    if shipped:
+        msg = (f"bakehouse agent-roles: {shipped}. That table is the plugin's own, so this is a bug in bakehouse: "
+               "this dispatch passes unchanged, with no role rule applied. Reinstall or update the plugin.")
+        log(f"ERROR {msg}")
+        return {"systemMessage": msg}
     ti = dict(d.get("tool_input") or {})
     tabs = tables()
     st = ti.get("subagent_type") or "general-purpose"
     cwd = d.get("cwd") or os.getcwd()
+    users = users_at(cwd)
     notes = []
     role_entry = None
     binding = None
@@ -533,6 +583,18 @@ def pre_tool_use(d):
     if by_role:
         spec = st[5:]
         binding = bound(cwd)
+        broken = broken_tables(cwd, binding)
+        if broken:
+            # a role: dispatch passed unchanged reaches no agent; resolved without the broken table, it may be
+            # another agent than the owner meant: it is refused, naming the file (R0.1 S6 #3)
+            reason = (f"bakehouse agent-roles: role '{spec}' cannot be resolved, because a role table it reads cannot "
+                      f"be used: {'; '.join(broken)}. Fix that file and dispatch again; nothing in the brief is the "
+                      "cause.")
+            log(f"DENY {reason}")
+            refusal_event("dispatch:role-table", reason, before, cwd)
+            return {"hookSpecificOutput": {"hookEventName": "PreToolUse",
+                                           "permissionDecision": "deny",
+                                           "permissionDecisionReason": reason}}
         lvls = team_roles.levels(binding)
         res = team_roles.resolve(spec, lvls, team_roles.installed_agents(cwd))
         for where, key, provs in res["skipped"]:
@@ -554,7 +616,7 @@ def pre_tool_use(d):
         engineer = st in change_engineers(binding, cwd)
     elif st not in team_roles.BUILT_IN and prediction_jobs():
         b = bound(cwd)
-        if b and any(team_roles.is_agent(st, a) for a in change_engineers(b, cwd)):
+        if b and any(team_roles.is_agent(st, a, users) for a in change_engineers(b, cwd)):
             engineer = True
             if work_order(ti.get("prompt"), b):
                 mark, binding = True, b
@@ -567,7 +629,7 @@ def pre_tool_use(d):
     # The record folder of an agent the stop checks is decided here, once, from the cwd the PM dispatched
     # from, and logged for its stop; a line that cannot be decided is refused before any work runs.
     decided = None
-    if mark or (team_roles.role_of(st, tabs)[1] or {}).get("run_record"):
+    if mark or (team_roles.role_of(st, tabs, users)[1] or {}).get("run_record"):
         bcwd = binding if binding is not None else bound(cwd)
         dec = dispatch_decision(before, cwd, mark or by_role or bool(bcwd))
         if dec and dec[0] == "refuse":
@@ -586,11 +648,12 @@ def pre_tool_use(d):
     # that has opted in with a binding: anywhere else a same-named agent may be the user's own
     # (review 2026-10-11, H2). The owner's own table (the personal one) is their explicit choice and
     # applies everywhere.
-    if binding is None and (team_roles.role_of(st, tabs)[1] or team_roles.role_of(d.get("agent_type"), tabs)[1]):
+    if binding is None and (team_roles.role_of(st, tabs, users)[1]
+                            or team_roles.role_of(d.get("agent_type"), tabs, users)[1]):
         binding = bound(cwd)
         if not binding:
             tabs = tabs[:1]
-    rname, r = team_roles.role_of(st, tabs)
+    rname, r = team_roles.role_of(st, tabs, users)
     if not r and role_entry:
         # an agent no table lists takes only the dispatched role's model
         r = {"model": role_entry.get("model")}
@@ -616,7 +679,8 @@ def pre_tool_use(d):
             f"\n\nBefore you stop, {where} must hold the prediction as moves.prediction.json (a fix round: "
             "moves.prediction.<round>.json, for example moves.prediction.fix1.json), in the format "
             "`predict-gate.sh check` reads, naming at least one move (a round that moves nothing declares "
-            "\"noMoves\": true, and is accepted beside its measured pair when that pair moved 0 keys). "
+            "\"noMoves\": true, and is accepted before its round is measured, and beside its measured pair "
+            "when that pair moved 0 keys). "
             "A prose prediction may sit beside it. "
             f"The stop hook sends you back once if it is missing, empty or does not parse.\n{PREDICTION_MARKER}")
         notes.append(f"prediction-record rule added ({decided[3] if decided else 'no Record folder line'})")
@@ -627,11 +691,20 @@ def pre_tool_use(d):
 
     parent = d.get("agent_type")
     if parent:
-        pname, pr = team_roles.role_of(parent, tabs)
+        pname, pr = team_roles.role_of(parent, tabs, users)
         cap = (pr or {}).get("nested_model")
         if isinstance(cap, str) and cap and is_above(ti.get("model"), cap):
             notes.append(f"nested spawn by {parent}: model {ti.get('model')} -> {cap}")
             ti["model"] = cap
+
+    if not by_role:
+        # a broken table was skipped, and the rest applied: the user is told, naming the file (R0.1 S6 #3)
+        skipped = broken_tables(cwd, read_already(cwd))
+        if skipped:
+            msg = (f"bakehouse agent-roles: {'; '.join(skipped)}. This dispatch skipped that table and used the "
+                   "other role tables, so the shipped table's rules still apply; fix that file.")
+            log(f"WARN {msg}")
+            warn = f"{warn} {msg}" if warn else msg
 
     if not notes:
         return {"systemMessage": warn} if warn else None
@@ -649,7 +722,8 @@ def team_dispatch(d):
     dispatching), or a brief with a `Work order <id>:` line or a line labelled as a record folder."""
     ti = d.get("tool_input") or {}
     st, prompt, tabs = ti.get("subagent_type") or "general-purpose", ti.get("prompt") or "", tables()
-    return (st.startswith("role:") or any(team_roles.role_of(a, tabs)[0] for a in (st, d.get("agent_type")))
+    users = users_at(d.get("cwd") or os.getcwd())
+    return (st.startswith("role:") or any(team_roles.role_of(a, tabs, users)[0] for a in (st, d.get("agent_type")))
             or bool(WORK_ORDER.search(prompt) or RECORD_LABEL.search(prompt)))
 
 
@@ -745,13 +819,15 @@ def unsealed_moves(folders, where, named):
 
 def prediction_stop(d):
     """The change engineer may stop only when its own record folder holds a prediction file that
-    predict-gate's own checker accepts and that names at least one move, or that declares "noMoves": true
-    beside its measured pair when that pair moved 0 keys (predict-gate's no_move_refusal)."""
+    predict-gate's own checker accepts and that names at least one move, or that declares "noMoves": true:
+    accepted while its round has no measured file yet, and beside its measured pair when that pair moved 0 keys
+    (predict-gate's no_move_refusal)."""
     prompt = first_prompt(d.get("agent_transcript_path"))
     lines = [x.strip() for x in prompt.splitlines() if x.strip()]
     marked = bool(lines) and lines[-1] == PREDICTION_MARKER
     agent = d.get("agent_type")
     cwd = d.get("cwd") or os.getcwd()
+    users = users_at(cwd)
     binding = binding_at(cwd)[0]
     line, note = stop_line(prompt, cwd, binding)
     kind = line[0] if line else None
@@ -762,12 +838,12 @@ def prediction_stop(d):
         if marked:
             log(f"PREDICTION check skipped for {agent}: no binding for {cwd}")
         # a line the fallback cannot place, in a change job's brief, is reported
-        if note and any(team_roles.is_agent(agent, a) for a in change_engineers(binding, cwd)) \
+        if note and any(team_roles.is_agent(agent, a, users) for a in change_engineers(binding, cwd)) \
                 and dispatched(prompt) is not False and (
                 marked or (work_order(prompt, binding) and agent not in team_roles.BUILT_IN)):
             return with_note(None, note)
         return None
-    if not any(team_roles.is_agent(agent, a) for a in change_engineers(binding, cwd)):
+    if not any(team_roles.is_agent(agent, a, users) for a in change_engineers(binding, cwd)):
         return None
     log(f"PROMPT-SOURCE {agent}: transcript line 1 {'ends' if marked else 'does not end'} with "
         f"{PREDICTION_MARKER} (a marked dispatch shows here whether line 1 holds the rewritten prompt)")
@@ -796,6 +872,12 @@ def prediction_stop(d):
             if p.is_file() and gate.PREDICTION_RE.match(p.name):
                 try:
                     pred = gate.check_prediction(gate.load(p), p)
+                    rnd = gate.PREDICTION_RE.match(p.name).group(1)
+                    if pred["noMoves"] and not (f / f"moves.measured{rnd}.json").is_file():
+                        # the prediction is written before the round is measured, so its measured file does
+                        # not exist yet: accepted here; close is the hard gate, and needs the pair (R0.1 S6 #1)
+                        good.append(p)
+                        continue
                     moved = None if pred["moves"] else gate.pair_moved(
                         p.name, pred, lambda n, f=f: (f / n).is_file(), lambda n, f=f: (f / n).read_text(encoding="utf-8"))
                     why = gate.no_move_refusal(len(pred["moves"]), pred["noMoves"], moved)
@@ -838,8 +920,10 @@ def prediction_stop(d):
         refusal_event("stop:prediction", out["reason"], prompt, folders[0] if folders else cwd)
         return out
     log(f"PREDICTION still missing or bad for {agent} — let it stop, told the user")
-    return with_note({"systemMessage": f"bakehouse agent-roles: {agent} stopped without a machine "
-                                       f"prediction: {what}. The work order cannot close until it has one."}, note)
+    return with_note({"systemMessage": f"bakehouse agent-roles: {agent} stopped without a machine prediction the "
+                                       f"stop check accepts: {what}. It was let stop this time; "
+                                       "`predict-gate.sh close` is the hard gate, and checks the round's prediction "
+                                       "again."}, note)
 
 
 def records_check():
@@ -938,10 +1022,11 @@ def subagent_stop(d):
     if out:
         return out
     tabs = tables()
-    rname, r = team_roles.role_of(d.get("agent_type"), tabs)
+    users = users_at(d.get("cwd") or os.getcwd())
+    rname, r = team_roles.role_of(d.get("agent_type"), tabs, users)
     if not r or not r.get("run_record"):
         return None
-    personal = bool(team_roles.role_of(d.get("agent_type"), tabs[:1])[1])
+    personal = bool(team_roles.role_of(d.get("agent_type"), tabs[:1], users)[1])
     started = run_started(d)
     cwd = d.get("cwd") or os.getcwd()
     binding = binding_at(cwd)[0]

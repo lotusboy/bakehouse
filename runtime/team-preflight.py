@@ -311,11 +311,14 @@ def check_signal_rules(sig, repo, job):
     return fails, notes
 
 
-def check_roles(b, job, repo):
+def check_roles(b, job, repo, bpath):
     """(fails, notes): resolve each role the job dispatches by §5.1 (team_roles.resolve). A role table that
-    cannot be used fails, named; it is never read as one that names no role (S2 fix 2, as the hook's B-N2)."""
+    cannot be used fails, named; it is never read as one that names no role (S2 fix 2, as the hook's B-N2). So
+    does the binding's `roles` when it is not an object (R0.1 S6 #4). bpath: the binding file."""
     broken = [f"check 5: {w}: fix that file" for t in (team_roles.personal_table(), team_roles.shipped_table())
               if (w := team_roles.table_problem(t))]
+    if why := team_roles.binding_roles_problem(b):
+        broken.append(f"check 5: the binding {bpath} {why}: fix that file")
     if broken:
         return broken, []
     have = team_roles.installed_agents(str(repo))
@@ -396,7 +399,7 @@ def main(argv):
         f4, notes = check_pointers(b, repo, job)
         fails += f4
     if job in JOB_ROLES:
-        f5, n5 = check_roles(b, job, repo)
+        f5, n5 = check_roles(b, job, repo, bpath)
         fails += f5
         notes += n5
         if b.get("owned") is False:

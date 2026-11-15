@@ -55,7 +55,10 @@ Rules for the prediction:
    a move is bad input (exit 2). It is accepted only beside its measured pair, and only when that pair
    shows 0 moved keys. A key that moves in a `noMoves` round is an unpredicted move, and `check`
    refuses it (section 4). Close, records-check and the stop check accept it by one rule
-   (`no_move_refusal` in `runtime/predict-gate.py`).
+   (`no_move_refusal` in `runtime/predict-gate.py`). The stop check adds one case: it also accepts a
+   `noMoves` prediction while its round has no measured file yet, because the engineer stops after
+   writing the prediction and before measuring. A `noMoves` round's evidence rests on its measure
+   report, because the stale-measurement check runs only when the prediction names a move.
 
 **Run it.**
 
@@ -500,8 +503,9 @@ hard gate.
 4. It checks only the engineer's own record folder: the `Record folder:` line of its brief, else the
    binding's folder for the `Work order <id>:`. Another folder never satisfies it.
 5. It sends the engineer back once unless that folder holds a `moves.prediction*.json` that `check`
-   reads and that names at least one move. A prediction that declares `"noMoves": true` passes too, when
-   its measured pair is beside it and moved 0 keys.
+   reads and that names at least one move. A prediction that declares `"noMoves": true` passes too:
+   while its round has no measured file yet, and when its measured pair is beside it and moved 0 keys.
+   A `noMoves` prediction whose measured pair moved keys is sent back.
 5b. Then it sends the engineer back once for any top-level moves file (prediction, baseline
    or measured) whose bytes no `sealed` or `revised` event in its project's ops ledger names: the
    project of the bound repository. The reason names each unsealed file

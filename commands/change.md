@@ -258,8 +258,9 @@ branch), `BASE` and the record folder. Commit by path, with the trailer. Fill th
    on the branch. The engineer writes the prediction file and commits it by its path before its
    first code edit, then stops and reports. Close refuses a code commit of the work order that no
    round's prediction commit comes before (by commit time; bakehouse `docs/PREDICT-GATE.md`). The role hook sends it back once if the record folder its brief names holds no
-   prediction file that parses and either names a move or declares `"noMoves": true` with its measured
-   pair beside it showing 0 moved keys. A dispatch by the agent's plain name is checked
+   prediction file that parses and either names a move or declares `"noMoves": true`. A `noMoves`
+   prediction passes this stop while its round has no measured file yet, and beside its measured pair
+   only when that pair shows 0 moved keys. A dispatch by the agent's plain name is checked
    only when the brief keeps its `Work order {id}:` line; otherwise the hook warns. Either way,
    step 9's close is the hard gate.
 
