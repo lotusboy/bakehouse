@@ -114,6 +114,24 @@ def table_roles(path):
     return roles if isinstance(roles, dict) else {}
 
 
+def table_problem(path):
+    """Why the role table at path cannot be used (it cannot be read, does not parse, is not a JSON object, or
+    its `roles` is not an object), or None when it can or does not exist. table_roles reads such a table as
+    {}, so the agent-roles hook asks this first and fails open (R0.1 B-N2): the table is never read as one
+    that names no such role."""
+    try:
+        t = json.loads(Path(path).read_text())
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as e:
+        return f"the role table {path} cannot be read ({e})"
+    if not isinstance(t, dict):
+        return f"the role table {path} is not a JSON object"
+    if "roles" in t and not isinstance(t["roles"], dict):
+        return f"the role table {path} has a `roles` that is not an object"
+    return None
+
+
 def providers(entry):
     """A binding entry is an agent name, a list of names, or the table form {"providers": [...]}
     (which may also set a model); a table entry is {"providers": [...]}.

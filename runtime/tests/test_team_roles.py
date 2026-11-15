@@ -1450,6 +1450,42 @@ class TestB2UnreadableInput(DecisionFixture):
         self.assertIn("UNREADABLE binding for", self.log())
 
 
+class TestBrokenRoleTable(Fixture):
+    """R0.1 B-N2 (ANDON): a role table that does not parse fails open. The problem is logged and the dispatch
+    passes unchanged; the table is never read as one that names no such role."""
+
+    def setUp(self):
+        super().setUp()
+        # a copy of the runtime, so a test can break the shipped table beside the hook
+        self.rt = Path(self.tmp.name).resolve() / "runtime"
+        self.rt.mkdir()
+        for f in RUNTIME.iterdir():
+            if f.is_file():
+                shutil.copy2(f, self.rt / f.name)
+        self.hook = self.rt / "agent-roles.py"
+
+    def test_a_personal_table_that_does_not_parse_passes_the_dispatch_unchanged(self):
+        table = self.machine / "agent-roles.json"
+        self.machine.mkdir(exist_ok=True)
+        for text in ('{"roles": ', "[]", '{"roles": []}'):
+            with self.subTest(text=text):
+                table.write_text(text)
+                self.assertIsNone(self.dispatch("role:my-role"))
+                self.assertIsNone(self.dispatch("role:engineer"))
+                self.assertIn(f"the role table {table}", self.log())
+
+    def test_a_shipped_table_that_does_not_parse_passes_the_dispatch_unchanged(self):
+        table = self.rt / "agent-roles.json"
+        table.write_text('{"roles": ')
+        self.assertIsNone(self.dispatch("role:engineer"))
+        self.assertIsNone(self.dispatch("role:architect", cwd=self.other))
+        self.assertIn(f"the role table {table}", self.log())
+
+    def test_a_missing_personal_table_is_no_problem(self):
+        self.assertEqual(self.dispatch("role:engineer")["subagent_type"], "bakehouse:refactor-engineer")
+        self.assertNotIn("role table", self.log() if (self.machine / "logs" / "agent-roles.log").is_file() else "")
+
+
 class TestReadBinding(Fixture):
     def test_read_binding_tells_none_from_unreadable(self):
         read = lambda p, **k: team_roles.read_binding(p, env=self.env(), **k)

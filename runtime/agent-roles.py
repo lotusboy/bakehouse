@@ -501,6 +501,12 @@ def is_above(model, ceiling):
 
 
 def pre_tool_use(d):
+    # a role table that cannot be used fails open: the dispatch passes unchanged, never read as naming no
+    # such role (R0.1 B-N2)
+    broken = [w for t in (team_roles.personal_table(), team_roles.shipped_table()) if (w := team_roles.table_problem(t))]
+    if broken:
+        log(f"ERROR {'; '.join(broken)}: the dispatch passes unchanged; fix that file")
+        return None
     ti = dict(d.get("tool_input") or {})
     tabs = tables()
     st = ti.get("subagent_type") or "general-purpose"
