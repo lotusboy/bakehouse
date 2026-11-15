@@ -28,6 +28,12 @@ REVIEW_FALLBACK = "general-purpose"
 RESOLVE_TIMEOUT = 2  # seconds; the hook's whole budget is 10
 
 
+class SetupProblem(str):
+    """A problem that is the locator's "setup needed" message: the repo has a binding but no usable records
+    pointer. A str, so it reads as any other problem; the dispatch hook lets a dispatch that is not the
+    team's pass on it (R0.1 S15-2)."""
+
+
 def frontmatter_name(path):
     try:
         lines = open(path, encoding="utf-8", errors="replace").read().split("\n")
@@ -181,7 +187,7 @@ def locate(field, path, log=None, timeout=RESOLVE_TIMEOUT, env=os.environ):
     if proc.returncode == locator.NO_TEAM:
         return None, None
     if proc.returncode == locator.SETUP_NEEDED:
-        return None, err.strip()
+        return None, SetupProblem(err.strip())
     if proc.returncode or not out.strip():
         why = f"the project locator `{cmd}` cannot be run (exit {proc.returncode}: {err.strip()[-300:]})"
         if log:

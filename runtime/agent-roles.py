@@ -64,7 +64,8 @@ Fail-open, with one exception. A dispatch whose decision needs a binding that ca
 refused, and the reason names the cause and what to fix (gate dispatch:binding-unreadable): binding.json
 does not parse, is not a JSON object, cannot be read or is a dangling symlink, or its `reviews` field is not a
 safe path (a record folder line names a folder in that repo); the project needs setup (the
-locator's message); the project locator cannot be run or does not answer in time. The hook cannot tell
+locator's message; only a team dispatch is refused for it: a role: dispatch, an agent a role table lists, or a
+brief with a `Work order <id>:` or record folder line); the project locator cannot be run or does not answer in time. The hook cannot tell
 whether that dispatch is in its care, so it does not guess. Its event is kept in agent-roles.log with its
 cause: the working folder's ledger is found through the input that cannot be read. Every other error lets the
 dispatch through unchanged: a broken role table, a crash anywhere in the hook. A stop always fails open:
@@ -641,12 +642,25 @@ def pre_tool_use(d):
     return out
 
 
+def team_dispatch(d):
+    """True when the dispatch is the team's: a role: dispatch, an agent a role table lists (dispatched, or
+    dispatching), or a brief with a `Work order <id>:` line or a line labelled as a record folder."""
+    ti = d.get("tool_input") or {}
+    st, prompt, tabs = ti.get("subagent_type") or "general-purpose", ti.get("prompt") or "", tables()
+    return (st.startswith("role:") or any(team_roles.role_of(a, tabs)[0] for a in (st, d.get("agent_type")))
+            or bool(WORK_ORDER.search(prompt) or RECORD_LABEL.search(prompt)))
+
+
 def on_pre_tool_use(d):
     """pre_tool_use, refused when a binding its decision needs cannot be read: the reason names the cause
-    and what to fix, never the brief."""
+    and what to fix, never the brief. A project that needs setup refuses only a team dispatch; any other
+    dispatch passes unchanged (R0.1 S15-2: a clone with a binding and no records pointer)."""
     try:
         return pre_tool_use(d)
     except Unreadable as e:
+        if isinstance(e.args[0], team_roles.SetupProblem) and not team_dispatch(d):
+            log(f"PASS a dispatch that is not the team's, unchanged: {e}")
+            return None
         reason = (f"bakehouse agent-roles: this dispatch cannot be decided, because the hook cannot read its own "
                   f"input: {e}. Nothing in the brief is the cause; fix that and dispatch again.")
         log(f"DENY {reason}")

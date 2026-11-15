@@ -93,9 +93,11 @@ A review role never falls to the session that did the work: with no match it goe
 `logs/agent-roles.log` in the machine folder. The hook fails open, with one exception: a dispatch whose decision needs a
 binding that cannot be read (binding.json does not parse, is not an object, cannot be read or is a
 dangling symlink, or its `reviews` field is not a safe path, for a dispatch whose record folder line names a
-folder in that repo; the project needs setup, with the locator's message; the project locator cannot be
+folder in that repo; the project needs setup, with the locator's message, for a team dispatch only; the project locator cannot be
 run or does not answer in time) is refused, and the reason names that
-cause and the file or command to fix (`dispatch:binding-unreadable`). When the run's deadline was used up
+cause and the file or command to fix (`dispatch:binding-unreadable`). A team dispatch is a `role:` dispatch, a
+dispatch of or by an agent a role table lists, or one whose brief has a `Work order <id>:` line or a record
+folder line; in a clone that needs setup, any other dispatch passes unchanged. When the run's deadline was used up
 by earlier calls, the reason says so. A stop still fails open. The whole hook run has one deadline of 6
 seconds, counted from hook start; each path's binding is read once per run.
 
@@ -923,7 +925,7 @@ refusals can be counted per tool and per check. The event is ops-event.sh's, wit
 | `records-check:binding-records` | records-check.py | the binding's `records` object removes or replaces a contract artefact |
 | `records-check:input` | records-check.py | any other bad input, exit 2 |
 | `dispatch:role-unresolved` | agent-roles.py (PreToolUse) | a `role:` dispatch that no level resolves |
-| `dispatch:binding-unreadable` | agent-roles.py (PreToolUse) | a dispatch whose decision needs a binding that cannot be read: binding.json does not parse, is not an object, cannot be read or is a dangling symlink, or its `reviews` field is not a safe path (the reason names that field and the binding file); the project needs setup (the locator's message); the project locator cannot be run or does not answer in time. The reason names the cause and what to fix. Its event is kept in `logs/agent-roles.log` in the machine folder (`GATE-EVENT ... kept in this log`) with its cause, because the working folder's ledger is found through the input that failed |
+| `dispatch:binding-unreadable` | agent-roles.py (PreToolUse) | a dispatch whose decision needs a binding that cannot be read: binding.json does not parse, is not an object, cannot be read or is a dangling symlink, or its `reviews` field is not a safe path (the reason names that field and the binding file); the project needs setup (the locator's message; a team dispatch only, as in "Roles"); the project locator cannot be run or does not answer in time. The reason names the cause and what to fix. Its event is kept in `logs/agent-roles.log` in the machine folder (`GATE-EVENT ... kept in this log`) with its cause, because the working folder's ledger is found through the input that failed |
 | `dispatch:record-folder` | agent-roles.py (PreToolUse) | a `Record folder:` line that cannot be decided |
 | `stop:prediction` | agent-roles.py (SubagentStop) | a change job stops with no machine prediction |
 | `stop:seal` | agent-roles.py (SubagentStop) | a change job stops with a moves file whose bytes no seal in its project's ops ledger names (sent back once) |

@@ -1468,6 +1468,37 @@ class TestBadReviewsField(DecisionFixture):
                         self.assertNotIn("Record folder", why)
 
 
+class TestSetupNeededClone(DecisionFixture):
+    """R0.1 S15-2: in a clone with a binding but no records pointer, a dispatch that is not the team's passes
+    unchanged; a team dispatch is still refused with the setup message."""
+
+    def setUp(self):
+        super().setUp()
+        subprocess.run(["git", "-C", str(self.repo), "config", "--unset", "bakehouse.records"], check=True)
+        self.install("my-agent")
+
+    def test_a_plain_dispatch_of_the_users_own_agent_passes(self):
+        self.assertEqual(self.decide("my-agent", "Look into it.\n", self.repo), ("ok", "Look into it.\n"))
+        self.assertEqual(self.decide("my-agent", "Look into it.\n", self.repo / ".team"), ("ok", "Look into it.\n"))
+
+    def test_a_team_dispatch_is_still_refused_with_the_setup_message(self):
+        for st, brief in (("role:reviewer", "Review it.\n"), ("role:code-review", "Review it.\n"),
+                          ("refactor-reviewer", "Review it.\n"), ("refactor-engineer", "Change it.\n"),
+                          ("my-agent", "Work order T7: x\n"), ("my-agent", f"Look.\nRecord folder: {self.rf}/\n"),
+                          ("my-agent", "Look.\n**Record folder:** somewhere\n")):
+            with self.subTest(st=st, brief=brief):
+                got, why = self.decide(st, brief, self.repo)
+                self.assertEqual(got, "DENY")
+                self.assertIn("has a team binding but no records folder: run `bakehouse setup`", why)
+
+    def test_a_dispatch_by_a_team_agent_is_still_refused(self):
+        d = {"hook_event_name": "PreToolUse", "tool_name": "Agent", "cwd": str(self.repo), "agent_type": "refactor-reviewer",
+             "tool_input": {"subagent_type": "my-agent", "description": "x", "prompt": "Look.\n"}}
+        out = subprocess.run(["python3", str(self.hook)], input=json.dumps(d), capture_output=True, text=True,
+                             env=self.env(), check=False).stdout
+        self.assertEqual(json.loads(out)["hookSpecificOutput"]["permissionDecision"], "deny")
+
+
 class TestBrokenRoleTable(Fixture):
     """R0.1 B-N2 (ANDON): a role table that does not parse fails open. The problem is logged and the dispatch
     passes unchanged; the table is never read as one that names no such role."""
