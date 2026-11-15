@@ -77,8 +77,8 @@ A role names a job. An agent fills a role. A job dispatches `role:<job>:<role>`,
 | Role | Does | Shipped agent |
 |---|---|---|
 | `architect` | lays out a restructure-or-accept decision for one part | `bakehouse:architect` |
-| `engineer` | makes the change behind its job's gate | `bakehouse:engineer` |
-| `reviewer` | reviews the diff and runs the risky case | `bakehouse:reviewer` |
+| `engineer` | makes one step of a refactor or a change behind that job's gate: byte-identical outputs for `refactor`, predicted moves for `change` | `bakehouse:engineer` |
+| `reviewer` | reviews an engineer's diff in either job, `refactor` or `change`, and runs the risky case | `bakehouse:reviewer` |
 | `absence-check`, `count-check`, `blast-radius` | check a claim of absence, a count, the reach of a change | `bakehouse:` and the role's name |
 | `design-author`, `design-reviewer` | write and review a design | `bakehouse:` and the role's name |
 | `expert` | an independent reading of one question about what a source means, standing in for a human expert in the project's field; it reads blind and advises, never rules | `bakehouse:human-expert` |
