@@ -11,8 +11,8 @@
   "agents/design-author.md",
   "agents/design-reviewer.md",
   "agents/human-expert.md",
-  "agents/refactor-engineer.md",
-  "agents/refactor-reviewer.md"
+  "agents/engineer.md",
+  "agents/reviewer.md"
  ],
  "rules": [
   {
@@ -537,7 +537,7 @@
     "Never ask it to start the reviewer."
    ],
    "enforcer": "prompt",
-   "proof": "code exists, no proof test: agents/refactor-engineer.md (its tools: line names no agent tool; the harness, not bakehouse, enforces it)"
+   "proof": "code exists, no proof test: agents/engineer.md (its tools: line names no agent tool; the harness, not bakehouse, enforces it)"
   },
   {
    "id": "bakehouse-change-33",
@@ -1069,7 +1069,7 @@
     "Never ask it to start the reviewer."
    ],
    "enforcer": "prompt",
-   "proof": "code exists, no proof test: agents/refactor-engineer.md (its tools: line names no agent tool; the harness, not bakehouse, enforces it)"
+   "proof": "code exists, no proof test: agents/engineer.md (its tools: line names no agent tool; the harness, not bakehouse, enforces it)"
   },
   {
    "id": "bakehouse-refactor-25",
@@ -1463,18 +1463,18 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "refactor-engineer-01",
-   "file": "agents/refactor-engineer.md",
+   "id": "engineer-01",
+   "file": "agents/engineer.md",
    "sentences": [
     "Axis handles: **Feathers' Legacy Code** (change only behind a characterisation test), **Chesterton's Fence** (understand every odd line before moving it), **Poka-yoke** (where the restructure adds a check, a wrong change must fail it)."
    ],
    "enforcer": "reviewer",
-   "proof": "agents/refactor-reviewer.md: Try to make a wrong order, a missing declaration or a wrong-way import pass the new checks.",
+   "proof": "agents/reviewer.md: Try to make a wrong order, a missing declaration or a wrong-way import pass the new checks.",
    "note": "Poka-yoke: a wrong change must fail the new check"
   },
   {
-   "id": "refactor-engineer-02",
-   "file": "agents/refactor-engineer.md",
+   "id": "engineer-02",
+   "file": "agents/engineer.md",
    "sentences": [
     "Never write into the project's real output locations."
    ],
@@ -1482,17 +1482,17 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "refactor-engineer-03",
-   "file": "agents/refactor-engineer.md",
+   "id": "engineer-03",
+   "file": "agents/engineer.md",
    "sentences": [
     "- Dependencies must point inward."
    ],
    "enforcer": "reviewer",
-   "proof": "agents/refactor-reviewer.md: Try to make a wrong order, a missing declaration or a wrong-way import pass the new checks."
+   "proof": "agents/reviewer.md: Try to make a wrong order, a missing declaration or a wrong-way import pass the new checks."
   },
   {
-   "id": "refactor-engineer-04",
-   "file": "agents/refactor-engineer.md",
+   "id": "engineer-04",
+   "file": "agents/engineer.md",
    "sentences": [
     "Never adjust outputs or tests to pass."
    ],
@@ -1501,8 +1501,8 @@
    "note": "a reviewer may see a test edit in the diff, but no review brief names the check"
   },
   {
-   "id": "refactor-engineer-05",
-   "file": "agents/refactor-engineer.md",
+   "id": "engineer-05",
+   "file": "agents/engineer.md",
    "sentences": [
     "Do not push and do not open a pull request."
    ],
@@ -1510,8 +1510,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "refactor-engineer-06",
-   "file": "agents/refactor-engineer.md",
+   "id": "engineer-06",
+   "file": "agents/engineer.md",
    "sentences": [
     "Do not commit files you were told to leave."
    ],
@@ -1519,8 +1519,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "refactor-reviewer-01",
-   "file": "agents/refactor-reviewer.md",
+   "id": "reviewer-01",
+   "file": "agents/reviewer.md",
    "sentences": [
     "It writes only the review record; it never edits code.",
     "Never edit code."
@@ -1530,8 +1530,8 @@
    "note": "row 177 is the same rule; the tools: line has Write, so it can edit"
   },
   {
-   "id": "refactor-reviewer-02",
-   "file": "agents/refactor-reviewer.md",
+   "id": "reviewer-02",
+   "file": "agents/reviewer.md",
    "sentences": [
     "Do not write your own harness."
    ],
@@ -1539,8 +1539,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "refactor-reviewer-03",
-   "file": "agents/refactor-reviewer.md",
+   "id": "reviewer-03",
+   "file": "agents/reviewer.md",
    "sentences": [
     "- **Run the risky case, do not only read it.** For every latent change the engineer reports (\"no case reaches it\"), build that case in a scratch directory and run it on real data: the outputs, the refusals, the reasons."
    ],
@@ -1549,8 +1549,8 @@
    "note": "a rule on the reviewer itself; nobody checks that it ran the case"
   },
   {
-   "id": "refactor-reviewer-04",
-   "file": "agents/refactor-reviewer.md",
+   "id": "reviewer-04",
+   "file": "agents/reviewer.md",
    "sentences": [
     "Report Write `contract.md`, `pass1.md`, `pass2.md`, `findings.md` and `mutations.json` in the run directory you were given (a subfolder if it already holds the same round's record — never overwrite one)."
    ],
@@ -1558,8 +1558,8 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
-   "id": "refactor-reviewer-05",
-   "file": "agents/refactor-reviewer.md",
+   "id": "reviewer-05",
+   "file": "agents/reviewer.md",
    "sentences": [
     "The stop hook refuses a findings file under any other name, and sends you back once if a folder holding your findings file has no paired mutations file in this format:"
    ],
@@ -1568,8 +1568,8 @@
    "note": "the name"
   },
   {
-   "id": "refactor-reviewer-06",
-   "file": "agents/refactor-reviewer.md",
+   "id": "reviewer-06",
+   "file": "agents/reviewer.md",
    "sentences": [
     "The stop hook refuses a findings file under any other name, and sends you back once if a folder holding your findings file has no paired mutations file in this format:"
    ],
@@ -1578,8 +1578,8 @@
    "note": "the paired mutations file"
   },
   {
-   "id": "refactor-reviewer-07",
-   "file": "agents/refactor-reviewer.md",
+   "id": "reviewer-07",
+   "file": "agents/reviewer.md",
    "sentences": [
     "- `open: <finding id>` when the survivor is a finding nobody has decided yet; the id must be in the findings file beside it."
    ],
@@ -1595,7 +1595,7 @@
    ],
    "enforcer": "prompt",
    "proof": "prompt only: no tool, hook or review brief checks it",
-   "note": "engineer brief; the same rule as refactor-engineer.md's 'Do not push and do not open a pull request.'"
+   "note": "engineer brief; the same rule as engineer.md's 'Do not push and do not open a pull request.'"
   },
   {
    "id": "bakehouse-change-52",
@@ -1665,7 +1665,7 @@
    ],
    "enforcer": "code",
    "proof": "test_team_roles.TestReviewerStop.test_a_findings_file_under_another_name_is_sent_back",
-   "note": "reviewer brief; the same rule as refactor-reviewer-05"
+   "note": "reviewer brief; the same rule as reviewer-05"
   },
   {
    "id": "bakehouse-change-66",
@@ -1750,7 +1750,7 @@
    ],
    "enforcer": "prompt",
    "proof": "prompt only: no tool, hook or review brief checks it",
-   "note": "engineer brief; the same rule as refactor-engineer.md's 'Do not push and do not open a pull request.'"
+   "note": "engineer brief; the same rule as engineer.md's 'Do not push and do not open a pull request.'"
   },
   {
    "id": "bakehouse-refactor-41",
@@ -1780,7 +1780,7 @@
    ],
    "enforcer": "code",
    "proof": "test_team_roles.TestReviewerStop.test_a_findings_file_under_another_name_is_sent_back",
-   "note": "reviewer brief; the same rule as refactor-reviewer-05"
+   "note": "reviewer brief; the same rule as reviewer-05"
   },
   {
    "id": "bakehouse-refactor-45",

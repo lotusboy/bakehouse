@@ -1277,7 +1277,7 @@ class TestMutations(Fixture):
         globs = set(rev["marks"]) | {rev["require"][0]["glob"], rev["require"][0]["per"]}
         pairs = [(rc.round_name(rev, 0, "findings"), rc.round_name(rev, 0, "mutations")),
                  tuple(rev["rounds"]["fix"][k].replace("{n}", "<N>") for k in ("findings", "mutations"))]
-        for path in ("commands/change.md", "commands/refactor.md", "agents/refactor-reviewer.md",
+        for path in ("commands/change.md", "commands/refactor.md", "agents/reviewer.md",
                      "runtime/agent-roles.py", "runtime/records-check.py", "runtime/agent-roles.json"):
             text = (root / path).read_text()
             for tok in re.findall(r"\b(?:findings|mutations)[\w.<>{}*-]*?\.(?:md|json)\b", text):

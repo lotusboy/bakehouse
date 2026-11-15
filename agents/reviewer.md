@@ -1,8 +1,8 @@
 ---
-name: refactor-reviewer
+name: reviewer
 description: >-
   Fresh-context adversarial review of a behaviour-preserving restructure, using the Axis Two-Pass
-  method. Use after refactor-engineer finishes and before the pull request. Hand it the diff range,
+  method. Use after the engineer agent finishes and before the pull request. Hand it the diff range,
   the decision it implements, the gate commands, and a run directory. It checks that behaviour is
   preserved, tries to make a wrong order or a wrong-way dependency pass the new checks, re-runs
   mutation tests itself, and reports adjudication-ready findings. It writes only the review record;

@@ -638,7 +638,7 @@ class TestRefusalsWriteOneEvent(SpendScratch):
         if not h.exists():
             (h / ".claude" / "agents").mkdir(parents=True)
             (h / "plugin" / "agents").mkdir(parents=True)
-            for n in ("refactor-engineer", "refactor-reviewer"):
+            for n in ("engineer", "reviewer"):
                 for d in (h / ".claude" / "agents", h / "plugin" / "agents"):
                     (d / f"{n}.md").write_text(f"---\nname: {n}\n---\n")
             (h / ".claude" / "settings.json").write_text(json.dumps({"enabledPlugins": {"bakehouse@t": True}}))
@@ -689,16 +689,16 @@ class TestRefusalsWriteOneEvent(SpendScratch):
                 "Work order T7: x\nRecord folder: relative/t7/\n",
             ),
             self.stop(
-                "refactor-engineer",
+                "engineer",
                 f"Work order T7: x\nRecord folder: {rec}/\n\n[bakehouse:prediction-record]",
                 "e",
             ),
-            self.stop("refactor-reviewer", "Review W1.\n", "r"),
+            self.stop("reviewer", "Review W1.\n", "r"),
         ]
         verdicts = [self.verdict(self.hook(d)) for d in calls]
         # the reviewer's record folder is decided at its dispatch, which is allowed and writes no event
         artefacts = self.stop(
-            "refactor-reviewer", self.sent("role:reviewer", f"Review W1.\nRecord folder: {rv}/\n"), "a"
+            "reviewer", self.sent("role:reviewer", f"Review W1.\nRecord folder: {rv}/\n"), "a"
         )
         (rv / "review").mkdir(parents=True)
         (rv / "review" / "findings.md").write_text("F1\n")
@@ -728,7 +728,7 @@ class TestRefusalsWriteOneEvent(SpendScratch):
         subprocess.run(["git", "init", "-q", str(elsewhere)], check=True)
         rv = self.work / "runs" / "rv"
         sent = self.sent("role:reviewer", f"Review W1.\nRecord folder: {rv}/\n", cwd=elsewhere)
-        d = self.stop("refactor-reviewer", sent, "a")
+        d = self.stop("reviewer", sent, "a")
         d["cwd"] = str(elsewhere)
         (rv / "review").mkdir(parents=True)
         (rv / "review" / "findings.md").write_text("F1\n")

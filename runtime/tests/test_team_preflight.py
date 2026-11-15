@@ -235,7 +235,7 @@ class TestOwned(Fixture):
 
     def test_role_check_reads_the_next_table_before_the_swap(self):
         rt = self.runtime()
-        (rt / "agent-roles.json").write_text(json.dumps({"roles": {"refactor-engineer": {"providers": ["Plan"]}}}))
+        (rt / "agent-roles.json").write_text(json.dumps({"roles": {"old-role": {"providers": ["Plan"]}}}))
         (rt / "agent-roles.next.json").write_text(json.dumps({"roles": {"engineer": {"providers": ["Explore"]}}}))
         script = rt / "team-preflight.py"
         self.owned()

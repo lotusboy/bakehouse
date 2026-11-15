@@ -74,12 +74,14 @@ A role names a job. An agent fills a role. A job dispatches `role:<job>:<role>`,
 | Role | Does | Shipped agent |
 |---|---|---|
 | `architect` | lays out a restructure-or-accept decision for one part | `bakehouse:architect` |
-| `engineer` | makes the change behind its job's gate | `bakehouse:refactor-engineer` |
-| `reviewer` | reviews the diff and runs the risky case | `bakehouse:refactor-reviewer` |
+| `engineer` | makes the change behind its job's gate | `bakehouse:engineer` |
+| `reviewer` | reviews the diff and runs the risky case | `bakehouse:reviewer` |
 | `absence-check`, `count-check`, `blast-radius` | check a claim of absence, a count, the reach of a change | `bakehouse:` and the role's name |
 | `design-author`, `design-reviewer` | write and review a design | `bakehouse:` and the role's name |
 | `expert` | an independent reading of one question about what a source means, standing in for a human expert in the project's field; it reads blind and advises, never rules | `bakehouse:human-expert` |
 | `code-review` | single-pass code review | none shipped; falls back to the built-in `general-purpose` agent |
+
+Before R0.1 the agents `bakehouse:engineer` and `bakehouse:reviewer` were named `refactor-engineer` and `refactor-reviewer`; an older record that names those agents means these two.
 
 Resolution checks these levels in order. At each level the key `<job>:<role>` is tried before
 `<role>`. A level that names only agents that are not installed is skipped, and the skip is logged.
@@ -743,7 +745,7 @@ and says who enforces each one:
 | `enforcer` | Means | `proof` |
 |---|---|---|
 | `code` | a tool or hook refuses | the runtime test that shows the refusal, `<module>.<Class>.<test>` |
-| `reviewer` | a review role's brief checks it | `<review brief path>: <the line that checks it>`; the brief is `agents/design-reviewer.md` or `agents/refactor-reviewer.md` |
+| `reviewer` | a review role's brief checks it | `<review brief path>: <the line that checks it>`; the brief is `agents/design-reviewer.md` or `agents/reviewer.md` |
 | `prompt` | neither | who or what checks it; `code exists, no proof test: <path> …` when a tool refuses and no test shows it |
 
 A rule sentence is a piece of a prompt between sentence ends, list-line starts and fence marker

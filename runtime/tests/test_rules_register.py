@@ -37,7 +37,7 @@ COMMANDS = (
 )
 REVIEW_BRIEFS = (
     "agents/design-reviewer.md",
-    "agents/refactor-reviewer.md",
+    "agents/reviewer.md",
 )
 NO_PROOF = "code exists, no proof test:"
 

@@ -66,7 +66,7 @@ class Fixture(unittest.TestCase):
         self.bin = None  # a folder put first on PATH, holding a test's own git
         self.project_dir = None  # $CLAUDE_PROJECT_DIR, which the harness sets for a plugin hook
         self.plugin_root = None  # $CLAUDE_PLUGIN_ROOT, which the harness sets for a plugin hook
-        self.install("refactor-engineer", "refactor-reviewer", "architect", "design-author", "absence-check",
+        self.install("engineer", "reviewer", "architect", "design-author", "absence-check",
                      "blast-radius")
         # self.repo has opted in; self.other has no binding
         self.records = project(self.repo, {"owned": True, "roles": {}})
@@ -128,7 +128,7 @@ class Fixture(unittest.TestCase):
     def stop(self, **extra):
         t = self.repo / "t.jsonl"
         t.write_text("")
-        d = {"hook_event_name": "SubagentStop", "agent_type": "refactor-reviewer",
+        d = {"hook_event_name": "SubagentStop", "agent_type": "reviewer",
              "agent_transcript_path": str(t), "cwd": str(self.repo)}
         d.update(extra)
         return subprocess.run(["python3", str(self.hook)], input=json.dumps(d), capture_output=True, text=True,
@@ -151,13 +151,13 @@ class TestNoBinding(Fixture):
 
     def test_shipped_name_is_untouched_without_a_binding(self):
         self.assertIsNone(self.dispatch("architect", cwd=self.other))
-        self.assertIsNone(self.dispatch("general-purpose", cwd=self.other, agent_type="refactor-reviewer"))
+        self.assertIsNone(self.dispatch("general-purpose", cwd=self.other, agent_type="reviewer"))
 
     def test_shipped_name_is_ruled_with_a_binding(self):
-        self.assertEqual(self.dispatch("refactor-engineer")["model"], "opus")
+        self.assertEqual(self.dispatch("engineer")["model"], "opus")
 
     def test_role_prefix_works_without_a_binding(self):
-        self.assertEqual(self.dispatch("role:engineer", cwd=self.other)["subagent_type"], "bakehouse:refactor-engineer")
+        self.assertEqual(self.dispatch("role:engineer", cwd=self.other)["subagent_type"], "bakehouse:engineer")
 
     def test_stop_asks_nothing_without_a_binding(self):
         self.assertEqual(self.stop(cwd=str(self.other)), "")
@@ -181,13 +181,13 @@ class TestGate(Fixture):
     """Move 2's gate (design §7), against the shipped table."""
 
     def test_engineer_resolves_to_shipped_default(self):
-        self.assertEqual(self.dispatch("role:engineer")["subagent_type"], "bakehouse:refactor-engineer")
-        self.assertEqual(self.dispatch("role:refactor:engineer")["subagent_type"], "bakehouse:refactor-engineer")
+        self.assertEqual(self.dispatch("role:engineer")["subagent_type"], "bakehouse:engineer")
+        self.assertEqual(self.dispatch("role:refactor:engineer")["subagent_type"], "bakehouse:engineer")
 
     def test_binding_override_wins_in_its_repo_only(self):
         self.binding({"engineer": "design-author"})
         self.assertEqual(self.dispatch("role:engineer")["subagent_type"], "design-author")
-        self.assertEqual(self.dispatch("role:engineer", cwd=self.other)["subagent_type"], "bakehouse:refactor-engineer")
+        self.assertEqual(self.dispatch("role:engineer", cwd=self.other)["subagent_type"], "bakehouse:engineer")
 
     def test_job_qualified_key_wins_over_plain(self):
         self.binding({"engineer": "architect", "change:engineer": "design-author"})
@@ -196,11 +196,11 @@ class TestGate(Fixture):
 
     def test_uninstalled_override_is_skipped_and_logged(self):
         self.binding({"engineer": "no-such-agent"})
-        self.assertEqual(self.dispatch("role:engineer")["subagent_type"], "bakehouse:refactor-engineer")
+        self.assertEqual(self.dispatch("role:engineer")["subagent_type"], "bakehouse:engineer")
         self.assertIn("SKIP role:engineer: binding roles key 'engineer' names ['no-such-agent']", self.log())
 
     def test_reviewer_falls_back_to_general_purpose(self):
-        self.uninstall("refactor-reviewer")
+        self.uninstall("reviewer")
         self.assertEqual(self.dispatch("role:reviewer")["subagent_type"], "general-purpose")
 
     def test_code_review_without_personal_is_general_purpose(self):
@@ -226,11 +226,11 @@ class TestGate(Fixture):
 
 class TestRules(Fixture):
     def test_direct_dispatch_keeps_role_rules(self):
-        self.assertEqual(self.dispatch("refactor-engineer")["model"], "opus")
+        self.assertEqual(self.dispatch("engineer")["model"], "opus")
         self.assertIsNone(self.dispatch("general-purpose"))
 
     def test_nested_ceiling(self):
-        out = self.dispatch("general-purpose", agent_type="refactor-reviewer",
+        out = self.dispatch("general-purpose", agent_type="reviewer",
                             tool_input={"subagent_type": "general-purpose", "model": "opus", "prompt": "p"})
         self.assertEqual(out["model"], "sonnet")
 
@@ -238,7 +238,7 @@ class TestRules(Fixture):
         self.bpath.write_text(json.dumps({"owned": True, "reviews": "records/"}))
         t = self.repo / "t.jsonl"
         t.write_text("")
-        stop = {"hook_event_name": "SubagentStop", "agent_type": "refactor-reviewer",
+        stop = {"hook_event_name": "SubagentStop", "agent_type": "reviewer",
                 "agent_transcript_path": str(t), "cwd": str(self.repo)}
         run = lambda: subprocess.run(["python3", str(self.hook)], input=json.dumps(stop), capture_output=True,
                                      text=True, env=self.env()).stdout
@@ -270,8 +270,8 @@ class TestReview(Fixture):
         self.assertEqual(self.dispatch("role:absence-check")["subagent_type"], "design-author")
 
     def test_m15_personal_rules_before_shipped_rules(self):
-        self.personal({"code-review": {"providers": ["refactor-engineer"], "model": "haiku"}})
-        self.assertEqual(self.dispatch("refactor-engineer")["model"], "haiku")
+        self.personal({"code-review": {"providers": ["engineer"], "model": "haiku"}})
+        self.assertEqual(self.dispatch("engineer")["model"], "haiku")
 
     def test_m17_deny_reason_names_the_cause(self):
         self.uninstall("architect")
@@ -321,7 +321,7 @@ class TestReview(Fixture):
         self.assertEqual((out["subagent_type"], out["model"]), ("other-agent", "sonnet"))
         self.assertEqual(self.dispatch("role:refactor:engineer")["model"], "opus")
         self.assertEqual(self.dispatch("role:change:engineer", cwd=self.other)["subagent_type"],
-                         "bakehouse:refactor-engineer")
+                         "bakehouse:engineer")
 
     def test_p3_3_string_providers_name_no_agent(self):
         self.install("a")
@@ -357,7 +357,7 @@ class TestPredictionRecord(Fixture):
             written.append(self.folder / name)
         if seal:
             seal_files(self.ledger, written)
-        d = {"hook_event_name": "SubagentStop", "agent_type": "refactor-engineer",
+        d = {"hook_event_name": "SubagentStop", "agent_type": "engineer",
              "agent_transcript_path": str(t), "cwd": str(self.repo), **extra}
         return subprocess.run(["python3", str(self.hook)], input=json.dumps(d), capture_output=True, text=True,
                               env=self.env()).stdout
@@ -410,7 +410,7 @@ class TestPredictionRecord(Fixture):
         self.assertEqual(self.engineer_stop(self.marked(), files={"moves.prediction.json": ok}), "")
         (self.folder / "moves.prediction.json").unlink()
         self.assertEqual(self.engineer_stop(self.marked(), files={"moves.prediction.fix1.json": ok}), "")
-        self.assertIn("PREDICTION ok for refactor-engineer", self.log())
+        self.assertIn("PREDICTION ok for engineer", self.log())
 
     # ---- Step 2b fix 1 (review findings-fix6.md F1, F7) ----
 
@@ -454,7 +454,7 @@ class TestPredictionRecord(Fixture):
         self.assertIn("moves file(s) with no seal in the ops ledger", out)
         self.assertIn("moves.prediction.json", out)
         self.assertIn("predict-gate.sh seal", out)
-        self.assertIn("SEAL missing for refactor-engineer", self.log())
+        self.assertIn("SEAL missing for engineer", self.log())
         out = self.engineer_stop(self.marked(), seal=False, stop_hook_active=True)
         self.assertNotIn('"decision": "block"', out)
         self.assertIn("cannot close until they are sealed", out)
@@ -462,7 +462,7 @@ class TestPredictionRecord(Fixture):
     def test_step2b_a_sealed_prediction_lets_the_engineer_stop(self):
         ok = json.dumps({"moves": [{"what": "tests:passed", "range": [10, 12]}], "mustNotMove": ["out:*"]})
         self.assertEqual(self.engineer_stop(self.marked(), files={"moves.prediction.json": ok}), "")
-        self.assertIn("PREDICTION ok for refactor-engineer", self.log())
+        self.assertIn("PREDICTION ok for engineer", self.log())
 
     def test_prediction_record_second_stop_is_let_through_and_told(self):
         out = self.engineer_stop(self.marked(), stop_hook_active=True)
@@ -493,21 +493,21 @@ class TestPredictionStop(TestPredictionRecord):
                               env=self.env()).stdout
 
     def test_a_plain_name_dispatch_with_a_work_order_is_marked_and_checked(self):
-        out = self.dispatch_brief("refactor-engineer")["hookSpecificOutput"]["updatedInput"]["prompt"]
+        out = self.dispatch_brief("engineer")["hookSpecificOutput"]["updatedInput"]["prompt"]
         self.assertEqual(out.splitlines()[-1], "[bakehouse:prediction-record]")
         self.assertIn('"decision": "block"', self.engineer_stop(out, files={"prediction.md": "prose"}))
 
     def test_the_plugin_agent_is_the_change_engineer_with_or_without_its_prefix(self):
-        """The shipped table names the plugin agent bakehouse:refactor-engineer, the subagent_type the harness
+        """The shipped table names the plugin agent bakehouse:engineer, the subagent_type the harness
         gives a plugin agent. A stop may report it with or without the prefix; another plugin's agent of the
         same name is not it."""
-        out = self.dispatch_brief("bakehouse:refactor-engineer")["hookSpecificOutput"]["updatedInput"]["prompt"]
+        out = self.dispatch_brief("bakehouse:engineer")["hookSpecificOutput"]["updatedInput"]["prompt"]
         self.assertEqual(out.splitlines()[-1], "[bakehouse:prediction-record]")
-        for agent in ("bakehouse:refactor-engineer", "refactor-engineer"):
+        for agent in ("bakehouse:engineer", "engineer"):
             with self.subTest(agent=agent):
                 self.assertIn('"decision": "block"',
                               self.engineer_stop(out, files={"prediction.md": "prose"}, agent_type=agent))
-        self.assertEqual(self.engineer_stop(out, files={"prediction.md": "prose"}, agent_type="other:refactor-engineer"),
+        self.assertEqual(self.engineer_stop(out, files={"prediction.md": "prose"}, agent_type="other:engineer"),
                          "")
 
     def test_a_refactor_job_with_a_work_order_line_is_not_checked(self):
@@ -534,14 +534,14 @@ class TestPredictionStop(TestPredictionRecord):
         self.assertIn('"decision": "block"', self.stop_as("general-purpose", self.BRIEF))  # logged as a change job
 
     def test_a_plain_name_dispatch_without_a_work_order_warns(self):
-        out = self.dispatch_brief("refactor-engineer", "Refactor part X.")
+        out = self.dispatch_brief("engineer", "Refactor part X.")
         self.assertIn("predict-gate.sh close` is the hard gate", out["systemMessage"])
         self.assertNotIn("[bakehouse:prediction-record]", json.dumps(out))
         self.assertIn("WARN", self.log())
 
     def test_no_binding_no_mark_and_no_warning(self):
         d = {"hook_event_name": "PreToolUse", "tool_name": "Agent", "cwd": str(self.other),
-             "tool_input": {"subagent_type": "refactor-engineer", "description": "x", "prompt": self.BRIEF}}
+             "tool_input": {"subagent_type": "engineer", "description": "x", "prompt": self.BRIEF}}
         p = subprocess.run(["python3", str(self.hook)], input=json.dumps(d), capture_output=True, text=True,
                            env=self.env())
         self.assertNotIn("prediction-record", p.stdout)
@@ -549,12 +549,12 @@ class TestPredictionStop(TestPredictionRecord):
 
     def test_the_brief_is_enough_when_line_1_holds_the_prompt_before_the_rewrite(self):
         self.assertIn('"decision": "block"', self.engineer_stop(self.BRIEF, files={"prediction.md": "prose"}))
-        self.assertIn("PROMPT-SOURCE refactor-engineer: transcript line 1 does not end with", self.log())
+        self.assertIn("PROMPT-SOURCE engineer: transcript line 1 does not end with", self.log())
         self.assertEqual(self.engineer_stop(self.BRIEF, files={"moves.prediction.json": self.OK}), "")
 
     def test_the_marked_prompt_logs_that_line_1_was_rewritten(self):
         self.engineer_stop(self.marked(), files={"moves.prediction.json": self.OK})
-        self.assertIn("PROMPT-SOURCE refactor-engineer: transcript line 1 ends with [bakehouse:prediction-record]",
+        self.assertIn("PROMPT-SOURCE engineer: transcript line 1 ends with [bakehouse:prediction-record]",
                       self.log())
 
     def test_only_the_engineers_own_folder_counts(self):
@@ -576,7 +576,7 @@ class TestPredictionStop(TestPredictionRecord):
         out = self.engineer_stop(self.marked(), files={"moves.prediction.json": json.dumps({"noMoves": True}),
                                                        "moves.baseline.json": pair, "moves.measured.json": pair})
         self.assertEqual(out, "")
-        self.assertIn("PREDICTION ok for refactor-engineer", self.log())
+        self.assertIn("PREDICTION ok for engineer", self.log())
 
     def test_s1_a_no_moves_prediction_needs_its_measured_pair_with_no_move(self):
         out = self.engineer_stop(self.marked(), files={"moves.prediction.json": json.dumps({"noMoves": True})})
@@ -598,15 +598,15 @@ class TestPredictionStop(TestPredictionRecord):
 
     def test_a_non_engineer_is_never_blocked_and_its_run_record_check_runs(self):
         quote = "Review T7.\n[bakehouse:prediction-record]"
-        self.assertNotIn("machine prediction", self.stop_as("refactor-reviewer", quote))
-        self.assertIn("requires a run record", self.stop_as("refactor-reviewer", quote))
+        self.assertNotIn("machine prediction", self.stop_as("reviewer", quote))
+        self.assertIn("requires a run record", self.stop_as("reviewer", quote))
         rec = self.repo / "records" / "2026-01-03-T7-review"
         rec.mkdir(parents=True)
         (rec / "findings.md").write_text("x")
         (rec / "mutations.json").write_text("[]")
         (rec / "contract.md").write_text("c")
-        self.assertEqual(self.stop_as("refactor-reviewer", quote), "")
-        self.assertNotIn("PROMPT-SOURCE refactor-reviewer", self.log())
+        self.assertEqual(self.stop_as("reviewer", quote), "")
+        self.assertNotIn("PROMPT-SOURCE reviewer", self.log())
 
 
 REVIEW_ROW = {"id": "M1", "mutation": "guard removed", "site": "src/a.py:3", "gate": "tests/test_a.py",
@@ -628,7 +628,7 @@ class TestReviewerStop(Fixture):
     def bind_reviews(self, **over):
         self.bpath.write_text(json.dumps({"owned": True, "reviews": "records/", **over}))
 
-    def stop_rev(self, files, agent="refactor-reviewer", **extra):
+    def stop_rev(self, files, agent="reviewer", **extra):
         t = self.repo / "agent.jsonl"
         t.write_text(json.dumps({"type": "user", "message": {"role": "user", "content": "Review T7."}}) + "\n")
         for path, text in files.items():
@@ -654,7 +654,7 @@ class TestReviewerStop(Fixture):
         out = self.review(stop_hook_active=True)
         self.assertNotIn("block", out)
         self.assertIn("record incomplete", out)
-        self.assertIn("RECORD-ARTEFACTS missing or bad for refactor-reviewer", self.log())
+        self.assertIn("RECORD-ARTEFACTS missing or bad for reviewer", self.log())
 
     def test_a_complete_mutation_record_lets_it_stop(self):
         self.assertEqual(self.review([REVIEW_ROW]), "")
@@ -765,7 +765,7 @@ class TestReviewerStop(Fixture):
         self.assertNotIn("mutations.json", out)
         self.assertIn("ERROR record check for reviewer: BadInput", self.log())
         self.assertEqual(self.stop_rev({"records/2026-01-05-T7-review/findings.md": "F1"}), "")
-        self.assertIn("RUN-RECORD ok for refactor-reviewer", self.log())
+        self.assertIn("RUN-RECORD ok for reviewer", self.log())
 
     def test_a_role_that_is_not_a_record_job_is_not_checked(self):
         self.personal({"architect": {"providers": ["architect"], "run_record": True}})
@@ -798,7 +798,7 @@ class RecordFixture(Fixture):
         (self.home / "repo").symlink_to(self.repo)
         self.rf = self.repo / "records" / "2026-01-03-T7-x"
 
-    def stop_in(self, prompt, files, cwd=None, agent="refactor-reviewer", seal=True, **extra):
+    def stop_in(self, prompt, files, cwd=None, agent="reviewer", seal=True, **extra):
         t = Path(self.tmp.name) / "agent.jsonl"
         t.unlink(missing_ok=True)
         t.write_text(json.dumps({"type": "user", "message": {"role": "user", "content": prompt}}) + "\n")
@@ -836,14 +836,14 @@ class TestRecordLineFix1(RecordFixture):
                 n = len(log.read_text().splitlines()) if log.is_file() else 0
                 refactor = self.sent("role:refactor:engineer", brief, cwd)
                 self.assertEqual(len(log.read_text().splitlines()), n + 1)
-                self.assertEqual(self.stop_in(refactor, {self.rf / "result.md": "r"}, cwd=cwd, agent="refactor-engineer"), "")
+                self.assertEqual(self.stop_in(refactor, {self.rf / "result.md": "r"}, cwd=cwd, agent="engineer"), "")
                 change = self.sent("role:change:engineer", "Change. " + brief, cwd)
                 self.assertEqual(len(log.read_text().splitlines()), n + 2)
                 self.assertIn("records/2026-01-03-T7-x holds no moves.prediction.json",
-                              self.stop_in(change, {self.rf / "prediction.md": "p"}, cwd=cwd, agent="refactor-engineer"))
+                              self.stop_in(change, {self.rf / "prediction.md": "p"}, cwd=cwd, agent="engineer"))
         line = "Record folder: records/2026-01-02-T7-step1-review/"
         refactor = self.sent("role:refactor:engineer", f"Work order T7: x\n{line}\n", self.repo)
-        self.assertEqual(self.stop_in(refactor, {self.rf / "result.md": "r"}, cwd=self.repo, agent="refactor-engineer"), "")
+        self.assertEqual(self.stop_in(refactor, {self.rf / "result.md": "r"}, cwd=self.repo, agent="engineer"), "")
 
     def test_the_line_is_read_in_every_form(self):
         self.bind_repo()
@@ -893,13 +893,13 @@ class TestRecordLineFix1(RecordFixture):
         # the change engineer: reported, and the work order's folders are checked as for a brief with no line
         brief = "Work order T7: x\nRecord folder: design/w1/\n"
         out = json.loads(self.stop_in(brief, {self.repo / "records" / "2026-01-02-T7-step1-review" /
-                                              "moves.prediction.json": self.PRED}, cwd=self.repo, agent="refactor-engineer"))
+                                              "moves.prediction.json": self.PRED}, cwd=self.repo, agent="engineer"))
         self.assertNotIn("decision", out)
         self.assertIn("line names design/w1, which is not under this repository's records/", out["systemMessage"])
-        self.assertIn('"decision": "block"', self.stop_in(brief, {}, cwd=self.repo, agent="refactor-engineer"))
+        self.assertIn('"decision": "block"', self.stop_in(brief, {}, cwd=self.repo, agent="engineer"))
         # the engineer reads the bold form too
         out = self.stop_in(self.sent("role:change:engineer", "Work order W1: x\n**Record folder:** ~/repo/records/2026-01-03-T7-x/\n",
-                                     self.ws), {self.rf / "prediction.md": "p"}, cwd=self.ws, agent="refactor-engineer")
+                                     self.ws), {self.rf / "prediction.md": "p"}, cwd=self.ws, agent="engineer")
         self.assertIn("records/2026-01-03-T7-x holds no moves.prediction.json", out)
 
 
@@ -937,7 +937,7 @@ class TestDispatchDecision(DecisionFixture):
         line = "Record folder: records/2026-01-03-T7-x/"
         for st, cwd, brief in (("role:reviewer", self.ws, f"Review T7.\n{line}"),
                                ("role:reviewer", self.repo, f"Review T7.\n{line}"),
-                               ("refactor-reviewer", self.repo, f"Review T7.\n{line}"),
+                               ("reviewer", self.repo, f"Review T7.\n{line}"),
                                ("role:change:engineer", self.repo, f"Work order T7: x\n{line}"),
                                ("role:change:engineer", self.ws, f"Work order T7: x\n{line}")):
             with self.subTest(st=st, cwd=cwd):
@@ -972,9 +972,9 @@ class TestDispatchDecision(DecisionFixture):
         self.assertEqual((got, self.logged()[-1]["change"], self.logged()[-1]["record"]["kind"]), ("ok", True, "repo"))
         self.assertIn(f"your record folder {self.rf}/ must hold the prediction", sent)
         self.assertIn("records/2026-01-03-T7-x holds no moves.prediction.json",
-                      self.stop_in(sent, {self.rf / "prediction.md": "p"}, cwd=self.ws, agent="refactor-engineer"))
+                      self.stop_in(sent, {self.rf / "prediction.md": "p"}, cwd=self.ws, agent="engineer"))
         self.assertEqual(self.stop_in(sent, {self.rf / "moves.prediction.json": self.PRED}, cwd=self.ws,
-                                      agent="refactor-engineer"), "")
+                                      agent="engineer"), "")
 
     def test_b4_an_empty_findings_file_and_no_contract_are_sent_back_once(self):
         # review B4's repro: a decided record folder, a 0-byte findings.md, `[]` rows and no contract.md
@@ -1155,7 +1155,7 @@ class TestDispatchDecision(DecisionFixture):
     def test_the_opt_in_rule_holds_at_dispatch(self):
         line = "Record folder: w1/\n"
         # a plain-name dispatch outside any binding is not this hook's: no decision, no output
-        self.assertEqual(self.decide("refactor-reviewer", line, self.other), ("ok", line))
+        self.assertEqual(self.decide("reviewer", line, self.other), ("ok", line))
         # a job the stop does not check keeps its line: a refactor job, a role with no run record
         self.assertEqual(self.decide("role:refactor:engineer", f"Work order T7: x\n{line}", self.repo)[0], "ok")
         self.assertEqual(self.decide("role:design-author", line, self.repo)[0], "ok")
@@ -1243,25 +1243,25 @@ class TestStrictRecordLine(DecisionFixture):
 
     def test_f9_a_refused_line_from_an_unbound_folder_is_in_care(self):
         # a plain-name dispatch from a folder with no binding: in care through the line's path
-        got, why = self.decide("refactor-reviewer", f"Review W1.\nRecord folder: {self.rf} (note)\n", self.other)
+        got, why = self.decide("reviewer", f"Review W1.\nRecord folder: {self.rf} (note)\n", self.other)
         self.assertEqual(got, "DENY")
         self.assertIn("holds text after its path", why)
         # review F16: in care through a bound repo's reviews folder, and through a ~/ path
         for line in (f"Record folder: {self.rf}/ (note)", "Record folder: ~/repo/records/2026-01-03-T7-x/ (note)"):
             with self.subTest(line=line):
-                self.assertEqual(self.decide("refactor-reviewer", f"Review W1.\n{line}\n", self.other)[0], "DENY")
+                self.assertEqual(self.decide("reviewer", f"Review W1.\n{line}\n", self.other)[0], "DENY")
         # review F12: a line in a form the reader cannot read is in care through its path too, so it is refused
         for line in (f"1. Record folder: {self.rf}/", f"> Record folder: {self.rf}/", f"`Record folder:` {self.rf}/",
                      f"Your record folder: {self.rf}/"):
             with self.subTest(line=line):
-                got, why = self.decide("refactor-reviewer", f"Review W1.\n{line}\n", self.other)
+                got, why = self.decide("reviewer", f"Review W1.\n{line}\n", self.other)
                 self.assertEqual(got, "DENY")
                 self.assertIn("is not in the form the record check reads", why)
         for line in (f"Record folder: {self.other}/records/x/ (note)", f"Record folder: {self.repo}/src/ (note)"):
             with self.subTest(line=line):
-                self.assertEqual(self.decide("refactor-reviewer", f"Review W1.\n{line}\n", self.other)[0], "ok")
+                self.assertEqual(self.decide("reviewer", f"Review W1.\n{line}\n", self.other)[0], "ok")
         # the opt-in rule holds: a line whose path is under no bound repository's reviews is not this hook's
-        self.assertEqual(self.decide("refactor-reviewer", "Record folder: w1/ (note)\n", self.other),
+        self.assertEqual(self.decide("reviewer", "Record folder: w1/ (note)\n", self.other),
                          ("ok", "Record folder: w1/ (note)\n"))
 
     # Review findings-fix3.md: the 29 line shapes of its probe lr.py, in its order, P under the bound repo's reviews.
@@ -1289,7 +1289,7 @@ class TestStrictRecordLine(DecisionFixture):
                 got, problem = mod.line_reading(line + "\nnext\n")
                 self.assertEqual(got if problem is None else None, path)
                 n = len(self.logged())
-                d, why = self.decide("refactor-reviewer", f"Review W1.\n{line}\nnext\n", self.other)
+                d, why = self.decide("reviewer", f"Review W1.\n{line}\nnext\n", self.other)
                 decided = [e["record"]["folder"] for e in self.logged()[n:] if "record" in e]
                 if not care:
                     self.assertEqual((d, decided), ("ok", []))
@@ -1328,7 +1328,7 @@ class TestB2UnreadableInput(DecisionFixture):
 
     def briefs(self):
         return (("role:change:engineer", f"Work order T7: x\n{self.line}\n"), ("role:reviewer", f"Review T7.\n{self.line}\n"),
-                ("refactor-reviewer", f"Review T7.\n{self.line}\n"), ("role:code-review", "Review it.\n"))
+                ("reviewer", f"Review T7.\n{self.line}\n"), ("role:code-review", "Review it.\n"))
 
     def test_b2_a_binding_that_does_not_parse_refuses_naming_the_binding(self):
         for text, why in (('{"owned": true,', "cannot be read"), ("[]", "is not a JSON object")):
@@ -1435,7 +1435,7 @@ class TestB2UnreadableInput(DecisionFixture):
 
     def test_b2_no_binding_is_not_unreadable(self):
         # no team at the cwd: as before, nothing to refuse
-        self.assertEqual(self.decide("refactor-reviewer", f"Review.\n{self.line}\n", self.other)[0], "ok")
+        self.assertEqual(self.decide("reviewer", f"Review.\n{self.line}\n", self.other)[0], "ok")
         self.assertEqual(self.decide("role:code-review", "Review it.\n", self.other)[0], "ok")
         # a repository with no .team/binding.json: no binding, not unreadable
         self.bpath.unlink()
@@ -1445,7 +1445,7 @@ class TestB2UnreadableInput(DecisionFixture):
     def test_b2_a_stop_still_fails_open_on_an_unreadable_binding(self):
         self.bpath.write_text('{"owned": true,')
         engineer = f"Work order T7: x\n{self.line}\n\n[bakehouse:prediction-record]"
-        self.assertEqual(self.stop_in(engineer, {}, cwd=self.repo, agent="refactor-engineer"), "")
+        self.assertEqual(self.stop_in(engineer, {}, cwd=self.repo, agent="engineer"), "")
         self.assertEqual(self.stop_in(f"Review T7.\n{self.line}\n", {}, cwd=self.repo), "")
         self.assertIn("UNREADABLE binding for", self.log())
 
@@ -1483,7 +1483,7 @@ class TestSetupNeededClone(DecisionFixture):
 
     def test_a_team_dispatch_is_still_refused_with_the_setup_message(self):
         for st, brief in (("role:reviewer", "Review it.\n"), ("role:code-review", "Review it.\n"),
-                          ("refactor-reviewer", "Review it.\n"), ("refactor-engineer", "Change it.\n"),
+                          ("reviewer", "Review it.\n"), ("engineer", "Change it.\n"),
                           ("my-agent", "Work order T7: x\n"), ("my-agent", f"Look.\nRecord folder: {self.rf}/\n"),
                           ("my-agent", "Look.\n**Record folder:** somewhere\n")):
             with self.subTest(st=st, brief=brief):
@@ -1492,7 +1492,7 @@ class TestSetupNeededClone(DecisionFixture):
                 self.assertIn("has a team binding but no records folder: run `bakehouse setup`", why)
 
     def test_a_dispatch_by_a_team_agent_is_still_refused(self):
-        d = {"hook_event_name": "PreToolUse", "tool_name": "Agent", "cwd": str(self.repo), "agent_type": "refactor-reviewer",
+        d = {"hook_event_name": "PreToolUse", "tool_name": "Agent", "cwd": str(self.repo), "agent_type": "reviewer",
              "tool_input": {"subagent_type": "my-agent", "description": "x", "prompt": "Look.\n"}}
         out = subprocess.run(["python3", str(self.hook)], input=json.dumps(d), capture_output=True, text=True,
                              env=self.env(), check=False).stdout
@@ -1531,7 +1531,7 @@ class TestBrokenRoleTable(Fixture):
         self.assertIn(f"the role table {table}", self.log())
 
     def test_a_missing_personal_table_is_no_problem(self):
-        self.assertEqual(self.dispatch("role:engineer")["subagent_type"], "bakehouse:refactor-engineer")
+        self.assertEqual(self.dispatch("role:engineer")["subagent_type"], "bakehouse:engineer")
         self.assertNotIn("role table", self.log() if (self.machine / "logs" / "agent-roles.log").is_file() else "")
 
 
@@ -1572,7 +1572,7 @@ class TestTheHooksFolder(Fixture):
         self.project_dir = self.repo
         for cwd in (self.repo, self.repo / "sub", self.repo / "sub" / "deeper"):
             with self.subTest(cwd=cwd):
-                self.assertEqual(self.dispatch("role:reviewer", cwd=cwd)["subagent_type"], "bakehouse:refactor-reviewer")
+                self.assertEqual(self.dispatch("role:reviewer", cwd=cwd)["subagent_type"], "bakehouse:reviewer")
                 self.assertEqual(self.dispatch("role:architect", cwd=cwd)["subagent_type"], "bakehouse:architect")
 
     def test_a_project_path_is_compared_resolved_and_whole(self):
@@ -1626,7 +1626,7 @@ class TestTheHooksFolder(Fixture):
         self.project_dir = self.repo
         self.assertEqual(self.dispatch("role:reviewer", cwd=lane)["subagent_type"], "general-purpose")
         self.plugin_root = RUNTIME.parent
-        self.assertEqual(self.dispatch("role:reviewer", cwd=lane)["subagent_type"], "bakehouse:refactor-reviewer")
+        self.assertEqual(self.dispatch("role:reviewer", cwd=lane)["subagent_type"], "bakehouse:reviewer")
         self.assertEqual(self.dispatch("role:expert", cwd=lane)["subagent_type"], "bakehouse:human-expert")
 
     def test_a_folder_outside_the_repo_takes_the_launch_projects_binding(self):
@@ -1635,7 +1635,7 @@ class TestTheHooksFolder(Fixture):
         self.binding({"engineer": "design-author"})
         self.project_dir = self.repo
         self.assertEqual(self.dispatch("role:engineer", cwd=self.other)["subagent_type"], "design-author")
-        ti = {"subagent_type": "bakehouse:refactor-reviewer", "description": "d",
+        ti = {"subagent_type": "bakehouse:reviewer", "description": "d",
               "prompt": "Review it.\nRecord folder: axis/runs/x/\n"}
         self.assertEqual(self.dispatch("x", cwd=self.other, tool_input=ti), "DENY")
         self.assertIn('"decision": "block"', self.stop(cwd=str(self.other)))
@@ -1646,14 +1646,14 @@ class TestTheHooksFolder(Fixture):
         theirs = Path(self.tmp.name).resolve() / "theirs"
         project(theirs, {"owned": True, "roles": {}})
         self.project_dir = self.repo
-        self.assertEqual(self.dispatch("role:engineer", cwd=theirs)["subagent_type"], "bakehouse:refactor-engineer")
+        self.assertEqual(self.dispatch("role:engineer", cwd=theirs)["subagent_type"], "bakehouse:engineer")
 
     def test_the_repo_is_judged_when_the_project_dir_is_a_parent_that_is_no_repo(self):
         self.binding({"engineer": "design-author"})
         self.project_dir = Path(self.tmp.name).resolve()
         self.assertEqual(self.dispatch("role:engineer")["subagent_type"], "design-author")
         # a record-folder refusal holds too (pass 2's ANDON-2 shape)
-        ti = {"subagent_type": "bakehouse:refactor-reviewer", "description": "d",
+        ti = {"subagent_type": "bakehouse:reviewer", "description": "d",
               "prompt": "Review it.\nRecord folder: axis/runs/x/\n"}
         self.assertEqual(self.dispatch("x", tool_input=ti), "DENY")
 
