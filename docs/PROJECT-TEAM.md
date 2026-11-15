@@ -39,7 +39,10 @@ Each command runs a preflight first and stops before any work if the binding is 
 One module, `runtime/locator.py`, finds every file. It takes the project folder from the working
 folder (or the folder it is given), and asks `git rev-parse --show-toplevel` for the repository. It uses
 `CLAUDE_PROJECT_DIR` only when that folder is in no git repository: the harness sets the variable for
-plugin hooks, not for Bash tool commands or git hooks, so the repository git runs in comes first. The dispatch hook (`runtime/agent-roles.py`) first asks about the working folder its hook input
+plugin hooks, not for Bash tool commands or git hooks, so the repository git runs in comes first.
+The session-start hooks (`runtime/session-start.py`, `agent-roles.py --check-new`) give the locator
+`CLAUDE_PROJECT_DIR` itself, else their hook input's `cwd`, else the process cwd: after a compaction a
+hook's process cwd is wherever the shell last was, not the project. The dispatch hook (`runtime/agent-roles.py`) first asks about the working folder its hook input
 names. When that folder's repository has no team, it asks about `CLAUDE_PROJECT_DIR` (the folder the session
 was started in), so the stricter of the two holds. The running plugin's own agents (`agents/` in the plugin
 folder, named `<plugin>:<agent>`) always count as installed, because a hook that runs proves its plugin is

@@ -1499,6 +1499,27 @@ class TestSetupNeededClone(DecisionFixture):
         self.assertEqual(json.loads(out)["hookSpecificOutput"]["permissionDecision"], "deny")
 
 
+class TestCheckNewFolder(RecordFixture):
+    """S2 fix 1: after a compaction a SessionStart hook's process cwd is wherever the shell last was. --check-new
+    judges $CLAUDE_PROJECT_DIR, else the hook input's cwd, else the process cwd."""
+
+    SAID = "Agent role 'code-review': provider 'gone-agent' is not installed"
+
+    def check_new(self, process_cwd, input_cwd):
+        data = {"hook_event_name": "SessionStart", "source": "compact", "cwd": str(input_cwd)}
+        return subprocess.run(["python3", str(self.hook), "--check-new"], input=json.dumps(data), cwd=str(process_cwd),
+                              capture_output=True, text=True, env=self.env()).stdout
+
+    def test_check_new_judges_the_project_not_the_process_cwd(self):
+        # a provider with no plugin prefix is said missing only where the judged folder has a binding
+        self.personal({"code-review": {"providers": ["gone-agent"]}})
+        self.project_dir = self.repo
+        self.assertIn(self.SAID, self.check_new(self.ws, self.ws))
+        self.project_dir = None
+        self.assertIn(self.SAID, self.check_new(self.ws, self.repo))
+        self.assertNotIn(self.SAID, self.check_new(self.repo, self.ws))
+
+
 class TestBrokenRoleTable(Fixture):
     """R0.1 B-N2 (ANDON): a role table that does not parse fails open. The problem is logged and the dispatch
     passes unchanged; the table is never read as one that names no such role."""

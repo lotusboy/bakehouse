@@ -6,7 +6,9 @@ hook must never stop a session from starting.
    on every update), only when that root holds runtime/predict-gate.sh. A missing launcher is written again
    only when this project's git hooks are bakehouse's (`bakehouse setup` wrote them); otherwise only setup
    creates it.
-2. Finds the project ($CLAUDE_PROJECT_DIR) through the locator, and prints, for the session's context:
+2. Finds the project through the locator, from the folder locator.hook_folder names ($CLAUDE_PROJECT_DIR,
+   else the hook input's cwd, else the process cwd: after a compaction the process cwd is wherever the
+   shell last was), and prints, for the session's context:
    nothing when there is no team; the locator's message when setup is needed; with a team and the role
    choice `pm`, one instruction to load the PM skill; nothing with `none`.
 
@@ -37,7 +39,7 @@ def has_bakehouse_hooks(folder) -> bool:
     return False
 
 
-def retarget(env):
+def retarget(env, folder):
     root = env.get("CLAUDE_PLUGIN_ROOT")
     if not root or not (Path(root) / "runtime" / "predict-gate.sh").is_file():
         return
@@ -45,7 +47,7 @@ def retarget(env):
     if path.is_file():
         if bakehouse_setup.launcher_target(path) != root:
             bakehouse_setup.write_launcher(root, env)
-    elif has_bakehouse_hooks(locator.project_dir(None, env)):
+    elif has_bakehouse_hooks(folder):
         bakehouse_setup.write_launcher(root, env)
 
 
@@ -62,13 +64,14 @@ def role(env):
     return "pm", f"bakehouse: {path} holds {text!r}, not `pm` or `none`; treating it as `pm`."
 
 
-def main(env=os.environ):
+def main(env=os.environ, stream=sys.stdin):
+    folder = locator.hook_folder(env, stream)
     try:
-        retarget(env)
+        retarget(env, folder)
     except Exception as e:
         print(f"bakehouse: could not retarget the git-hook launcher: {e}", file=sys.stderr)
     try:
-        project = locator.find(None, env)
+        project = locator.find(folder, env)
     except locator.SetupNeeded as e:
         print(f"bakehouse: {e}")
         return

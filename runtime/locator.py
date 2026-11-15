@@ -134,6 +134,24 @@ def project_dir(folder=None, env=os.environ) -> Path:
     return here
 
 
+def hook_folder(env=os.environ, stream=None) -> Path:
+    """The folder a SessionStart hook judges: $CLAUDE_PROJECT_DIR when set, else the hook input's `cwd` (JSON on
+    stream, read only then), else the process cwd. A hook never judges the process cwd first: after a
+    compaction it is wherever the shell last was (S2 fix 1). Scripts keep project_dir's rule."""
+    if env.get("CLAUDE_PROJECT_DIR"):
+        return Path(env["CLAUDE_PROJECT_DIR"])
+    try:
+        import json
+        import select
+        if stream is not None and not stream.isatty() and select.select([stream], [], [], 0.5)[0]:
+            cwd = json.loads(stream.read() or "{}").get("cwd")
+            if isinstance(cwd, str) and cwd:
+                return Path(cwd)
+    except (OSError, ValueError, AttributeError):
+        pass
+    return Path.cwd()
+
+
 def find(folder=None, env=os.environ) -> Project | None:
     """The project at `folder`, or None when it has no team. Raises SetupNeeded when it has a binding
     but no usable records pointer; never falls back to a ledger inside the project tree (R2-16)."""

@@ -53,7 +53,9 @@ Three entry points, all wired by the plugin's hooks:
         a moves.prediction<R>.json that predict-gate's own checker accepts and that names at least one
         move, or declares "noMoves": true beside its measured pair when that pair moved 0 keys. Every
         stop of that agent type logs whether line 1 ends with the marker (PROMPT-SOURCE).
-  --check-new                 (SessionStart) print agents installed since the last check, once.
+  --check-new                 (SessionStart) print agents installed since the last check, once. It judges
+                              the folder locator.hook_folder names ($CLAUDE_PROJECT_DIR, else the hook input's
+                              cwd, else the process cwd).
 
 Measured behaviour this relies on (2026-09-30, in a live session): PreToolUse fires for Agent calls
 made inside subagents and carries agent_id/agent_type of the caller; updatedInput rewrites prompt
@@ -1050,7 +1052,8 @@ def main():
         return
     if "--check-new" in sys.argv:
         try:
-            check_new(os.getcwd())
+            # the project, never the process cwd first: after a compaction it is wherever the shell last was
+            check_new(str(locator.hook_folder(os.environ, sys.stdin)))
         except Exception as e:  # never break session start
             log(f"ERROR check-new: {e!r}")
         return

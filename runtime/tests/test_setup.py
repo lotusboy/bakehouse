@@ -673,6 +673,30 @@ class SessionStart(Base):
         self.assertIn("holds 'boss', not `pm` or `none`; treating it as `pm`", lines[0])
         self.assertIn("load the `bakehouse:pm` skill", lines[1])
 
+    def compact(self, process_cwd, data, **extra):
+        """The hook after a compaction: the process cwd is wherever the shell last was; data is the hook input."""
+        p = subprocess.run(["python3", str(SESSION_START)], input=json.dumps(data), capture_output=True, text=True,
+                           cwd=str(process_cwd), env={**self.env, **extra})
+        self.assertEqual(p.returncode, 0, p.stderr)
+        return p.stdout
+
+    def test_after_a_compaction_the_project_is_judged_not_the_process_cwd(self):
+        # S2 fix 1: the folder is $CLAUDE_PROJECT_DIR, else the hook input's cwd, else the process cwd
+        self.setup_in(self.repo)
+        other = self.make_repo("plain", None)
+        data = {"hook_event_name": "SessionStart", "source": "compact", "cwd": str(other)}
+        self.assertIn("load the `bakehouse:pm` skill", self.compact(other, data, CLAUDE_PROJECT_DIR=str(self.repo)))
+        self.assertIn("load the `bakehouse:pm` skill", self.compact(other, dict(data, cwd=str(self.repo))))
+        self.assertEqual(self.compact(self.repo, data), "")
+
+    def test_after_a_compaction_a_missing_launcher_is_made_for_the_project(self):
+        self.setup_in(self.repo)
+        self.launcher.unlink()
+        other = self.make_repo("plain", None)
+        data = {"hook_event_name": "SessionStart", "source": "compact", "cwd": str(other)}
+        self.compact(other, data, CLAUDE_PROJECT_DIR=str(self.repo), CLAUDE_PLUGIN_ROOT=str(ROOT))
+        self.assertEqual(bakehouse_setup.launcher_target(self.launcher), str(ROOT))
+
     def test_a_broken_machine_folder_still_exits_zero(self):
         self.setup_in(self.repo)
         shutil.rmtree(self.machine)
