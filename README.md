@@ -37,7 +37,10 @@ The plugin is switched on per project, never for every repo on the machine.
 4. In the main clone, run `bakehouse setup` from a Claude Code session (the plugin's `bin/` is on the
    Bash tool's PATH). It makes the records worktree beside the clone, on the branch
    `bakehouse-records`, and installs the post-commit drift report. Add `--pre-commit` to install the
-   commit gate as well.
+   commit gate as well. Before it makes a new records branch, setup asks the remote `origin` whether it
+   already holds one. If origin needs a login setup cannot give, setup refuses. Add `--no-remote-check`
+   only when origin has never held the `bakehouse-records` branch: by giving it, you assert that, and
+   setup makes the new branch locally without asking origin.
 5. In any other clone of the project (a lane, or a clone made for a run), run
    `bakehouse setup --pointer <main clone>` before any team tool.
 

@@ -223,6 +223,31 @@ class TestRegister(Fixture):
         self.assertEqual((f["decision"], f["state"]), (decision, "build-candidate-again"))
         self.assertEqual(f["flag"]["owner"], "pm")
 
+    def test_a_team_decision_names_its_backlog_item_and_is_decided_like_the_others(self):
+        for i, d in enumerate((25, 20, 15)):
+            self.put(f"{day(d)}-r{i}", "drivers/probe.py", body("same"))
+        r = self.ok()
+        self.assertIn("make it a team tool", r["families"]["name:probe"]["flag"]["next"])
+        decision = {"decision": "team", "date": day(10), "item": "bakehouse backlog: a shared probe"}
+        r["families"]["name:probe"]["decision"] = decision
+        self.register.write_text(json.dumps(r))
+        f = self.ok()["families"]["name:probe"]
+        self.assertEqual((f["decision"], f["state"], f["flag"]), (decision, "decided", None))
+        for i, d in enumerate((5, 3, 1)):
+            self.put(f"{day(d)}-s{i}", "drivers/probe.py", body("same"))
+        f = self.ok()["families"]["name:probe"]
+        self.assertEqual((f["decision"], f["state"]), (decision, "build-candidate-again"))
+
+    def test_a_team_decision_without_a_backlog_item_refuses(self):
+        for item in ({}, {"item": ""}, {"item": "  "}, {"item": 7}, {"item": None}):
+            with self.subTest(item=item):
+                self.register.write_text(json.dumps({"families": {"name:x": {"decision": {
+                    "decision": "team", "date": day(10), **item}}}}))
+                code, out = self.run_signal()
+                self.assertNotEqual(code, 0)
+                self.assertIn("families.name:x.decision", out)
+                self.assertIn("item", out)
+
     def test_a_decided_family_that_is_gone_is_kept(self):
         self.register.write_text(json.dumps({"families": {"name:old": {"kind": "name", "decision": {
             "decision": "accept", "date": day(40)}}}}))

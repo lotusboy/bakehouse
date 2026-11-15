@@ -139,6 +139,23 @@ class Status(unittest.TestCase):
             {"workOrder": "T2", "closedAt": "2026-11-02T10:00:00+00:00", "commit": "3333333", "overridden": False},
             {"workOrder": "T3", "closedAt": "2026-11-04T10:00:01+00:00", "commit": "5555555", "overridden": True}])
 
+    def test_a_work_order_is_open_only_from_a_seal_with_no_close_after_it(self):
+        def ev(ts, kind, task):
+            return {"ts": ts, "role": "engine", "kind": kind, "task": task, "purpose": "p", "outcome": "done",
+                    "commit": "6666666"}
+        self.ops.write_bytes(chained(OPS + [
+            ev("2026-11-05T10:00:00+00:00", "agent-run", "T4"),
+            ev("2026-11-05T11:00:00+00:00", "gate-refused", "T4"),
+            ev("2026-11-05T12:00:00+00:00", "sealed", "T5"),
+            ev("2026-11-05T13:00:00+00:00", "work-order-closed", "T5"),
+            ev("2026-11-05T14:00:00+00:00", "sealed", "T5"),
+            ev("2026-11-05T15:00:00+00:00", "sealed", "T6"),
+            ev("2026-11-05T16:00:00+00:00", "work-order-closed", "T6"),
+            ev("2026-11-05T17:00:00+00:00", "agent-run", "T6")]))
+        self.assertEqual([w["workOrder"] for w in self.as_json()["workOrders"]], ["T1", "T5"],
+                         "T4 has events and no seal; T5 was sealed again after its close; T6's close came after "
+                         "its seal")
+
     def test_since_keeps_the_closes_at_or_after_it(self):
         self.assertEqual([c["workOrder"] for c in self.as_json("--since", "2026-11-02T10:00:00+00:00")["closedSince"]],
                          ["T2", "T3"], "a close at the --since time counts")

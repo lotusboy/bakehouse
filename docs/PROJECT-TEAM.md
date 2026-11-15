@@ -352,8 +352,13 @@ A key in only one run folder is not listed. A run folder whose name has no date 
 `runCount`, never in the window.
 
 **A decision** is written by a person under the family's `decision` key: `{"decision": "build" |
-"adopt" | "accept", "date": "YYYY-MM-DD"}`, with any other fields the person wants, such as a note or
-the tracker id of the build. The script never overwrites it.
+"adopt" | "accept" | "team", "date": "YYYY-MM-DD"}`, with any other fields the person wants, such as a
+note or the tracker id of the build. The script never overwrites it. `build` lands one shared tool in
+the project. `team` sends the family to bakehouse's own backlog instead, because the signal cannot tell
+a tool of the project from a tool of the team. A `team` decision must carry `item`: a non-empty string
+naming the bakehouse backlog item it became. Without it the script stops, naming the family. A `team`
+decision counts as decided like the other three, so the family is raised again
+(`build-candidate-again`) when copies keep appearing after it.
 
 **Point, don't carry.** A recorded decision never moves to another family by itself. A family's id
 can change: a content cluster's id is its first file, so an older copy joining it, or `nested: true`
@@ -381,7 +386,8 @@ its files silenced raised families the owner had never decided, once a few of th
 folded into them.
 
 **Who acts.** Each raised family carries a `flag`: `{"owner": <drivers.owner>, "next": "propose to the
-owner: build one shared tool, adopt an existing one, or accept the copies"}`. A raised family that
+owner: build one shared tool, adopt an existing one, accept the copies, or make it a team tool (an item
+in bakehouse's own backlog)"}`. A raised family that
 carries a `priorDecision` note is not new: its `next` instead says that an earlier decision covers some
 of its files, and asks the owner to confirm it by writing a decision on the family's own id, or to
 decide afresh. The owner of the repository decides. The `owner` rule names the role that carries the proposal.
@@ -971,7 +977,7 @@ The JSON object:
 | `format` | `1`. A later release adds fields; it does not change these. |
 | `team` | `true` |
 | `project`, `records` | the repository root, and its records folder |
-| `workOrders` | each work order with events in the ops ledger and no `work-order-closed` event: `workOrder`, `events` (how many), `latestRound` (the `round` of its latest event that has one, else `null`), `latestKind` and `latestAt` (the kind and `ts` of its latest event) |
+| `workOrders` | each open work order: one with a `sealed` event in the ops ledger and no `work-order-closed` event after it (a work order with no seal is not open): `workOrder`, `events` (how many), `latestRound` (the `round` of its latest event that has one, else `null`), `latestKind` and `latestAt` (the kind and `ts` of its latest event) |
 | `waitingDecisions` | each decision asked, not decided autonomously, and not answered: `id`, `category`, `question`, `askedAt` |
 | `closedSince` | each `work-order-closed` event at or after `--since` (all of them without it): `workOrder`, `closedAt`, `commit` (the commit the close event names), `overridden` (`true` when the close was the owner's override) |
 

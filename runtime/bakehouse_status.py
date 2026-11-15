@@ -7,7 +7,8 @@ The JSON object (docs/PROJECT-TEAM.md, "Reading team state"):
   format            1
   team              true
   project, records  the repo root and its records folder
-  workOrders        each work order with events in the ops ledger and no work-order-closed event:
+  workOrders        each open work order: one with a sealed event in the ops ledger and no
+                    work-order-closed event after it (a work order with no seal is not open):
                     {workOrder, events, latestRound, latestKind, latestAt}
   waitingDecisions  each decision asked, not decided autonomously and not answered:
                     {id, category, question, askedAt}
@@ -35,6 +36,7 @@ import ops_ledger
 
 USAGE = "usage: bakehouse status [--json] [--since <ISO time>] [--repo <folder>]"
 CLOSED_KIND = "work-order-closed"
+SEALED_KIND = "sealed"  # as predict-gate.py's seal writes it
 OVERRIDDEN = "OVERRIDDEN"  # the start of an overridden close's note (predict-gate.py run_close)
 
 
@@ -60,6 +62,10 @@ def broken(path: Path, ops: bool) -> str | None:
     return None
 
 
+def last(kinds, kind) -> int:
+    return len(kinds) - 1 - kinds[::-1].index(kind)
+
+
 class Unreadable(Exception):
     """A ledger line that reads whole but that status cannot use: (the ledger, the error)."""
 
@@ -80,8 +86,11 @@ def state(project, since) -> dict:
                                "overridden": (ev.get("note") or "").startswith(OVERRIDDEN)})
         open_wos = []
         for wo, evs in by_wo.items():
-            if any(e.get("kind") == CLOSED_KIND for e in evs):
-                continue
+            kinds = [e.get("kind") for e in evs]
+            if SEALED_KIND not in kinds:
+                continue  # no seal: not open
+            if CLOSED_KIND in kinds and last(kinds, CLOSED_KIND) > last(kinds, SEALED_KIND):
+                continue  # closed after its latest seal
             rounds = [e["round"] for e in evs if e.get("round")]
             open_wos.append({"workOrder": wo, "events": len(evs), "latestRound": rounds[-1] if rounds else None,
                              "latestKind": evs[-1].get("kind"), "latestAt": evs[-1].get("ts")})

@@ -19,7 +19,7 @@ The plugin's `bin/` is on the Bash tool's PATH, so these run from any Bash comma
 
 | Command | What it does |
 |---|---|
-| `bakehouse setup [--pointer <main clone>] [--pre-commit]` | Makes a clone ready for its team (`bakehouse_setup.py`, below). |
+| `bakehouse setup [--pointer <main clone>] [--pre-commit] [--no-remote-check]` | Makes a clone ready for its team (`bakehouse_setup.py`, below). |
 | `bakehouse status [--json] [--since <ISO time>] [--repo <folder>]` | The team's state (`bakehouse_status.py`, below). |
 | `bakehouse run <script> [args]` | Runs `runtime/<script>` with the args, and exits with its exit code. The plugin folder changes on every update, so a project file that names a plugin script (a binding command, a project's own script) names it this way: `bakehouse run health-signal.py ...`. A `.py` script runs under the same python as `bakehouse`. A name with a `/`, or one that is not a file in `runtime/`, is refused (exit 2). |
 
@@ -52,7 +52,7 @@ Seven tools are a `.sh` file you call and a `.py` file beside it that does the w
 | `ops-event.sh` | Appends one event to the repo's ops ledger. | `ops/events.jsonl`, in the records folder |
 | `ops-gap.sh` | Says how many commits the ops ledger is behind. | nothing |
 | `lane-event.sh`, `heavy-run.sh` | Record parallel work inside one project; run one heavy job under its lane's lock. | `ops/lanes.jsonl`, in the records folder; `locks/`, in the machine folder |
-| `bakehouse_setup.py` | `bakehouse setup`: makes a clone ready for its team. It makes the records worktree and its pointer, and writes the git hooks: pre-commit (`predict-gate.sh hook`) only with `--pre-commit`, and post-commit (`ops-gap.sh`) in repos the owner owns. | the records worktree and git config `bakehouse.records`; `.git/hooks/pre-commit` and `post-commit`; `git-hook`, in the machine folder |
+| `bakehouse_setup.py` | `bakehouse setup`: makes a clone ready for its team. It makes the records worktree and its pointer, and writes the git hooks: pre-commit (`predict-gate.sh hook`) only with `--pre-commit`, and post-commit (`ops-gap.sh`) in repos the owner owns. Before it makes a new records branch it asks origin whether it already holds one, and refuses when origin cannot be asked. `--no-remote-check` (main clone only) skips that ask: by giving it, the owner asserts that origin has never held the `bakehouse-records` branch, and setup makes the new orphan branch locally. Use it for a remote that needs a login setup cannot give. | the records worktree and git config `bakehouse.records`; `.git/hooks/pre-commit` and `post-commit`; `git-hook`, in the machine folder |
 | `session-start.py` | The plugin's SessionStart hook: keeps the git-hook launcher on the installed plugin, and, in a project with a team, tells the session to load the `bakehouse:pm` skill (the role choice `role`, in the machine folder, can turn that off). | `git-hook`, in the machine folder |
 | `bakehouse_status.py` | `bakehouse status`: the team's state for any reader outside the tool ([PROJECT-TEAM.md](./PROJECT-TEAM.md), "Reading team state"). | nothing |
 

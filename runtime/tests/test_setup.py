@@ -188,6 +188,39 @@ class Setup(Base):
         self.assertIn("checked out origin/bakehouse-records", out)
         self.assertEqual(self.git(self.records(clone), "rev-parse", "HEAD").stdout, self.git(rec, "rev-parse", "HEAD").stdout)
 
+    def test_a_remote_that_cannot_be_asked_refuses_unless_the_owner_asserts_it_holds_no_records_branch(self):
+        # a remote that needs a login setup cannot give: its ssh command records that it was asked, then fails
+        asked = self.tmp / "asked"
+        self.git(self.repo, "remote", "add", "origin", "ssh://git@host.invalid/proj.git")
+        self.env["GIT_SSH_COMMAND"] = f"touch {shlex.quote(str(asked))}; false"
+        rc, out = self.setup_in(self.repo)
+        self.assertEqual(rc, 1, out)
+        self.assertIn("could not look for bakehouse-records on origin", out)
+        self.assertTrue(asked.exists(), "without the option, setup asks the remote")
+        self.assertFalse(os.path.lexists(self.records(self.repo)))
+        self.assertEqual(self.config(self.repo, "bakehouse.records"), "")
+        asked.unlink()
+        rc, out = self.setup_in(self.repo, "--no-remote-check")
+        self.assertEqual(rc, 0, out)
+        self.assertFalse(asked.exists(), "with the option, setup never asks the remote")
+        self.assertIn("origin was not asked", out)
+        rec = self.records(self.repo)
+        self.assertEqual(self.git(rec, "symbolic-ref", "--short", "HEAD").stdout.strip(), "bakehouse-records")
+        self.assertEqual(self.git(rec, "log", "--format=%s").stdout.splitlines(),
+                         ["bakehouse records: the branch's first commit"])
+        self.assertNotEqual(self.git(self.repo, "merge-base", "main", "bakehouse-records", check=False).returncode, 0)
+        self.assertEqual(self.config(self.repo, "bakehouse.records"), str(rec))
+
+    def test_the_no_remote_check_option_is_explained_in_the_usage(self):
+        rc, out = self.setup_in(self.repo, "--no-such-option")
+        self.assertEqual(rc, 2)
+        self.assertIn("--no-remote-check", out)
+        self.assertIn("the owner asserts that origin has never held the\n", out)
+        self.assertIn("bakehouse-records branch. setup then makes a new orphan bakehouse-records branch here without\n"
+                      "                     asking origin", out)
+        rc, out = self.setup_in(self.tmp, "--pointer", str(self.repo), "--no-remote-check")
+        self.assertEqual(rc, 2, "a lane clone never asks the remote, so the option is bad usage there")
+
     def test_a_clone_of_the_main_clone_is_told_to_use_the_pointer(self):
         self.setup_in(self.repo)
         clone = self.tmp / "clone"

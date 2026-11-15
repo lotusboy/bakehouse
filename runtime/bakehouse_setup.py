@@ -1,12 +1,14 @@
 """`bakehouse setup`: make a clone ready for its team (design 05 §4.5, §4.6, §4.8, §10.1 item 8). Standard
 library only. Run through bin/bakehouse.
 
-  bakehouse setup [--pre-commit]                          in the main clone
+  bakehouse setup [--pre-commit] [--no-remote-check]      in the main clone
   bakehouse setup --pointer <main clone> [--pre-commit]   in a lane clone
 
 In the main clone it makes the records worktree in the sibling folder `<repo>.bakehouse-records`, on the
 orphan branch `bakehouse-records` (checked out instead when the branch already exists, here or on origin),
-and writes git config `bakehouse.records`. In a lane clone it only copies the main clone's pointer. Both
+and writes git config `bakehouse.records`. With --no-remote-check the owner asserts that origin has never held
+the records branch: setup makes the orphan branch here without asking origin (for a remote that needs a login
+setup cannot give). In a lane clone it only copies the main clone's pointer. Both
 then write the git-hook launcher in the machine folder and install the git hooks, which exec it: the
 post-commit drift report, and the pre-commit gate only with --pre-commit (as Permanence's
 `predict-gate.sh install-hook`, never run automatically; owner ruling 2026-11-14).
@@ -29,7 +31,12 @@ import locator
 
 BRANCH = "bakehouse-records"
 MARKER = "# installed-by: bakehouse"
-USAGE = "usage: bakehouse setup [--pointer <main clone>] [--pre-commit]"
+USAGE = """\
+usage: bakehouse setup [--pointer <main clone>] [--pre-commit] [--no-remote-check]
+  --no-remote-check  main clone only. By giving it, the owner asserts that origin has never held the
+                     bakehouse-records branch. setup then makes a new orphan bakehouse-records branch here without
+                     asking origin (for a remote that needs a login setup cannot give). Without it, setup asks
+                     origin first."""
 GITIGNORE = """\
 # The ledger lock files (ops_ledger.lock_path, decision.locked): never committed.
 .*.lock
@@ -290,8 +297,9 @@ def fetch_origin_records(top: Path) -> bool | None:
     return True
 
 
-def make_records(top: Path) -> Path | None:
-    """The records checkout in the sibling folder, made or reused. None (after saying why) when it cannot be."""
+def make_records(top: Path, remote_check=True) -> Path | None:
+    """The records checkout in the sibling folder, made or reused. None (after saying why) when it cannot be.
+    remote_check=False (--no-remote-check): origin is never asked for the records branch."""
     folder = top.parent / f"{top.name}.{BRANCH}"
     used = None if os.path.lexists(folder) else registered_at(top)
     if used is not None and os.path.lexists(used):
@@ -326,8 +334,11 @@ def make_records(top: Path) -> Path | None:
             return None
         say(f"checked out the branch {BRANCH} into {folder}")
     else:
-        on_origin = git(top, "show-ref", "--verify", "--quiet", f"refs/remotes/origin/{BRANCH}").returncode == 0 \
-            or fetch_origin_records(top)
+        on_origin = git(top, "show-ref", "--verify", "--quiet", f"refs/remotes/origin/{BRANCH}").returncode == 0
+        if not on_origin and not remote_check:
+            say(f"origin was not asked for {BRANCH} (--no-remote-check): the owner asserts it has never held it")
+        elif not on_origin:
+            on_origin = fetch_origin_records(top)
         if on_origin is None:
             return None  # origin could not be asked; fetch_origin_records said why
         if on_origin:
@@ -353,7 +364,7 @@ def make_records(top: Path) -> Path | None:
     return folder
 
 
-def setup_main(top: Path, root, env, pre_commit) -> int:
+def setup_main(top: Path, root, env, pre_commit, remote_check=True) -> int:
     try:
         project = locator.find(top, env)
     except locator.SetupNeeded:
@@ -376,7 +387,7 @@ def setup_main(top: Path, root, env, pre_commit) -> int:
         say(f"this clone looks like a lane clone: {why}. A lane uses its main clone's records. Refused, nothing "
             "changed. Run `bakehouse setup --pointer <main clone>` instead.")
         return 1
-    folder = make_records(top)
+    folder = make_records(top, remote_check)
     if folder is None:
         return 1
     git(top, "config", "bakehouse.records", str(folder))
@@ -421,8 +432,9 @@ def setup_pointer(top: Path, main_clone: str, root, env, pre_commit) -> int:
 def main(argv, root) -> int:
     env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"}
     pre_commit = "--pre-commit" in argv
-    argv = [a for a in argv if a != "--pre-commit"]
-    if argv and not (len(argv) == 2 and argv[0] == "--pointer"):
+    remote_check = "--no-remote-check" not in argv
+    argv = [a for a in argv if a not in ("--pre-commit", "--no-remote-check")]
+    if (argv and not (len(argv) == 2 and argv[0] == "--pointer")) or (argv and not remote_check):
         print(USAGE)
         return 2
     top = locator.toplevel(Path.cwd())
@@ -436,4 +448,4 @@ def main(argv, root) -> int:
         return 1
     if argv:
         return setup_pointer(top, argv[1], root, env, pre_commit)
-    return setup_main(top, root, env, pre_commit)
+    return setup_main(top, root, env, pre_commit, remote_check)
