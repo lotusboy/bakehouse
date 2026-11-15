@@ -98,9 +98,10 @@ def installed_agents(cwd):
         installs = {}
     for key in enabled_plugins(cwd):
         entries = installs.get(key, [])
-        # a project-scope install for this project wins over the user-scope one
-        pick = next((e for e in entries if e.get("scope") == "project" and isinstance(e.get("projectPath"), str)
-                     and Path(e["projectPath"]).resolve() == top.resolve()), None)
+        # an install for this project (local scope, then project scope: each with the project's path, compared
+        # resolved) wins over the user-scope one
+        pick = next((e for s in ("local", "project") for e in entries if e.get("scope") == s
+                     and isinstance(e.get("projectPath"), str) and Path(e["projectPath"]).resolve() == top.resolve()), None)
         pick = pick or next((e for e in entries if e.get("scope") == "user"), None)
         if not pick:
             continue

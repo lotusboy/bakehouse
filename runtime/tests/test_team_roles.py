@@ -1588,6 +1588,31 @@ class TestTheHooksFolder(Fixture):
         self.project_scope(self.repo)
         self.assertEqual(self.dispatch("role:architect", cwd=sibling), "DENY")
 
+    def test_a_local_scope_install_for_this_project_counts_first(self):
+        # R0.1 (d): the harness writes a local-scope install with the project's path (switched on in
+        # .claude/settings.local.json); it matches as a project-scope one does. The order is local, project, user.
+        (self.home / ".claude" / "settings.json").write_text("{}")
+        (self.repo / ".claude").mkdir(exist_ok=True)
+        (self.repo / ".claude" / "settings.local.json").write_text(json.dumps({"enabledPlugins": {"bakehouse@t": True}}))
+        plugin, bare = self.home / "plugin", self.home / "bare-plugin"
+        (bare / "agents").mkdir(parents=True)
+
+        def installs(*entries):
+            (self.home / ".claude" / "plugins" / "installed_plugins.json").write_text(json.dumps({"plugins": {
+                "bakehouse@t": [{"scope": s, "installPath": str(p), **({"projectPath": str(at)} if at else {})}
+                                for s, at, p in entries]}}))
+
+        cases = [((("local", self.repo, plugin),), "bakehouse:architect"),
+                 ((("local", self.repo, plugin), ("project", self.repo, bare), ("user", None, bare)), "bakehouse:architect"),
+                 ((("local", self.repo, bare), ("project", self.repo, plugin), ("user", None, plugin)), "DENY"),
+                 ((("project", self.repo, bare), ("user", None, plugin)), "DENY"),
+                 ((("local", Path(f"{self.repo}2"), plugin),), "DENY")]
+        for entries, want in cases:
+            with self.subTest(entries=entries):
+                installs(*entries)
+                got = self.dispatch("role:architect")
+                self.assertEqual(got if got == "DENY" else got["subagent_type"], want)
+
     def test_the_running_plugins_own_agents_are_installed_wherever_the_cwd_is(self):
         # S16 fix2 ANDON-A (ii): a hook that runs is proof its plugin is on, so the agents in $CLAUDE_PLUGIN_ROOT/agents
         # count as installed, named <plugin name>:<agent name> (the name in .claude-plugin/plugin.json)
