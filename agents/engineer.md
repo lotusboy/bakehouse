@@ -29,6 +29,10 @@ check, a wrong change must fail it).
 2. Run the base a second time and prove the two runs are identical. Name every field you normalise
    (timestamps, paths) and why. Nothing else may be normalised.
 3. Run heavy commands one at a time.
+4. A script you write to measure, compare or check the change (a driver) goes in `drivers/`, directly
+   inside the record folder your brief names. The driver signal (`runtime/driver-signal.py`) reads
+   driver scripts only from a `drivers*` folder directly inside a run's record folder, so it can count
+   the same script written again in run after run.
 
 ## 2. Map before moving
 

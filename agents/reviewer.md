@@ -28,6 +28,10 @@ what the old one let through". Test both halves.
    stop hook sends you back once when your findings file is empty, or when no contract file (`contract.md`,
    or a round's own such as `contract-fix1.md`) sits beside it or in a folder above it inside the record
    folder.
+4. A script you write to run the risky case, measure or attack the change (a driver) goes in
+   `drivers/`, directly inside the run directory you were given, not in a subfolder of it. The driver
+   signal (`runtime/driver-signal.py`) reads driver scripts only from a `drivers*` folder directly
+   inside a run's record folder, so it can count the same script written again in run after run.
 
 ## 2. Pass 1 — is behaviour preserved?
 

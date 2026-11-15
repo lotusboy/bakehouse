@@ -525,6 +525,10 @@ command, pass and when]. The gates that prove the need: [work order: gates].
   engineer-mutations.json (engineer-mutations-fix<N>.json for fix round N) in the record folder.
 Run BASE against BASE first. Scratch dir: [PM: a folder under the system temp directory, outside
 the repo, named by the work order id, never by the user's name].
+  Drivers (the scripts you write to measure, compare or check the change): in drivers/, directly
+  inside the record folder above. The driver signal (runtime/driver-signal.py) reads driver scripts
+  only from a drivers* folder directly inside a run's record folder, so it can count the same script
+  written again in run after run.
   Runs that must not run in parallel: [binding.gates.oneAtATime, or "none named"].
   A clone of this repository (a lane clone, or a clone made for a run): before any bakehouse tool in
   it, run `bakehouse setup --pointer [PM: the main clone's full path]`. Without it every team tool
@@ -559,6 +563,10 @@ Serves: [tracker: the item's serves: line]. Open findings.md with your own count
 touches, in scope against out of scope, and say whether the prediction's first line is true.
 RUN the risky case and the work order's evidence on real inputs in a scratch dir (a constructed case
 is fine); say "read, not run" where you could not run it.
+Drivers (the scripts you write to run it, measure or attack the change): in drivers/, directly inside
+the record folder below, not in a subfolder of it. The driver signal (runtime/driver-signal.py) reads
+driver scripts only from a drivers* folder directly inside a run's record folder, so it can count the
+same script written again in run after run.
 Record folder: [{root}/ + binding.reviews + binding.reviewName, filled: a full path, in ~/ form; this line holds the path only, in backticks if it has a space; notes go on the next line]
 Write contract.md first, then each pass file as you finish it, then findings.md, into
 that record folder. Round: [PM: "the first review: findings.md and
