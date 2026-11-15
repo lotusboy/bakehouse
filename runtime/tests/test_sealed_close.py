@@ -426,6 +426,53 @@ class Sealed(unittest.TestCase):
         self.commit("W-1: re-measured")
         self.assertCloses()
 
+    def test_s1_fix1_rule_5b_judges_the_live_chains_prediction_seal(self):
+        # the first prediction is sealed before the lane code and then retired; the live prediction is sealed
+        # after the code seal, at a commit that holds no code (so rule 5's tree test passes): 5b must refuse
+        self.commit(
+            "W-1: prediction",
+            {
+                self.r("moves.prediction.json"): GOOD_P,
+                self.r("moves.baseline.json"): BASE_M,
+            },
+        )
+        self.assertEqual(self.seal("first", "moves.prediction.json"), 0)
+        self.assertEqual(self.seal("first", "moves.baseline.json"), 0)
+        b = self.head()
+        self.git("checkout", "-q", "-b", "lane")
+        self.assertEqual(self.code("W-1: the change", {"src/app.py": "v = 2\n"}), 0)
+        h = self.head()
+        self.assertEqual(self.measure("first", PASS_M, b, h), 0)
+        self.commit("W-1: measurement")
+        self.decide(
+            "d20261101-bbbbb2",
+            approves="retire",
+            choice="retire",
+            options=("keep", "retire"),
+        )
+
+        def retire(n):
+            p = self.gate("retire", "W-1", "first", str(self.repo / self.r(n)), "--decision", "d20261101-bbbbb2")
+            self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+
+        self.commit(
+            "W-1: measurement to history/",
+            mv=[(self.r("moves.measured.json"), self.r("history/moves.measured.json"))],
+        )
+        retire("history/moves.measured.json")
+        self.git("checkout", "-q", self.default)
+        self.commit(
+            "W-1: prediction to history/",
+            mv=[(self.r("moves.prediction.json"), self.r("history/moves.prediction.json"))],
+        )
+        retire("history/moves.prediction.json")
+        self.commit("W-1: the live prediction", {self.r("moves.prediction.json"): WIDE_P})
+        self.assertEqual(self.seal("first", "moves.prediction.json"), 0)
+        self.git("merge", "-q", "--no-ff", "lane", "-m", "Merge lane")
+        self.assertEqual(self.measure("first", PASS_M, b, h), 0)
+        self.commit("W-1: re-measured")
+        self.assertRefuses("its prediction was sealed after its first code commit")
+
     # ---- every repro done to a sealed record refuses ----
 
     def test_a1_a_round_moved_to_history_without_a_retire(self):

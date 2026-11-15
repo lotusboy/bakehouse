@@ -1080,8 +1080,9 @@ def sealed_refusals(repo: Path, folders: list, evs: list, decided: dict, wo: str
                        f"the round is sealed: commit the round's first code through predict-gate.sh seal-code {wo} "
                        f"{rnd} -- <git commit args>")
             continue
-        p = next((x for x in evs if x.get("kind") == "sealed" and x.get("fileKind") == "prediction"
-                  and x.get("round") == rnd), None)
+        # the live chain's first prediction seal of the round: a retired one is not the round's prediction
+        p = next((x for x in seals if x.get("kind") == "sealed" and x.get("fileKind") == "prediction"
+                  and x.get("round") == rnd and id(x) in firsts and not retire_of(x, evs)), None)
         if p is None or evs.index(p) > evs.index(cs):
             out.append(f"round {rnd} of {wo}: its prediction was sealed after its first code commit "
                        f"{str(cs.get('commit'))[:8]} was sealed: a prediction is sealed before its code")
@@ -1278,6 +1279,8 @@ def run_close(wo: str, repo_arg: str | None, binding_arg: str | None, merged: bo
                 continue
             passed.append(f"{rel(pred)} sha256:{hp} commits {','.join(commits)}, {rel(meas)} sha256:{hm}, "
                           f"baseline {rel(base)} (sha256 {sha256(raw(base_n))})"
+                          + (f", missed {rel(folder / missed_n)} sha256:{sha256(raw(missed_n))}"
+                             if missed_n in top_names else "")
                           + (f", approved: {', '.join(approved)}" if approved else ""))
 
     sig = b.get("signal") if isinstance(b.get("signal"), dict) else {}
