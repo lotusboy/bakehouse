@@ -468,6 +468,7 @@ class TestPredictionRecord(Fixture):
         out = self.engineer_stop(self.marked(), stop_hook_active=True)
         self.assertNotIn("block", out)
         self.assertIn("stopped without a machine prediction", out)
+        self.assertNotIn("cannot close until it has one", out)
 
     def test_prediction_record_unmarked_engineer_is_not_checked(self):
         self.assertEqual(self.engineer_stop(self.dispatch("role:refactor:engineer")["prompt"]), "")
@@ -578,14 +579,31 @@ class TestPredictionStop(TestPredictionRecord):
         self.assertEqual(out, "")
         self.assertIn("PREDICTION ok for engineer", self.log())
 
-    def test_s1_a_no_moves_prediction_needs_its_measured_pair_with_no_move(self):
+    def test_s6_a_no_moves_prediction_before_its_round_is_measured_lets_the_engineer_stop(self):
+        # R0.1 S6 #1: the engineer commits the prediction before its first code edit and stops, so the round has
+        # no measured file yet. A first round; then a fix round beside the first round's measured pair.
         out = self.engineer_stop(self.marked(), files={"moves.prediction.json": json.dumps({"noMoves": True})})
-        self.assertIn('"decision": "block"', out)
-        self.assertIn("declares noMoves and has no measured pair", out)
-        out = self.engineer_stop(self.marked(), files={"moves.baseline.json": json.dumps({"tests:passed": 11}),
+        self.assertEqual(out, "")
+        (self.folder / "moves.prediction.json").unlink()
+        out = self.engineer_stop(self.marked(), files={"moves.prediction.json": self.OKP,
+                                                       "moves.baseline.json": json.dumps({"tests:passed": 11}),
+                                                       "moves.measured.json": json.dumps({"tests:passed": 12}),
+                                                       "moves.prediction.fix4.json": json.dumps({"noMoves": True})})
+        self.assertEqual(out, "")
+        self.assertIn("PREDICTION ok for engineer", self.log())
+
+    def test_s6_a_no_moves_prediction_whose_measured_pair_moved_keys_is_still_refused(self):
+        out = self.engineer_stop(self.marked(), files={"moves.prediction.json": json.dumps({"noMoves": True}),
+                                                       "moves.baseline.json": json.dumps({"tests:passed": 11}),
                                                        "moves.measured.json": json.dumps({"tests:passed": 12})})
         self.assertIn('"decision": "block"', out)
         self.assertIn("declares noMoves, and 1 key(s) moved", out)
+        # the second stop is let through, and the message does not say close cannot happen
+        out = self.engineer_stop(self.marked(), stop_hook_active=True)
+        self.assertNotIn('"decision": "block"', out)
+        self.assertIn("declares noMoves, and 1 key(s) moved", out)
+        self.assertIn("`predict-gate.sh close` is the hard gate", out)
+        self.assertNotIn("cannot close until it has one", out)
 
     def test_an_empty_prediction_is_refused(self):
         out = self.engineer_stop(self.marked(), files={"moves.prediction.json": json.dumps({"moves": [], "mustNotMove": ["x"]})})

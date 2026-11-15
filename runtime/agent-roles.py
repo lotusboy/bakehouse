@@ -51,7 +51,8 @@ Three entry points, all wired by the plugin's hooks:
         record folder its brief names (`Record folder:`, read by record_line; else the binding's folder
         for that id) holds
         a moves.prediction<R>.json that predict-gate's own checker accepts and that names at least one
-        move, or declares "noMoves": true beside its measured pair when that pair moved 0 keys. Every
+        move, or declares "noMoves": true (accepted while its round has no measured file yet, and beside
+        its measured pair when that pair moved 0 keys). Every
         stop of that agent type logs whether line 1 ends with the marker (PROMPT-SOURCE).
   --check-new                 (SessionStart) print agents installed since the last check, once. It judges
                               the folder locator.hook_folder names ($CLAUDE_PROJECT_DIR, else the hook input's
@@ -616,7 +617,8 @@ def pre_tool_use(d):
             f"\n\nBefore you stop, {where} must hold the prediction as moves.prediction.json (a fix round: "
             "moves.prediction.<round>.json, for example moves.prediction.fix1.json), in the format "
             "`predict-gate.sh check` reads, naming at least one move (a round that moves nothing declares "
-            "\"noMoves\": true, and is accepted beside its measured pair when that pair moved 0 keys). "
+            "\"noMoves\": true, and is accepted before its round is measured, and beside its measured pair "
+            "when that pair moved 0 keys). "
             "A prose prediction may sit beside it. "
             f"The stop hook sends you back once if it is missing, empty or does not parse.\n{PREDICTION_MARKER}")
         notes.append(f"prediction-record rule added ({decided[3] if decided else 'no Record folder line'})")
@@ -745,8 +747,9 @@ def unsealed_moves(folders, where, named):
 
 def prediction_stop(d):
     """The change engineer may stop only when its own record folder holds a prediction file that
-    predict-gate's own checker accepts and that names at least one move, or that declares "noMoves": true
-    beside its measured pair when that pair moved 0 keys (predict-gate's no_move_refusal)."""
+    predict-gate's own checker accepts and that names at least one move, or that declares "noMoves": true:
+    accepted while its round has no measured file yet, and beside its measured pair when that pair moved 0 keys
+    (predict-gate's no_move_refusal)."""
     prompt = first_prompt(d.get("agent_transcript_path"))
     lines = [x.strip() for x in prompt.splitlines() if x.strip()]
     marked = bool(lines) and lines[-1] == PREDICTION_MARKER
@@ -796,6 +799,12 @@ def prediction_stop(d):
             if p.is_file() and gate.PREDICTION_RE.match(p.name):
                 try:
                     pred = gate.check_prediction(gate.load(p), p)
+                    rnd = gate.PREDICTION_RE.match(p.name).group(1)
+                    if pred["noMoves"] and not (f / f"moves.measured{rnd}.json").is_file():
+                        # the prediction is written before the round is measured, so its measured file does
+                        # not exist yet: accepted here; close is the hard gate, and needs the pair (R0.1 S6 #1)
+                        good.append(p)
+                        continue
                     moved = None if pred["moves"] else gate.pair_moved(
                         p.name, pred, lambda n, f=f: (f / n).is_file(), lambda n, f=f: (f / n).read_text(encoding="utf-8"))
                     why = gate.no_move_refusal(len(pred["moves"]), pred["noMoves"], moved)
@@ -838,8 +847,10 @@ def prediction_stop(d):
         refusal_event("stop:prediction", out["reason"], prompt, folders[0] if folders else cwd)
         return out
     log(f"PREDICTION still missing or bad for {agent} — let it stop, told the user")
-    return with_note({"systemMessage": f"bakehouse agent-roles: {agent} stopped without a machine "
-                                       f"prediction: {what}. The work order cannot close until it has one."}, note)
+    return with_note({"systemMessage": f"bakehouse agent-roles: {agent} stopped without a machine prediction the "
+                                       f"stop check accepts: {what}. It was let stop this time; "
+                                       "`predict-gate.sh close` is the hard gate, and checks the round's prediction "
+                                       "again."}, note)
 
 
 def records_check():
