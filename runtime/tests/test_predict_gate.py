@@ -3,6 +3,7 @@ python3 -m unittest discover -s runtime/tests"""
 import hashlib
 import json
 import os
+import re
 import subprocess
 import tempfile
 import unittest
@@ -10,6 +11,7 @@ from pathlib import Path
 
 RUNTIME = Path(__file__).resolve().parent.parent
 GATE = RUNTIME / "predict-gate.sh"
+CLOSE_OVERRIDE = "PREDICT_GATE_CLOSE_OVERRIDE"
 GIT = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
 
 BASE = {"premium:clean-risk": 1000.00, "premium:referral-risk": 2000.00, "gaps:unfaithful-logic": 9,
@@ -436,6 +438,66 @@ class Close(RepoFixture):
         self.assertIn("owner go: the +5 is accepted", refused["note"])
         self.assertEqual(closed["kind"], "work-order-closed")
         self.assertIn("OVERRIDDEN", closed["note"])
+
+    # ---- seal fixes F5: an override names each refusal it covers ----
+
+    def four_refusals(self):
+        """A record close refuses 4 times: an unpredicted move, a round with no measurement, and two
+        measured files with no prediction of their round. Returns close's output."""
+        self.trio(measured={**BASE, "rules:fired": 121, "gaps:capture": 371})
+        self.put("moves.prediction.fix3.json", {"moves": [{"what": "rules:fired", "to": 1}]})
+        self.put("moves.measured.proto.json", BASE)
+        self.put("moves.measured.proto2.json", BASE)
+        p = self.close()
+        self.assertEqual(p.returncode, 1, p.stdout)
+        return p.stdout
+
+    def ids(self, out):
+        return re.findall(r"^  - (R-[0-9a-f]{6}): ", out, re.M)
+
+    def test_seal_f5_close_names_each_refusal_with_a_stable_id(self):
+        out = self.four_refusals()
+        ids = self.ids(out)
+        self.assertEqual(len(ids), 4, out)
+        self.assertEqual(len(set(ids)), 4)
+        self.assertEqual(self.ids(self.close().stdout), ids, "the same record gives the same ids")
+        self.assertIn(f'{CLOSE_OVERRIDE}="<reason> | covers: <refusal id>,..."', out)
+
+    def test_seal_f5_an_override_that_names_no_refusal_is_refused(self):
+        ids = self.ids(self.four_refusals())
+        p = self.close(env=dict(self.env, PREDICT_GATE_CLOSE_OVERRIDE="owner go"))
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("OVERRIDE REFUSED", p.stdout)
+        for i in ids:
+            self.assertIn(i, p.stdout.split("OVERRIDE REFUSED")[1])
+        self.assertNotIn("work-order-closed", [e["kind"] for e in self.events()])
+
+    def test_seal_f5_an_override_that_leaves_a_refusal_uncovered_is_refused_and_names_it(self):
+        ids = self.ids(self.four_refusals())
+        env = dict(self.env, PREDICT_GATE_CLOSE_OVERRIDE=f"owner go | covers: {','.join(ids[:3])}")
+        p = self.close(env=env)
+        self.assertEqual(p.returncode, 1, p.stdout)
+        tail = p.stdout.split("OVERRIDE REFUSED")[1].split("\n")[0]
+        uncovered = tail.split("does not cover")[1].split("It covers only")[0]
+        self.assertIn(ids[3], uncovered)
+        self.assertNotIn(ids[0], uncovered)
+        self.assertNotIn("work-order-closed", [e["kind"] for e in self.events()])
+
+    def test_seal_f5_an_override_covering_every_refusal_closes_and_records_every_one(self):
+        out = self.four_refusals()
+        ids = self.ids(out)
+        env = dict(self.env, PREDICT_GATE_CLOSE_OVERRIDE=f"owner go, decision 7 | covers: {', '.join(reversed(ids))}")
+        p = self.close(env=env)
+        self.assertEqual(p.returncode, 0, p.stdout)
+        refused, closed = self.events()[-2:]
+        self.assertEqual((refused["kind"], refused["purpose"], refused["count"]),
+                         ("gate-refused", "work order close overridden", 4))
+        self.assertIn("owner go, decision 7", refused["note"])
+        for i in ids:
+            self.assertIn(i, refused["note"])
+        self.assertIn("moves.measured.proto2.json: a measured file with no prediction", refused["note"])
+        self.assertEqual(closed["kind"], "work-order-closed")
+        self.assertTrue(closed["note"].startswith("OVERRIDDEN"))
 
     def test_close_without_a_ledger_is_refused(self):
         self.trio()
