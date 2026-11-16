@@ -130,7 +130,8 @@ _spec = importlib.util.spec_from_file_location("predict_gate", HERE / "predict-g
 pg = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(pg)
 
-OVERRIDE = 'PREDICT_GATE_CLOSE_OVERRIDE="<reason>" predict-gate.sh close {wo}'
+OVERRIDE = ('PREDICT_GATE_CLOSE_OVERRIDE="<reason> | covers: R-xxxxxx,..." predict-gate.sh close {wo}, naming '
+            "every refusal id the close lists")
 NEXT = {
     "close": "Run `predict-gate.sh close {wo}` from the repository. It passes only on a complete change "
              "record: produce each missing artefact by measuring it, never by writing it after the fact. "

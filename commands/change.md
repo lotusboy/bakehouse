@@ -368,7 +368,8 @@ fresh `role:change:engineer` with the findings, the branch and the brief.
    A non-zero exit stops the job here: no pull request. Every refusal reason is listed in bakehouse
    `docs/PREDICT-GATE.md`, "Closing a work order". The pass is the command's exit 0, never a reading.
    The owner's exception only:
-   `PREDICT_GATE_CLOSE_OVERRIDE="<reason>" "${CLAUDE_PLUGIN_ROOT}/runtime/predict-gate.sh" close <id>`, which is
+   `PREDICT_GATE_CLOSE_OVERRIDE="<reason> | covers: R-xxxxxx,..." "${CLAUDE_PLUGIN_ROOT}/runtime/predict-gate.sh" close <id>`,
+   naming every refusal id the close lists (each refusal is listed as `R-xxxxxx: <text>`), which is
    recorded in the ops ledger. Close needs an owned repository: the ops ledger exists only there. In
    another party's repository close cannot record a pass, so a change job there stops at this step
    until the owner decides how such a job closes.

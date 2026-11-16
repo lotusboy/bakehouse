@@ -5,7 +5,7 @@
 #
 #   predict-gate.sh check [--prediction P] --measured M [--baseline B] [--override "<reason>"] [--task ID]
 #   predict-gate.sh close <work-order> [--repo DIR] [--binding FILE] [--merged]   # refuses unless every check passes;
-#                                           # override: PREDICT_GATE_CLOSE_OVERRIDE="<reason>"
+#                                           # override: PREDICT_GATE_CLOSE_OVERRIDE="<reason> | covers: R-xxxxxx,..."
 #   predict-gate.sh seal <work-order> <round> <file> [--repo DIR] [--report R]   # one sealed ledger event
 #   predict-gate.sh revise|retire <work-order> <round> <file> --decision <id> [--repo DIR]
 #   predict-gate.sh seal-code <work-order> <round> [--repo DIR] -- <git commit args>   # commit + seal the first code

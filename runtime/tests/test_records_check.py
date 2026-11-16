@@ -124,7 +124,7 @@ class TestCloseRule(Fixture):
         self.assertEqual(f[("T1", "close")]["owner"], "pm")
         self.assertEqual(f[("T1", "close")]["state"], "open")
         self.assertIn("predict-gate.sh close T1", f[("T1", "close")]["next"])
-        self.assertIn('PREDICT_GATE_CLOSE_OVERRIDE="<reason>"', f[("T1", "close")]["next"])
+        self.assertIn('PREDICT_GATE_CLOSE_OVERRIDE="<reason> | covers: R-xxxxxx,..."', f[("T1", "close")]["next"])
 
     def test_close_event_whose_sha256_does_not_match_flags(self):
         d = self.closed_record()
