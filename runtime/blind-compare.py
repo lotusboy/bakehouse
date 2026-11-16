@@ -3,9 +3,12 @@
 
 Each report ends with a ```json block: {"reader": "A", "items": [{"id", "label", "action", ...}]}.
 An item agrees only when every reader gives the same label and the same action. An item missing
-from a reader, or with an empty or missing label or action, is a disagreement.
-Exit 0: all agree. Exit 1: any disagree or missing. Exit 2: usage, or a report has no valid JSON
-block (no block, a block that does not parse, no "items" list, or an item with no id).
+from a reader, or with an empty or missing label or action, is a disagreement. Reports are read,
+and the table written, as UTF-8.
+Exit 0: all agree. Exit 1: any disagree or missing. Exit 2: usage; one reader passed twice (the same
+file twice, or two reports naming the same reader); or a report that cannot be read as UTF-8 or has
+no valid JSON block (no block, a ```json opener after the last complete block, a block that does
+not parse, no "items" list or an empty one, an item with no id, or an id that appears twice).
 Pure computation, standard library only, no AI. Usage: see blind-compare.sh.
 
   blind-compare.py reader-a.md reader-b.md [reader-c.md ...]
@@ -24,24 +27,31 @@ def bad(msg):
 
 def load(path):
     try:
-        text = Path(path).read_text()
-    except OSError as e:
-        bad(f"{path}: cannot read: {e}")
-    blocks = re.findall(r"```json\s*\n(.*?)```", text, re.S)
+        text = Path(path).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as e:
+        bad(f"{path}: cannot read as UTF-8: {e}")
+    blocks = list(re.finditer(r"```json\s*\n(.*?)```", text, re.S))
     if not blocks:
         bad(f"{path}: no ```json block")
     try:
-        data = json.loads(blocks[-1])
-    except json.JSONDecodeError as e:
+        data = json.loads(blocks[-1].group(1))
+    except (json.JSONDecodeError, RecursionError) as e:
         bad(f"{path}: last ```json block does not parse: {e}")
+    if re.search(r"```json", text[blocks[-1].end():], re.I):
+        bad(f"{path}: a ```json opener after the last complete ```json block: the final block is not "
+            "closed, or not fenced as ```json")
     if not isinstance(data, dict) or not isinstance(data.get("items"), list):
         bad(f"{path}: last ```json block has no \"items\" list")
+    if not data["items"]:
+        bad(f"{path}: last ```json block has no items")
     items = {}
     for n, i in enumerate(data["items"]):
         if not isinstance(i, dict):
             bad(f"{path}: item {n} is not an object")
         if i.get("id") is None or not str(i["id"]).strip():
             bad(f"{path}: item {n} has no id")
+        if str(i["id"]) in items:
+            bad(f"{path}: id {i['id']} appears twice")
         items[str(i["id"])] = i
     name = data.get("reader") or Path(path).stem
     return name, items
@@ -66,7 +76,17 @@ def agrees(answers):
 def main(paths):
     if len(paths) < 2:
         bad("compare needs at least two reader reports\n" + __doc__)
+    seen = {}
+    for p in paths:
+        key = Path(p).resolve()
+        if key in seen:
+            bad(f"{p}: the same file as {seen[key]}: one reader passed twice")
+        seen[key] = p
     readers = [load(p) for p in paths]
+    names = [n for n, _ in readers]
+    if len({norm(n) for n in names}) != len(names):
+        bad(f"two reports name the same reader: {names}")
+    sys.stdout.reconfigure(encoding="utf-8")
     ids = list(dict.fromkeys(i for _, items in readers for i in items))
     head = ["Id"] + [f"{n} label | {n} action" for n, _ in readers] + ["Agree?"]
     print("| " + " | ".join(head) + " |")
