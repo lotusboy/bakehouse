@@ -468,6 +468,46 @@ class TestPredictionRecord(Fixture):
         self.assertEqual(self.engineer_stop(self.marked(), files={"moves.prediction.json": ok}), "")
         self.assertIn("PREDICTION ok for engineer", self.log())
 
+    # ---- seal fixes F4: the stop check asks only for a seal the gate would accept ----
+
+    def sealed_lines(self, *seals):
+        """One sealed line per (round, file kind, file name), as predict-gate.sh seal writes it."""
+        self.ledger.parent.mkdir(parents=True, exist_ok=True)
+        with self.ledger.open("a") as fh:
+            for rnd, kind, name in seals:
+                fh.write(json.dumps({"kind": "sealed", "task": "T7", "prev": None, "round": rnd, "fileKind": kind,
+                                     "path": f"records/{self.folder.name}/{name}",
+                                     "sha256": hashlib.sha256((self.folder / name).read_bytes()).hexdigest()}) + "\n")
+
+    def test_seal_f4_a1063_the_stop_does_not_ask_for_a_baseline_the_gate_refuses(self):
+        # round r4's measured file is sealed and its own baseline is not: the gate refuses that baseline's seal
+        self.folder.mkdir(parents=True, exist_ok=True)
+        files = {"moves.prediction.json": self.OKP, "moves.prediction.r4.json": self.OKP,
+                 "moves.baseline.r4.json": '{"tests:passed": 10}', "moves.measured.r4.json": '{"tests:passed": 11}'}
+        for name, text in files.items():
+            (self.folder / name).write_text(text)
+        self.sealed_lines(("first", "prediction", "moves.prediction.json"), ("r4", "prediction", "moves.prediction.r4.json"),
+                          ("r4", "measured", "moves.measured.r4.json"))
+        self.assertEqual(self.engineer_stop(self.marked(), seal=False), "")
+        log = self.log()
+        self.assertIn("cannot be sealed", log)
+        self.assertIn("moves.baseline.r4.json", log)
+        self.assertIn("has a sealed measured file and no sealed baseline", log)
+
+    def test_seal_f4_the_stop_asks_for_the_baseline_before_the_measured_file(self):
+        self.folder.mkdir(parents=True, exist_ok=True)
+        files = {"moves.prediction.json": self.OKP, "moves.baseline.json": '{"tests:passed": 10}',
+                 "moves.measured.json": '{"tests:passed": 11}'}
+        for name, text in files.items():
+            (self.folder / name).write_text(text)
+        self.sealed_lines(("first", "prediction", "moves.prediction.json"))
+        out = self.engineer_stop(self.marked(), seal=False)
+        self.assertIn('"decision": "block"', out)
+        listed = out.split("no seal in the ops ledger:")[1].split(". Seal")[0]
+        self.assertIn("moves.baseline.json", listed)
+        self.assertNotIn("moves.measured.json", listed)
+        self.assertIn("moves.measured.json cannot be sealed", self.log())
+
     def test_prediction_record_second_stop_is_let_through_and_told(self):
         out = self.engineer_stop(self.marked(), stop_hook_active=True)
         self.assertNotIn("block", out)
