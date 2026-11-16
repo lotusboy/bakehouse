@@ -445,6 +445,46 @@ class ShadowPredict(unittest.TestCase):
                                   self.after(**{"page:home/title": "Hello"}))
                 self.refused(p, 2, "page:home/title")
 
+    # --- fix round 2: a key in the baseline that the shadow does not measure (N-A), a null baseline (N-B)
+
+    NA_BASE = {"page:a": 1, "tests:passed": 40}
+    NA_EXPECT = {"expect": [{"what": "page:a", "why": "r"},
+                            {"what": "tests:passed", "why": "5 new tests", "delta": 5, "shadow": False}]}
+
+    def test_na_1_a_shadow_false_key_the_shadow_file_holds_still_refuses(self):
+        self.write("moves.baseline.json", self.NA_BASE)
+        p = self.run_tool(self.NA_EXPECT, {"page:a": 2, "tests:passed": 40}, self.NA_BASE)
+        self.refused(p, 1, "the shadow file holds tests:passed")
+
+    def test_na_2_a_shadow_false_key_only_in_before_is_not_measured_and_is_written_as_written(self):
+        self.write("moves.baseline.json", self.NA_BASE)
+        p = self.run_tool(self.NA_EXPECT, {"page:a": 2}, self.NA_BASE)
+        self.ok(p)
+        self.assertEqual(self.moves()["tests:passed"], {"what": "tests:passed", "delta": 5, "scope": "5 new tests"})
+        self.write("moves.measured.json", {"page:a": 2, "tests:passed": 45})
+        g = subprocess.run([str(GATE), "check", "--measured", str(self.d / "moves.measured.json")],
+                           capture_output=True, text=True, env=self.env)
+        self.assertEqual(g.returncode, 0, g.stdout + g.stderr)
+        self.assertIn("Result: PASS", g.stdout)
+
+    def test_na_3_a_key_missing_from_before_but_in_the_rounds_baseline_still_refuses(self):
+        self.write("moves.baseline.json", self.NA_BASE)
+        p = self.run_tool(self.NA_EXPECT, {"page:a": 2}, {"page:a": 1})
+        self.refused(p, 1, "tests:passed: --before says (absent), moves.baseline.json")
+
+    def test_na_a_key_that_goes_under_a_normal_entry_is_still_a_move_that_goes(self):
+        before = {"page:a": 1, "tests:old": 4}
+        p = self.run_tool({"expect": [{"what": "page:a", "why": "r"}, {"what": "tests:old", "why": "the old suite goes"},
+                                      {"what": "tests:*", "why": "the new suite", "shadow": False}]},
+                          {"page:a": 2}, before)
+        self.ok(p)
+        self.assertEqual(self.moves()["tests:old"], {"what": "tests:old", "scope": "the old suite goes"})
+
+    def test_nb_a_null_baseline_is_no_baseline(self):
+        p = self.run_tool({"baseline": None, "expect": [{"what": "page:home/title", "why": "reworded"}]},
+                          self.after(**{"page:home/title": "Hello"}))
+        self.ok(p)
+
     # --- the gate accepts what it writes
 
     def test_the_written_prediction_passes_the_gate_check(self):
