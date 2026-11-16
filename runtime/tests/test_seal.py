@@ -1236,6 +1236,41 @@ class SealTest(unittest.TestCase):
         self.assertEqual(p.returncode, 2)
         self.assertIn("names no signal.codeRoots", p.stderr)
 
+    # ---- seal fixes: seal refuses what close would refuse later ----
+
+    def report(self, name="measure-report.json"):
+        self.write({f"{REC}/{name}": {"base": {"sha": "a" * 40}, "head": {"sha": "b" * 40}}})
+        return self.f(name)
+
+    def test_seal_f1_a_measured_seal_refuses_while_its_baseline_is_unsealed(self):
+        self.assertEqual(self.seal("first", "moves.prediction.json").returncode, 0)
+        p = self.seal("first", "moves.measured.json", "--report", self.report())
+        self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+        self.assertIn(f"predict-gate.sh seal W-1 first {REC}/moves.baseline.json", p.stderr)
+        self.assertWrote(1)
+        self.assertEqual(self.seal("first", "moves.baseline.json").returncode, 0)
+        p = self.seal("first", "moves.measured.json", "--report", self.report())
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(self.events()[-1]["fileKind"], "measured")
+
+    def test_seal_f1_a_chained_baseline_equal_to_a_sealed_measured_file_needs_no_seal_of_its_own(self):
+        # A1176's shape: the round's own baseline holds the bytes of the earlier round's sealed measured file
+        self.write({f"{REC}/moves.baseline.fix1.json": (self.repo / REC / "moves.measured.json").read_text(),
+                    f"{REC}/moves.prediction.fix1.json": {"moves": [{"what": "out:w", "from": 5, "to": 6}]}})
+        for name in ("moves.prediction.json", "moves.baseline.json"):
+            self.assertEqual(self.seal("first", name).returncode, 0)
+        self.assertEqual(self.seal("first", "moves.measured.json", "--report", self.report()).returncode, 0)
+        self.assertEqual(self.seal("fix1", "moves.prediction.fix1.json").returncode, 0)
+        p = self.seal("fix1", "moves.measured.fix1.json", "--report", self.report("measure-fix1-report.json"))
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(self.events()[-1]["check"]["baseline"], f"{REC}/moves.baseline.fix1.json")
+
+    def test_seal_f1_another_work_orders_seal_does_not_cover_the_baseline(self):
+        self.assertEqual(self.gate("seal", "W-2", "first", self.f("moves.baseline.json")).returncode, 0)
+        p = self.seal("first", "moves.measured.json", "--report", self.report())
+        self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+        self.assertIn("no live seal of W-1 holds its bytes", p.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

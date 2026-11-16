@@ -1297,6 +1297,28 @@ class Sealed(unittest.TestCase):
         self.commit("W-1: measurement")
         self.assertRefuses("no code commit of the round is sealed")
 
+    # ---- seal fixes: seal refuses what close would refuse later ----
+
+    def test_seal_f1_a1176_a_chained_round_whose_baseline_equals_the_earlier_measured_file_closes(self):
+        # the fix round's own baseline holds the first round's sealed measured bytes and has no seal of its own
+        self.flow()
+        self.commit(
+            "W-1: fix1 prediction",
+            {
+                self.r("moves.prediction.fix1.json"): {
+                    "moves": [{"what": "out:v", "from": 2, "to": 3}],
+                    "mustNotMove": ["out:w"],
+                },
+                self.r("moves.baseline.fix1.json"): PASS_M,
+            },
+        )
+        self.assertEqual(self.seal("fix1", "moves.prediction.fix1.json"), 0)
+        b = self.head()
+        self.assertEqual(self.code("W-1: fix1 change", {"src/app.py": "v = 3\n"}, "fix1"), 0)
+        self.assertEqual(self.measure("fix1", {"out:v": 3, "out:w": 5}, b, self.head()), 0)
+        self.commit("W-1: fix1 measurement")
+        self.assertCloses()
+
 
 if __name__ == "__main__":
     unittest.main()
