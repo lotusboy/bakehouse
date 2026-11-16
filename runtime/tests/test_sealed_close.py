@@ -1319,6 +1319,59 @@ class Sealed(unittest.TestCase):
         self.commit("W-1: fix1 measurement")
         self.assertCloses()
 
+    def fix_round(self, rnd, v, seal=True):
+        """A fix round chained on the first round's baseline: out:v 1 -> v, its code sealed, its measured file
+        written with its report and committed; sealed when seal is true."""
+        self.commit(
+            f"W-1: {rnd} prediction",
+            {self.r(f"moves.prediction.{rnd}.json"): {"moves": [{"what": "out:v", "from": 1, "to": v}],
+                                                      "mustNotMove": ["out:w"]}},
+        )
+        self.assertEqual(self.seal(rnd, f"moves.prediction.{rnd}.json"), 0)
+        b = self.head()
+        self.assertEqual(self.code(f"W-1: {rnd} change", {"src/app.py": f"v = {v}\n"}, rnd), 0)
+        self.put(f"moves.measured.{rnd}.json", {"out:v": v, "out:w": 5})
+        self.put(f"measure-{rnd}-report.json", {"base": {"sha": b}, "head": {"sha": self.head()}})
+        if seal:
+            self.assertEqual(self.seal(rnd, f"moves.measured.{rnd}.json"), 0)
+        self.commit(f"W-1: {rnd} measurement")
+
+    def test_seal_f3_a1176_a_late_seal_of_an_earlier_round_is_not_the_latest_measurement(self):
+        # fix1's measured file is sealed after fix2's: the latest measurement is fix2's, by round order
+        self.flow()
+        self.fix_round("fix1", 3, seal=False)
+        self.fix_round("fix2", 4)
+        self.assertEqual(self.seal("fix1", "moves.measured.fix1.json"), 0)
+        self.commit("W-1: fix1 sealed late")
+        self.assertCloses()
+        _, evs, _ = pg.sealed_state(self.ledger, "W-1")
+        self.assertEqual(pg.sealed_stale(self.repo, "HEAD", evs, ["src/"], "W-1"), (True, None))
+
+    def test_seal_f3_round_labels_that_cannot_be_ordered_refuse(self):
+        self.flow()
+        self.fix_round("fix1", 3)
+        self.fix_round("r1", 4)
+        self.assertRefuses("cannot be ordered", "fix1", "r1")
+        _, evs, _ = pg.sealed_state(self.ledger, "W-1")
+        stale, why = pg.sealed_stale(self.repo, "HEAD", evs, ["src/"], "W-1")
+        self.assertTrue(stale)
+        self.assertIn("cannot be ordered", why or "")
+
+    def test_seal_f3_the_latest_measurement_by_round_number(self):
+        def m(rnd, n=0):
+            return {"kind": "sealed", "fileKind": "measured", "round": rnd, "path": f"p{n}", "sha256": rnd}
+
+        evs = [m("first"), m("fix3"), m("fix1"), m("fix3", 1)]
+        self.assertEqual(pg.latest_measured(evs), (evs[3], None), "within a round the last live seal wins")
+        self.assertEqual(pg.latest_measured([m("r4"), m("fix5"), m("first")])[0]["round"], "fix5")
+        self.assertEqual(pg.latest_measured([m("fix10"), m("fix9")])[0]["round"], "fix10")
+        self.assertEqual(pg.latest_measured([m("proto")]), (m("proto"), None), "one round needs no order")
+        self.assertEqual(pg.latest_measured([]), (None, None))
+        for evs in ([m("fix5"), m("r5")], [m("first"), m("fix0")], [m("first"), m("proto")]):
+            got, why = pg.latest_measured(evs)
+            self.assertIsNone(got, evs)
+            self.assertIn("cannot be ordered", why)
+
 
 if __name__ == "__main__":
     unittest.main()
