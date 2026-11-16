@@ -1173,10 +1173,13 @@ class SealTest(unittest.TestCase):
                 }
             }
         )
-        # seal fix2: a head this repository does not hold is refused at seal (it was sealed with no trees before)
         p = self.seal("first", "moves.measured.json")
-        self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
-        self.assertIn("is not in this repository", p.stderr)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIsNone(
+            self.events()[-1]["headTrees"],
+            "a head this repository does not hold has no trees",
+        )
+        self.assertIn("warning: head bbbbbbbb is not in this repository yet", p.stderr)
 
     def test_k6_the_anchor_commits_the_ledger_alone_and_leaves_staged_files_staged(
         self,
@@ -1315,16 +1318,23 @@ class SealTest(unittest.TestCase):
     def sealed_kinds(self):
         return [e["fileKind"] for e in self.events() if e["kind"] == "sealed"]
 
-    def test_seal_fix2_a_head_or_base_the_repository_does_not_hold_or_an_empty_one_is_refused(self):
+    def test_seal_fix2_an_empty_report_commit_is_refused_and_an_unknown_one_warns(self):
         self.assertEqual(self.seal("first", "moves.baseline.json").returncode, 0)
         here = self.git("rev-parse", "HEAD")
-        for base, head, why in (("0" * 40, here, "base"), (here, "0" * 40, "head"), (here, "", "head.sha"),
-                                ("", here, "base.sha"), (None, here, "base.sha")):
+        for base, head, why in ((here, "", "head.sha"), ("", here, "base.sha"), (None, here, "base.sha")):
             self.write({f"{REC}/measure-report.json": {"base": {"sha": base}, "head": {"sha": head}}})
             p = self.seal("first", "moves.measured.json")
             self.assertEqual(p.returncode, 2, (base, head, p.stdout + p.stderr))
             self.assertIn(why, p.stderr)
         self.assertEqual(self.sealed_kinds(), ["baseline"])
+        # seal fix2b: a commit not here yet seals, as in 0.2.0, with a warning: close accepts it once it arrives
+        for base, head, k in (("0" * 40, here, "base"), (here, "0" * 40, "head")):
+            self.write({f"{REC}/measure-report.json": {"base": {"sha": base}, "head": {"sha": head}}})
+            p = self.seal("first", "moves.measured.json")
+            self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+            self.assertIn(f"warning: {k} 00000000 is not in this repository yet; close needs it, so fetch or "
+                          "merge the lane before closing", p.stderr)
+        self.assertEqual(self.sealed_kinds(), ["baseline", "measured", "measured"])
 
     def test_seal_fix2_a_baseline_whose_only_matching_seal_is_retired_is_not_covered(self):
         self.assertEqual(self.seal("first", "moves.baseline.json").returncode, 0)

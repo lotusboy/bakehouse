@@ -383,8 +383,11 @@ by these events ("Closing a sealed work order", below).
    round) or `measure-<label>-report.json` beside the file. **A measured seal needs its report.** With
    no report, the seal is refused (exit 2, no seal written), and the message says to pass `--report`
    with the file that holds `base.sha` and `head.sha`. A report without both commits is refused. So is
-   a report whose `base.sha` or `head.sha` is empty or null, or names a commit the file's repository
-   does not hold (seal where the measured commits are, or fetch them first). Why: close judges the code
+   a report whose `base.sha` or `head.sha` is empty or null. A base or head commit the file's
+   repository does not hold yet is not refused: the seal is written as before (`headTrees` null), and
+   the seal prints a warning on stderr: "warning: <base|head> <sha8> is not in this repository yet;
+   close needs it, so fetch or merge the lane before closing". Close accepts such a seal once the
+   commit arrives. Why: close judges the code
    at `HEAD` by that head commit, so a measured seal with no head could never close. (Seals written before this rule may say
    `"report": null`; close still refuses them, as before.) A refused check is still
    sealed, and the command exits 1: close will need an approved retire for it.

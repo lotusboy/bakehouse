@@ -1523,8 +1523,9 @@ def measured_fields(path: Path, repo: Path, report_arg: str | None) -> tuple[dic
             raise BadInput(f"{report} gives no {k}.sha: pass --report <a measure report holding base.sha and "
                            "head.sha, the commits the measurement read>")
         if git(repo, "cat-file", "-e", f"{shas[k]}^{{commit}}", check=False).returncode != 0:
-            raise BadInput(f"{report}: the {k} commit {shas[k]} is not in this repository ({repo}): seal where the "
-                           "measured commits are, or fetch them first (git fetch <lane clone> <branch>)")
+            # not refused: close accepts it once the lane's commit arrives (a merge or a fetch)
+            print(f"warning: {k} {shas[k][:8]} is not in this repository yet; close needs it, so fetch or merge "
+                  "the lane before closing", file=sys.stderr)
     result = {}
     rc = run_check(pred, base, path, "", "-", result=result)
 
