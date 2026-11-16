@@ -19,7 +19,8 @@ Standard library only. Usage (normally through shadow-predict.sh):
         {"about": TEXT, "baseline": FILE, "tolerance": N, "mustNotMove": [KEY, ...],
          "expect": [{"what": KEY, "why": TEXT, ...}, ...]}
       An entry may add: "value": "any"; "count": N; "optional": true; one of "to", "delta", "range";
-      "shadow": false (copied as written, with its "to", "delta" or "range", or none).
+      "shadow": false (a key the shadow file does not hold; copied as written, with its "to", "delta"
+      or "range", or none).
   K   flat {key: scope text}: replaces "why" for that key.
   SB  the shadow's base side; X the record's sealed baseline. The tool refuses when they differ.
 
@@ -28,6 +29,7 @@ files gets "from" and "to" copied from the files, a new key gets "to", a key tha
 A copied value marks the move's scope with "[value from the shadow] ". An entry that gives "to",
 "delta" or "range" is checked against the shadow and written as given, with no mark.
 
+Every refusal: docs/PREDICT-GATE.md, "Writing the prediction from a shadow".
 Exit: 0 written; 1 refused (nothing written, each key named); 2 bad input.
 """
 
@@ -60,12 +62,23 @@ def written(x: dict) -> dict:
     return {k: x[k] for k in KINDS if k in x}
 
 
+def marked(text: str) -> bool:
+    return text.lstrip().startswith(MARK.strip())
+
+
+def diff(a: dict, b: dict, tol) -> list:
+    """(key, a's value, b's value) for each key that moved from a to b, by the gate's own rule."""
+    return G.compare({"moves": [], "mustNotMove": [], "tolerance": tol}, a, b)["unpredicted"]
+
+
 def check_expect(e, path: Path) -> dict:
     if not isinstance(e, dict):
         raise BadInput(f"{path} must be one object with an 'expect' list")
     unknown = set(e) - FIELDS
     if unknown:
         raise BadInput(f"{path}: unknown field(s) {sorted(unknown)}")
+    if "about" in e and not isinstance(e["about"], str):
+        raise BadInput(f"{path}: 'about' must be text")
     entries = e.get("expect")
     if not isinstance(entries, list) or not entries:
         raise BadInput(f"{path}: 'expect' must be a list of one or more entries")
@@ -78,6 +91,8 @@ def check_expect(e, path: Path) -> dict:
             raise BadInput(f"{where} has unknown field(s) {sorted(extra)}")
         if not isinstance(x.get("why"), str) or not x["why"].strip():
             raise BadInput(f"{where} needs a 'why'")
+        if marked(x["why"]):
+            raise BadInput(f"{where}: its 'why' starts with {MARK.strip()}, which the tool writes only on a copied value")
         if "value" in x and x["value"] != "any":
             raise BadInput(f"{where}: 'value' can only be \"any\"")
         if "value" in x and written(x):
@@ -88,6 +103,8 @@ def check_expect(e, path: Path) -> dict:
         c = x.get("count", 0)
         if not isinstance(c, int) or isinstance(c, bool) or c < 0:
             raise BadInput(f"{where}: 'count' must be a whole number >= 0")
+        if "count" in x and "optional" in x:
+            raise BadInput(f"{where} gives 'count' and 'optional'; give one (a count of keys, or a key that may not move)")
         if x.get("shadow") is False and {"value", "count", "optional"} & set(x):
             raise BadInput(f"{where}: a \"shadow\": false entry is copied as written; "
                            "'value', 'count' and 'optional' have no meaning on it")
@@ -103,11 +120,21 @@ def build(e: dict, before: dict, after: dict, scopes: dict) -> tuple[dict, list]
     tol, entries = e.get("tolerance", 0), e["expect"]
     hit = [G.key_matcher(x["what"]) for x in entries]
     shadow = [i for i, x in enumerate(entries) if x.get("shadow", True)]
-    # the gate's own rule for a moved key: an empty prediction's unpredicted rows
-    moved = G.compare({"moves": [], "mustNotMove": [], "tolerance": tol}, before, after)["unpredicted"]
-    taken, moves, refused = [0] * len(entries), [], []
+    moved = diff(before, after, tol)
+    taken, matched, moves, refused = [0] * len(entries), [False] * len(entries), [], []
     for k, b, a in moved:
+        if "*" in k or "?" in k:
+            refused.append(f"{k}: the key holds * or ?, which the gate reads as a wildcard in a move and has no "
+                           "escape for; the repo's measure tool renames the key")
+            continue
         i = next((i for i in shadow if hit[i](k)), None)
+        for j in shadow:
+            if hit[j](k):
+                matched[j] = True
+                if i is not None and j > i and written(entries[j]):
+                    refused.append(f"{k}: the earlier entry {entries[i]['what']!r} takes it, so the later entry "
+                                   f"{entries[j]['what']!r} never checks its written value "
+                                   f"({G.expected(written(entries[j]))}); put the entry with the value first")
         if i is None:
             j = next((j for j, x in enumerate(entries) if j not in shadow and hit[j](k)), None)
             refused.append(f"{k}: {G.show(b)} -> {G.show(a)}, and no expect entry explains it" if j is None else
@@ -131,14 +158,23 @@ def build(e: dict, before: dict, after: dict, scopes: dict) -> tuple[dict, list]
         moves.append(m | {"scope": scope})
     for i, x in enumerate(entries):
         if i not in shadow:
+            held = [k for k in sorted(after) if hit[i](k)]
+            if held:
+                refused.append(f"the entry {x['what']!r} says \"shadow\": false, and the shadow file holds {held[0]}"
+                               + (f" and {len(held) - 1} more key(s) it matches" if len(held) > 1 else "")
+                               + "; the shadow measured it, so give it as an entry the tool checks")
             moves.append({"what": x["what"]} | written(x) | {"scope": scopes.get(x["what"], x["why"])})
         elif "count" in x:
             if taken[i] != x["count"]:
                 refused.append(f"{x['what']}: the expect entry says {x['count']} key(s) move, "
                                f"and the shadow moved {taken[i]}")
         elif not taken[i] and not x.get("optional"):
-            refused.append(f"{x['what']}: expected to move, and the shadow moved no key it matches "
-                           "(an entry that may not move says \"optional\": true)")
+            refused.append(f"{x['what']}: expected to move, and " +
+                           ("every moved key it matches was taken by an earlier entry" if matched[i] else
+                            "the shadow moved no key it matches") +
+                           " (an entry that may not move says \"optional\": true)")
+    named = {k for k, _, _ in moved} | {x["what"] for i, x in enumerate(entries) if i not in shadow}
+    refused += [f"{k}: the --scopes file gives it a scope, and no move names it" for k in scopes if k not in named]
     pred = {f: e[f] for f in ("about", "baseline", "tolerance") if f in e}
     pred |= {"mustNotMove": e.get("mustNotMove", []), "moves": sorted(moves, key=lambda m: m["what"])}
     return pred, refused
@@ -165,16 +201,27 @@ def run(a) -> int:
     before = G.flat(G.load(a.before), a.before)
     after = G.flat(G.load(a.after), a.after)
     scopes = G.flat(G.load(a.scopes), a.scopes) if a.scopes else {}
-    bad = [k for k, v in scopes.items() if not isinstance(v, str)]
-    if bad:
-        raise BadInput(f"{a.scopes}: the scope of {bad[0]!r} is not text")
-    refused = []
+    for k, v in scopes.items():
+        if not isinstance(v, str) or not v.strip():
+            raise BadInput(f"{a.scopes}: the scope of {k!r} is not text, or is empty")
+        if marked(v):
+            raise BadInput(f"{a.scopes}: the scope of {k!r} starts with {MARK.strip()}, "
+                           "which the tool writes only on a copied value")
+    tol, refused = e.get("tolerance", 0), []
+    # the baseline the gate reads for this round, beside the prediction (predict-gate.py `check`)
+    gate_base = e.get("baseline") or G.baseline_name(rnd.group(1), lambda n: a.out.with_name(n).is_file())
+    if a.out.with_name(gate_base).is_file():
+        g = G.flat(G.load(a.out.with_name(gate_base)), a.out.with_name(gate_base))
+        refused += [f"{k}: --before says {G.show(b)}, {gate_base} (the gate's baseline for this round) says "
+                    f"{G.show(s)}" for k, b, s in diff(before, g, tol)]
+    elif "baseline" in e:
+        refused.append(f"the expect file names the baseline {gate_base}, and it is not beside {a.out}: "
+                       "the gate reads it there")
     if a.shadow_base:
         sb = G.flat(G.load(a.shadow_base), a.shadow_base)
         sealed = G.flat(G.load(a.sealed_base), a.sealed_base)
-        empty = {"moves": [], "mustNotMove": [], "tolerance": e.get("tolerance", 0)}
         refused += [f"{k}: the shadow's base side says {G.show(s)}, the sealed base says {G.show(b)}"
-                    for k, b, s in G.compare(empty, sealed, sb)["unpredicted"]]
+                    for k, b, s in diff(sealed, sb, tol)]
     pred, more = build(e, before, after, scopes)
     refused += more
     if not refused and not pred["moves"]:
