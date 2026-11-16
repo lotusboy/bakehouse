@@ -17,7 +17,9 @@ binding's folder.
 Checks, in order: 1 binding exists; 2 it parses, has the fields its `owned` value requires, names a
 machine-checked prediction file (`gates.predictedMoves.prediction`, one predict-gate reads), only
 adds to the record contracts (`records`, runtime/records-check.py), has a well-formed `mutation`
-block when it has one (runtime/mutate.py), and uses only the closed placeholder list; 3 every path
+block when it has one (runtime/mutate.py), says where the run folders are with a `runs` the locator reads
+("records" or "tree", and "records" never beside `reviews`; runtime/locator.py runs_mode; a binding with `reviews`
+and no `runs` is noted), and uses only the closed placeholder list; 3 every path
 field, and every test path the `mutation` block names, exists in the checkout; 4 every pointer
 finds its key (prose gates are listed, not failed), and a generic-script signal is valid (a
 missing script is a note, except for `refactor`, which runs the signal); 5 every
@@ -124,6 +126,10 @@ def check_fields(b):
                      f"predicted-moves gate reads; name {predict_gate.PREDICTION_NAMES[0]} (a prose "
                      "prediction may sit beside it)")
     fails += [f"check 2: {e}" for e in records_check.binding_errors(b)]
+    try:
+        locator.runs_mode(b)
+    except locator.BadRuns as e:
+        fails.append(f"check 2: {e}")
     if "mutation" in b and MUTATE_ERROR:
         fails.append(f"check 2: the 'mutation' block cannot be checked: runtime/mutate.py fails to load ({MUTATE_ERROR})")
     elif "mutation" in b:
@@ -398,6 +404,9 @@ def main(argv):
         fails += check_paths(b, repo)
         f4, notes = check_pointers(b, repo, job)
         fails += f4
+    if "reviews" in b and "runs" not in b:
+        notes.append('check 2: the run folders stay in the code tree, under "reviews": the binding names "reviews" '
+                     'and no "runs"; add "runs": "tree" to say so')
     if job in JOB_ROLES:
         f5, n5 = check_roles(b, job, repo, bpath)
         fails += f5
