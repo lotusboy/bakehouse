@@ -68,6 +68,31 @@ its `projectPath`, compared resolved), then a user-scope one. There is no regist
 | the register (`registers/<binding.register>`) | records | each part's health signal, state and decision | the signal command; decisions by the owner |
 | the driver register (`registers/<drivers.register>`, default `drivers.json`) | records | each driver family seen in 2 or more run folders, its coherence, state and decision | `runtime/driver-signal.py`; decisions by the owner |
 | `ops/events.jsonl` | records | the ops ledger | `runtime/ops-event.sh` only |
+| the run folders (`runs/<record folder>/`), in records mode | records | each job's record: prediction, baseline, measured files, findings | the agents; committed with `bakehouse record commit` |
+
+### Where the run folders live
+
+A run folder (a record folder) holds one job's prediction, baseline, measured files and findings. The
+binding's `runs` field says where the run folders live. `runtime/locator.py` `runs_location` gives the one
+answer, and every reader of a record folder asks it: close, seal, records-check, the two signals and the
+role hook.
+
+1. **Records mode** (`"runs": "records"`, or a binding with no `runs` and no `reviews`). The run folders
+   are `runs/<record folder>/` in the records worktree, on the `bakehouse-records` branch. They are never
+   on a code branch, so they never ship in a project's release.
+2. **Tree mode** (`"runs": "tree"`, or a binding with `reviews` and no `runs`). The run folders are
+   `<reviews>/<record folder>/` in the code tree, as before this field existed. Preflight notes a
+   binding that is in tree mode only because it names `reviews`: add `"runs": "tree"` to say so.
+3. `"runs": "records"` beside a `reviews` field fails preflight. So does any other `runs` value. Close
+   and the other readers refuse such a binding too.
+4. In records mode, the project's git hooks do not run in the records worktree. So a record file is
+   committed with `bakehouse record commit <record folder> -m <message>`. It runs the pre-commit
+   hook's own check on that folder, then commits that folder only (docs/TOOLS.md).
+5. Do not change the mode while a work order is open. Close reads the record only where the mode says.
+   After a switch, close finds no record folder for that work order and refuses. A work order that
+   is already closed stays closed: `bakehouse status` reads the ledger, not the record folder.
+6. Nothing moves an existing record. The records of work orders closed in tree mode stay in the code
+   tree.
 
 ## Roles
 
@@ -148,7 +173,8 @@ in the binding, because preflight cannot check it.
 | `gates.oneAtATime` | runs that must not run in parallel | no |
 | `branches` | the branch form per job: `refactor`, `change` | when owned |
 | `roles` | role → agent overrides for this repo | no |
-| `reviews` | the folder of review records; default `axis/runs/` | no |
+| `runs` | where the run (record) folders live: `"records"`, under `runs/` in the records worktree; `"tree"`, under `reviews` in the code tree. Without it: tree mode when the binding names `reviews`, else records mode ("Where the run folders live") | no |
+| `reviews` | tree mode: the folder of review records in the code tree; default `axis/runs/`. A binding that names it and no `runs` is in tree mode | no |
 | `reviewName` | one step's record folder name; default `{date}-{id}-step{n}-review` | no |
 | `leaveAlone` | files no step may edit | no |
 | `records` | `since`: the date the record contracts apply from (`YYYY-MM-DD`); `jobs`: artefacts added to a job's record contract (see "Records against the process"). It may add, never remove. `codeRoots`: the folders whose commits are code, for a `signal` that is a command or a pointer (a rules `signal` names its own `codeRoots`) | no |
@@ -226,7 +252,8 @@ The script measures three things per part:
    in. A part's `signal` is the sum of its shares over the window. This is the only input that
    decides `state`.
 2. **Size.** Files, lines and the longest file, at the ref. Reported only.
-3. **Review findings.** In each review folder (the binding's `reviews`) whose name starts with a
+3. **Review findings.** In each review folder (the binding's `reviews`; in records mode, `runs/` in the
+   records worktree) whose name starts with a
    date inside the window, each paragraph that matches `reviewFinding` and names one of the part's
    files adds one. A file is named by its full path, or by its bare file name when no other part
    has a file of that name. Reported only. It is a text match, so read it as a pointer to go and
@@ -255,7 +282,8 @@ script again each time, under the same name or a new one, instead of keeping one
 counted that.
 
 **What it does.** `runtime/driver-signal.py` reads the driver scripts in the binding's `reviews`
-folder and finds two kinds of family. A family seen in enough run folders inside the window is raised
+folder (in records mode, `runs/` in the records worktree, which need not exist yet) and finds two kinds
+of family. A family seen in enough run folders inside the window is raised
 as a build candidate. It uses the Python standard library only, reads files only, and writes one file:
 the driver register, in the records folder beside the health register. It uses no AI and runs in seconds.
 
@@ -521,6 +549,13 @@ read that line:
   that repo's whole `reviews` folder, not only the folder it names.
 - A `role:` dispatch of the change engineer is logged with or without a binding, so a refactor job
   is not asked for a machine prediction.
+- **In records mode** the line names `{records}/runs/<record folder>/`. A path in a records worktree is
+  mapped back to its project: git's common dir names the main clone, and that clone's
+  `bakehouse.records` pointer must name this worktree (the locator's `--owner`). The path is then judged
+  by the rules above, with `runs/` in the records worktree in place of `reviews`. A path in the records
+  worktree but outside `runs/` is refused, as a path outside `reviews` is in tree mode. A path in a
+  worktree no pointer names is refused. In a role's `prompt_append`, `{reviews}` becomes the full path
+  of `runs/` in the records worktree.
 
 **The work orders.** A work order is a tracker id (the binding's `tracker.id`) with at least one code
 commit in the window. A commit belongs to the first tracker id in its subject. A code commit touches
@@ -1019,6 +1054,12 @@ that is not a folder inside a git repository.
   for the records branch, so that it never makes a second one. It says so and changes nothing.
 - `bakehouse status` refuses a decision ledger line that is not a JSON object (exit 1), where
   `decision.sh` skips such a line with a warning.
+- In records mode, records-check judges a work order by the record under `runs/`. A work order closed
+  in tree mode before a switch to records mode, with code commits still inside the window, reads as
+  `not-its-record` there: its close hashed files in the code tree. `bakehouse status` still counts it closed.
+- A records folder that is a separate clone, not a worktree of the main clone, cannot be mapped back to its
+  project (`bakehouse record commit`, a seal without `--repo`, the role hook): git's common dir names that
+  clone, not the main one. `bakehouse setup` makes a worktree.
 - The locator's git calls have no timeout of their own: a records folder on a stalled mount makes session
   start wait until the harness's hook timeout.
 - There is one git-hook launcher per machine. Every session start points it at that session's plugin

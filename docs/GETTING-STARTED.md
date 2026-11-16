@@ -28,12 +28,16 @@ Preflight checks that the folders and files the binding names exist (checks 3 an
 [Preflight](PROJECT-TEAM.md#preflight)). So make them first:
 
 ```bash
-mkdir -p .team team/runs docs tools
-touch team/runs/.gitkeep
+mkdir -p .team docs tools
 ```
 
 - `.team/` holds the binding and the gate list.
-- `team/runs/` is the `reviews` folder. Each job writes its record folder there.
+- The run folders need no folder here. The binding below names no `runs` and no `reviews`, so it is in
+  records mode: each job writes its record folder under `runs/` in the records worktree, which
+  `bakehouse setup` makes (step 7). It sits beside the main clone, on the `bakehouse-records` branch,
+  never in the project's release. To keep the record folders in the code tree instead, add
+  `"runs": "tree", "reviews": "team/runs/"` to the binding and make that folder
+  ([Where the run folders live](PROJECT-TEAM.md#where-the-run-folders-live)).
 - `docs/` holds the tracker file. `tools/` holds the measure script.
 
 ## 3. Write the gate list
@@ -144,8 +148,7 @@ The binding is the project's facts for the team. Write `.team/binding.json`:
     "byteIdentical": ".team/gates.json#gates",
     "predictedMoves": {"gates": ".team/gates.json#gates", "prediction": "moves.prediction.json"}
   },
-  "branches": {"refactor": "refactor/{id}-step{n}-{name}", "change": "fix/{id}-{name}"},
-  "reviews": "team/runs/"
+  "branches": {"refactor": "refactor/{id}-step{n}-{name}", "change": "fix/{id}-{name}"}
 }
 ```
 
@@ -193,7 +196,7 @@ serves: a person who submits an empty note gets a clear message, and no model ca
 1. Commit the files and push them. The job reads the tracker item on `origin/<default branch>`.
 
    ```bash
-   git add .team/binding.json .team/gates.json tools/measure.mjs docs/TRACKER.md team/runs/.gitkeep
+   git add .team/binding.json .team/gates.json tools/measure.mjs docs/TRACKER.md
    git commit -m "Add the team binding, the gate list, the measure step and the tracker"
    git push
    ```
@@ -229,9 +232,9 @@ serves: a person who submits an empty note gets a clear message, and no model ca
 
 - A driver is a one-off script an agent writes during one run, to measure, compare or attack a change.
 - A driver goes in `drivers/`, directly inside the run's record folder. In this project that is
-  `team/runs/<run>/drivers/`.
+  `runs/<run>/drivers/` in the records worktree.
 - Why: the driver signal (`runtime/driver-signal.py`) reads driver scripts only from
-  `<reviews>/<run>/drivers*/`. A script kept anywhere else is not counted. (With `drivers.nested: true`
+  `runs/<run>/drivers*/` (in tree mode, `<reviews>/<run>/drivers*/`). A script kept anywhere else is not counted. (With `drivers.nested: true`
   in the binding, it also reads `drivers*` folders deeper inside a run.)
 - The signal counts the same script written again in run after run. That count is how the team learns
   that a script should become one shared tool.
@@ -261,9 +264,11 @@ What happens:
 
 1. The session is the PM. It runs preflight, reads T1, and asks you for a go on the work order.
 2. It opens the branch `fix/T1-<name>` and names the record folder, for example
-   `team/runs/2026-11-15-T1-step1-review/`.
+   `<the records worktree>/runs/2026-11-15-T1-step1-review/` (`bakehouse status` prints the records
+   worktree's path as `records:`).
 3. Before each agent, it states a token estimate and waits for your go.
-4. The engineer writes `moves.prediction.json` before its first edit, commits it, and stops.
+4. The engineer writes `moves.prediction.json` before its first edit, commits it with
+   `bakehouse record commit`, and stops.
 5. The PM brings you the prediction. You give a go, or not. Nothing is switched before your go.
 6. The engineer makes the change and measures it. Any move it did not predict stops the job.
 7. A reviewer reviews the diff. A fix round follows when it finds something.

@@ -192,8 +192,12 @@ What close reads:
 
 1. It finds the work order's record folder(s) through the project's binding: `reviews` +
    `reviewName`. `{date}` must be a date, `YYYY-MM-DD`; `{n}` is `1`. The id must match `tracker.id`
-   whole (a full match, not a search).
-2. It reads the record from git at `HEAD`, not from the disk. A record folder that holds an
+   whole (a full match, not a search). In records mode (docs/PROJECT-TEAM.md, "Where the run folders
+   live") the folders are `runs/` + `reviewName` in the records worktree.
+2. It reads the record from git at `HEAD`, not from the disk. In records mode that is the records
+   worktree's `HEAD`, and every record read runs there: the record's log, tree, status, history and
+   trailers. Every code read stays on the repository: the code roots, the code commits, a seal's base and
+   head, the dirty-code check and the code-order rules' code list. A record folder that holds an
    untracked or uncommitted file refuses. Commit the record first.
 3. The record is every file at the folder's top level. The `history/` subfolder is not part of the
    record (see below). A `moves.measured*` or `moves.prediction*` file in any other subfolder refuses
@@ -272,7 +276,8 @@ repository with no team is refused (exit 2). The output and the event name the l
 
 **Step 10: `close <work-order> --merged`.** After the merge, `/bakehouse:change` step 10 runs close
 with `--merged` on the default branch. It checks one thing: each file the work order's latest
-`work-order-closed` event hashed hashes the same at `HEAD`. It does not run the history, trailer,
+`work-order-closed` event hashed hashes the same at `HEAD` (in records mode, the records worktree's
+`HEAD`, where the close hashed them). It does not run the history, trailer,
 named-baseline or code-order checks again, so a squash merge (which folds every trailer into one
 commit) closes. It refuses, saying why, when there is no such event, when that event hashes no
 file, and when a file differs or is missing. It has no override: the full close's override is the
@@ -375,7 +380,10 @@ by these events ("Closing a sealed work order", below).
    `prev` (below). `<round>` is `first` for the first round's files and the round label otherwise
    (`fix1` for `moves.prediction.fix1.json` or `moves.prediction-fix1.json`). A file whose name is not
    that round's is refused. When the project's binding names a `tracker.id` form, the work order of a
-   record in the bound repository must match it, as close requires.
+   record in the bound repository must match it, as close requires. A file in a project's records
+   worktree (records mode) is that project's: its path is the one in the records worktree, as close
+   reads it, and the `HEAD` the seal names is the code checkout's: `--repo`'s, else the working folder's
+   when it is a checkout of that project, else the project's own folder.
 2. A measured seal also runs `check` against the round's prediction and baseline, found as `check`
    finds them, and carries the result (`pass` or `refused`, the failure count, and the sha256 of the
    prediction and baseline it used). It carries the `base` and `head` commits the measurement read,
@@ -610,7 +618,8 @@ launcher in the machine folder.
 1. The hook acts only when a commit stages a `moves.measured*.json`. One under a `history/` folder is
    skipped only when the folder that holds that `history/` has a `moves.prediction*` of its own in
    the index (a record folder): `<record>/history/history/` is skipped, `<record>/sub/history/` is
-   refused, as close does. A commit with only the prediction (the "before the first edit" commit)
+   refused, as close does. `bakehouse record commit` runs this same check on one run folder in the
+   records worktree, where the hooks do not run (records mode). A commit with only the prediction (the "before the first edit" commit)
    passes through. The hook cannot see the commit message, so the owner's approval of an exception
    is checked by close, not by the hook.
 2. It checks each staged round. It reads all three files from the index, so it checks what is
