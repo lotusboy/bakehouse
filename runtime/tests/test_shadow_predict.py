@@ -161,9 +161,10 @@ class ShadowPredict(unittest.TestCase):
                 if value is None:
                     del after["count:pages"]
                 p = self.run_tool({"expect": [{"what": "count:pages", "why": "written", **entry}]}, after)
-                self.refused(p, 1, "count:pages")
+                self.refused(p, 1, "count:pages: the expect entry says")
 
     def test_the_output_copies_about_baseline_and_must_not_move_and_sorts_moves(self):
+        self.write("moves.measured.json", BEFORE)  # the named baseline, beside --out, as the gate reads it
         p = self.run_tool({"about": "T1: the demo change", "baseline": "moves.measured.json",
                            "mustNotMove": ["corpus:*"],
                            "expect": [{"what": "page:home/title", "why": "b"}, {"what": "count:pages", "why": "a"}]},
@@ -282,6 +283,167 @@ class ShadowPredict(unittest.TestCase):
     def test_a_result_with_no_move_refuses(self):
         p = self.run_tool({"expect": [{"what": "page:home/title", "why": "maybe", "optional": True}]}, BEFORE)
         self.refused(p, 1, "noMoves")
+
+    # --- fix round 1: the reviewer's findings (F) and the surviving mutants (M)
+
+    def test_f1_a_shadow_false_entry_that_matches_a_key_in_the_shadow_file_refuses(self):
+        p = self.run_tool({"expect": [{"what": "page:home/title", "why": "reworded"},
+                                      {"what": "count:pages", "why": "13 pages", "to": 13, "shadow": False}]},
+                          self.after(**{"page:home/title": "Hello"}))
+        self.refused(p, 1, "count:pages", '"shadow": false', "the shadow file holds count:pages")
+
+    def test_f1_a_shadow_false_glob_that_matches_keys_in_the_shadow_file_refuses(self):
+        p = self.run_tool({"expect": [{"what": "page:home/title", "why": "reworded"},
+                                      {"what": "*", "why": "anything else", "shadow": False}]},
+                          self.after(**{"page:home/title": "Hello"}))
+        self.refused(p, 1, "'*'", '"shadow": false')
+
+    def test_f1_a_shadow_false_entry_that_matches_a_key_only_in_before_is_not_an_f1_refusal(self):
+        before = {**BEFORE, "tests:old": 4}
+        p = self.run_tool({"expect": [{"what": "tests:old", "why": "the old suite goes"},
+                                      {"what": "tests:*", "why": "the new suite", "shadow": False}]},
+                          BEFORE, before)
+        self.ok(p)
+        self.assertEqual(self.moves()["tests:*"], {"what": "tests:*", "scope": "the new suite"})
+
+    def test_f8_a_glob_and_a_shadow_false_entry_for_the_same_key_refuses(self):
+        p = self.run_tool({"expect": [{"what": "count:*", "why": "counts"},
+                                      {"what": "count:pages", "why": "13 pages", "to": 13, "shadow": False}]},
+                          self.after(**{"count:pages": 13}))
+        self.refused(p, 1, "the shadow file holds count:pages")
+
+    def test_f2_a_moved_key_that_holds_a_wildcard_refuses(self):
+        for before, after, key in (({**BEFORE, "q:is it?": 1, "q:is itX": 1}, {**BEFORE, "q:is it?": 2, "q:is itX": 1},
+                                    "q:is it?"),
+                                   ({**BEFORE, "note:*": "x"}, BEFORE, "note:*")):
+            with self.subTest(key):
+                p = self.run_tool({"expect": [{"what": "q:*", "why": "q"}, {"what": "note:*", "why": "n"}]},
+                                  after, before)
+                self.refused(p, 1, f"{key}: the key holds * or ?")
+
+    def test_f3_a_written_value_on_a_key_an_earlier_entry_took_refuses_and_names_both(self):
+        for optional in (True, False):
+            with self.subTest(optional=optional):
+                entry = {"what": "count:pages", "why": "exactly 13", "to": 13, **({"optional": True} if optional else {})}
+                p = self.run_tool({"expect": [{"what": "count:*", "why": "counts"}, entry]},
+                                  self.after(**{"count:pages": 99}))
+                self.refused(p, 1, "the earlier entry 'count:*'", "the later entry 'count:pages'")
+
+    def test_f3_an_entry_whose_keys_an_earlier_entry_took_says_so(self):
+        p = self.run_tool({"expect": [{"what": "count:*", "why": "counts"}, {"what": "count:pages", "why": "pages"}]},
+                          self.after(**{"count:pages": 13}))
+        self.refused(p, 1, "count:pages: expected to move, and every moved key it matches was taken by an earlier entry")
+        self.assertNotIn("moved no key it matches", p.stdout)
+
+    def test_f4_before_that_differs_from_the_rounds_baseline_beside_out_refuses(self):
+        self.write("moves.baseline.json", {**BEFORE, "count:pages": 11})
+        p = self.run_tool({"expect": [{"what": "page:home/title", "why": "reworded"}]},
+                          self.after(**{"page:home/title": "Hello"}))
+        self.refused(p, 1, "count:pages: --before says 12, moves.baseline.json")
+
+    def test_f4_before_equal_to_the_rounds_baseline_within_tolerance_passes(self):
+        self.write("moves.baseline.json", {**BEFORE, "count:pages": 12.2})
+        p = self.run_tool({"tolerance": 0.5, "expect": [{"what": "page:home/title", "why": "reworded"}]},
+                          self.after(**{"page:home/title": "Hello"}))
+        self.ok(p)
+
+    def test_f4_a_fix_round_is_judged_against_its_own_baseline_when_it_has_one(self):
+        self.write("moves.baseline.json", {**BEFORE, "count:pages": 11})
+        self.write("moves.baseline.fix1.json", BEFORE)
+        out = self.d / "moves.prediction.fix1.json"
+        p = self.run_tool({"expect": [{"what": "page:home/title", "why": "reworded"}]},
+                          self.after(**{"page:home/title": "Hello"}), out=out)
+        self.ok(p)
+
+    def test_f4_the_expect_files_named_baseline_is_the_one_checked(self):
+        self.write("moves.baseline.json", BEFORE)
+        self.write("moves.measured.json", {**BEFORE, "count:pages": 11})
+        p = self.run_tool({"baseline": "moves.measured.json", "expect": [{"what": "page:home/title", "why": "r"}]},
+                          self.after(**{"page:home/title": "Hello"}))
+        self.refused(p, 1, "count:pages: --before says 12, moves.measured.json")
+
+    def test_f4_a_named_baseline_that_is_not_beside_out_refuses(self):
+        p = self.run_tool({"baseline": "moves.measured.json", "expect": [{"what": "page:home/title", "why": "r"}]},
+                          self.after(**{"page:home/title": "Hello"}))
+        self.refused(p, 1, "moves.measured.json", "not beside")
+
+    def test_f5_a_why_or_a_scope_that_starts_with_the_mark_is_bad_input(self):
+        after = self.after(**{"page:home/title": "Hello"})
+        p = self.run_tool({"expect": [{"what": "page:home/title", "why": MARK + "reworded"}]}, after)
+        self.refused(p, 2, "[value from the shadow]")
+        scopes = self.write("scopes.json", {"page:home/title": MARK + "reworded"})
+        p = self.run_tool({"expect": [{"what": "page:home/title", "why": "reworded"}]}, after,
+                          BEFORE, "--scopes", str(scopes))
+        self.refused(p, 2, "[value from the shadow]")
+
+    def test_f6_a_scopes_key_that_no_move_names_refuses(self):
+        scopes = self.write("scopes.json", {"count:pagez": "a typo"})
+        p = self.run_tool({"expect": [{"what": "page:home/title", "why": "reworded"}]},
+                          self.after(**{"page:home/title": "Hello"}), BEFORE, "--scopes", str(scopes))
+        self.refused(p, 1, "count:pagez")
+
+    def test_f6_and_m45_an_empty_or_non_text_scope_is_bad_input(self):
+        for text in ("", "  ", 5):
+            with self.subTest(text):
+                self.out.unlink(missing_ok=True)
+                scopes = self.write("scopes.json", {"page:home/title": text})
+                p = self.run_tool({"expect": [{"what": "page:home/title", "why": "reworded"}]},
+                                  self.after(**{"page:home/title": "Hello"}), BEFORE, "--scopes", str(scopes))
+                self.refused(p, 2, "page:home/title")
+
+    def test_f7_count_with_optional_is_bad_input(self):
+        p = self.run_tool({"expect": [{"what": "count:*", "why": "c", "count": 2, "optional": True}]},
+                          self.after(**{"count:pages": 13}))
+        self.refused(p, 2, "'count' and 'optional'")
+
+    def test_f10_an_about_that_is_not_text_is_bad_input(self):
+        p = self.run_tool({"about": 5, "expect": [{"what": "page:home/title", "why": "r"}]},
+                          self.after(**{"page:home/title": "Hello"}))
+        self.refused(p, 2, "'about'")
+
+    def test_m10_a_written_value_within_tolerance_of_the_shadow_passes(self):
+        p = self.run_tool({"tolerance": 0.5, "expect": [{"what": "count:pages", "why": "one more", "to": 13}]},
+                          self.after(**{"count:pages": 13.3}))
+        self.ok(p)
+        self.assertEqual(self.moves()["count:pages"], {"what": "count:pages", "to": 13, "scope": "one more"})
+
+    def test_m13_a_count_larger_than_the_keys_taken_and_one_smaller_both_refuse(self):
+        after = self.after(**{"score:demo|a|lost": 4, "score:demo|b|lost": 6})
+        p = self.run_tool({"expect": [{"what": "score:demo|*|lost", "why": "lost", "count": 1}]}, after)
+        self.refused(p, 1, "score:demo|*|lost: the expect entry says 1 key(s) move, and the shadow moved 2")
+
+    def test_m21_a_shadow_base_difference_within_tolerance_passes(self):
+        sealed = self.write("sealed.json", BEFORE)
+        shadow_base = self.write("shadow-base.json", {**BEFORE, "count:pages": 12.2})
+        p = self.run_tool({"tolerance": 0.5, "expect": [{"what": "page:home/title", "why": "reworded"}]},
+                          self.after(**{"page:home/title": "Hello"}), BEFORE,
+                          "--shadow-base", str(shadow_base), "--sealed-base", str(sealed))
+        self.ok(p)
+
+    def test_m25_scopes_replace_why_on_a_shadow_false_move(self):
+        scopes = self.write("scopes.json", {"tests:passed": "five, from the census"})
+        p = self.run_tool({"expect": [{"what": "page:home/title", "why": "reworded"},
+                                      {"what": "tests:passed", "why": "new tests", "delta": 5, "shadow": False}]},
+                          self.after(**{"page:home/title": "Hello"}), BEFORE, "--scopes", str(scopes))
+        self.ok(p)
+        self.assertEqual(self.moves()["tests:passed"]["scope"], "five, from the census")
+
+    def test_m27_moves_are_sorted_by_what_across_both_kinds_of_entry(self):
+        p = self.run_tool({"expect": [{"what": "page:home/title", "why": "reworded"},
+                                      {"what": "build:hash", "why": "rebuilt", "shadow": False}]},
+                          self.after(**{"page:home/title": "Hello"}))
+        self.ok(p)
+        self.assertEqual([m["what"] for m in json.loads(self.out.read_text())["moves"]],
+                         ["build:hash", "page:home/title"])
+
+    def test_m32_m33_m34_bad_entry_fields_are_bad_input(self):
+        for extra in ({"shadow": False, "value": "any"}, {"shadow": False, "count": 1}, {"shadow": False, "optional": True},
+                      {"count": -1}, {"count": True}, {"count": "2"}, {"optional": 1}, {"shadow": "no"}):
+            with self.subTest(extra):
+                self.out.unlink(missing_ok=True)
+                p = self.run_tool({"expect": [{"what": "page:home/title", "why": "r", **extra}]},
+                                  self.after(**{"page:home/title": "Hello"}))
+                self.refused(p, 2, "page:home/title")
 
     # --- the gate accepts what it writes
 
