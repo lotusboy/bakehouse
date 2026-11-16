@@ -93,12 +93,17 @@ the job's re-entry state.
   opens the branch). Leave every `<…>` in a repo-held command for the agent that runs it; the
   reviewer checks it was filled.
 - **The record folder**: `<binding.reviews>` + `<binding.reviewName>`, filled with the fixed
-  `{date}`. Defaults when the binding omits them: `reviews` is `axis/runs/`; `reviewName` is
-  `{date}-{id}-step{n}-review`. The folder sits directly under `reviews`: the role hook sends a
+  `{date}`, in tree mode; `runs/` + `<binding.reviewName>` in `{records}`, in records mode.
+  The binding's `runs` names the mode: `"records"` keeps the run folders on the records branch, `"tree"`
+  in the code tree; with no `runs`, a binding that names `reviews` is in tree mode, any other in records
+  mode.
+  Defaults when the binding omits them: `reviewName` is `{date}-{id}-step{n}-review`; `reviews`, in
+  tree mode, is `axis/runs/`. The folder sits directly under `reviews`: the role hook sends a
   reviewer back once if no new file appears in a folder there. To find an existing folder, match
   `reviewName` with `*` for `{date}`.
   A brief names it on its `Record folder:` line as a full path, `{root}/` + the folder, in `~/`
   form: the role hook decides the folder at dispatch and refuses a relative line.
+  In records mode that full path is `{records}/runs/` + the folder's name.
   The line holds the path only (backticks or quotes may wrap it, and a path with a space needs them);
   notes go on the next line: the hook refuses any text after the path.
 - **The prediction file**: `binding.gates.predictedMoves.prediction`, inside the record folder. It
@@ -117,6 +122,10 @@ the job's re-entry state.
   cited on that commit as `Prediction-approved: <decision id>` (see step 6.2). Any other top-level
   `moves.measured*` file with no prediction of its round makes close refuse (bakehouse
   `docs/PREDICT-GATE.md`, "Closing a work order").
+- **Record commits.** In records mode a record file (a prediction, a measured file, `history/`,
+  `disposition.md`) is committed with `bakehouse record commit <record folder> -m <message>`, one `-m`
+  per paragraph and a trailer in its own; `git mv` into `history/` runs in `{records}`. In tree mode a
+  record file is committed with git, by path, as this file says.
 - **Commit trailer.** Every commit this job makes or asks for ends with the session's own
   `Co-Authored-By` line, taken from its attribution instructions. Never hardcode a model.
 
@@ -508,7 +517,8 @@ Must not move: [work order: mustNotMove].
 Serves: [tracker: the item's serves: line]. The FIRST line of your prediction and of your result is
 a count of what the change touches or is judged on, in scope against out of scope; the result also
 says what moved in a live output, as a number ("nothing" is said plainly).
-Record folder: [{root}/ + binding.reviews + binding.reviewName, filled: a full path, in ~/ form; this line holds the path only, in backticks if it has a space; notes go on the next line]
+Record folder: [tree mode: {root}/ + binding.reviews + binding.reviewName; records mode: {records}/runs/ + binding.reviewName; filled: a full path, in ~/ form; this line holds the path only, in backticks if it has a space; notes go on the next line]
+Record commits: [tree mode: "commit record files with git, by path"; records mode: "commit record files with `bakehouse record commit <the record folder> -m <message>`, a trailer in its own -m"]
 Gate (predicted moves): every gate in [binding.gates.predictedMoves.gates, resolved: each gate's id,
 command, pass and when]. The gates that prove the need: [work order: gates].
   Before your first edit, write the prediction (shadow run with calls per site and the unreached
@@ -564,7 +574,7 @@ code. Do not commit.
 Work order {id}: [work order: need]. Evidence: [work order: evidence]. Owning layer: [work order:
 layer]. Expected moves: [work order: expected]. Must not move: [work order: mustNotMove].
 Engineer's report: [the engineer's report, pasted, or tracker: the engineer's result entry].
-Claim: exactly the moves in the approved prediction, [binding.reviews + binding.reviewName, filled,
+Claim: exactly the moves in the approved prediction, [the Record folder below, filled,
 + binding.gates.predictedMoves.prediction]; every
 must-not-move output byte-identical; the evidence no longer shows the failure.
 Gate commands: [as given to the engineer, resolved from the binding].
@@ -578,7 +588,7 @@ Drivers (the scripts you write to run it, measure or attack the change): in driv
 the record folder below, not in a subfolder of it. The driver signal (runtime/driver-signal.py) reads
 driver scripts only from a drivers* folder directly inside a run's record folder, so it can count the
 same script written again in run after run.
-Record folder: [{root}/ + binding.reviews + binding.reviewName, filled: a full path, in ~/ form; this line holds the path only, in backticks if it has a space; notes go on the next line]
+Record folder: [tree mode: {root}/ + binding.reviews + binding.reviewName; records mode: {records}/runs/ + binding.reviewName; filled: a full path, in ~/ form; this line holds the path only, in backticks if it has a space; notes go on the next line]
 Write contract.md first, then each pass file as you finish it, then findings.md, into
 that record folder. Round: [PM: "the first review: findings.md and
 mutations.json" | "the re-check of fix round <N>: findings-fix<N>.md and mutations-fix<N>.json,

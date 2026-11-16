@@ -1651,7 +1651,7 @@
    "id": "bakehouse-change-57",
    "file": "commands/change.md",
    "sentences": [
-    "Claim: exactly the moves in the approved prediction, [binding.reviews + binding.reviewName, filled, + binding.gates.predictedMoves.prediction]; every must-not-move output byte-identical; the evidence no longer shows the failure."
+    "Claim: exactly the moves in the approved prediction, [the Record folder below, filled, + binding.gates.predictedMoves.prediction]; every must-not-move output byte-identical; the evidence no longer shows the failure."
    ],
    "enforcer": "code",
    "proof": "test_predict_gate.Check.test_must_not_move_breach_refuses",

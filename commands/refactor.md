@@ -59,14 +59,23 @@ tokens and wait for the owner's go.
   Leave every `<…>` in a repo-held command for the agent that runs it; the reviewer checks it was
   filled.
 - **The record folder** of step `{n}`: `<binding.reviews>` + `<binding.reviewName>`, filled with the
-  step's fixed `{date}`. Defaults when the binding omits them: `reviews` is `axis/runs/`;
-  `reviewName` is `{date}-{id}-step{n}-review`. The folder sits directly under `reviews`: the role
+  step's fixed `{date}`, in tree mode; `runs/` + `<binding.reviewName>` in `{records}`, in records mode.
+  The binding's `runs` names the mode: `"records"` keeps the run folders on the records branch, `"tree"`
+  in the code tree; with no `runs`, a binding that names `reviews` is in tree mode, any other in records
+  mode.
+  Defaults when the binding omits them: `reviewName` is `{date}-{id}-step{n}-review`; `reviews`, in
+  tree mode, is `axis/runs/`. The folder sits directly under `reviews`: the role
   hook sends a reviewer back once if no new file appears in a folder there. To find an existing
   folder, match `reviewName` with `*` for `{date}`.
   A brief names it on its `Record folder:` line as a full path, `{root}/` + the folder, in `~/`
   form: the role hook decides the folder at dispatch and refuses a relative line.
+  In records mode that full path is `{records}/runs/` + the folder's name.
   The line holds the path only (backticks or quotes may wrap it, and a path with a space needs them);
   notes go on the next line: the hook refuses any text after the path.
+- **Record commits.** In records mode a record file (a prediction, a measured file, `history/`,
+  `disposition.md`) is committed with `bakehouse record commit <record folder> -m <message>`, one `-m`
+  per paragraph and a trailer in its own; `git mv` into `history/` runs in `{records}`. In tree mode a
+  record file is committed with git, by path, as this file says.
 - **Commit trailer.** Every commit this job makes or asks for ends with the session's own
   `Co-Authored-By` line, taken from its attribution instructions. Never hardcode a model.
 
@@ -397,7 +406,8 @@ Decision: {id}, step {n} of [tracker: step count]: [tracker: the step's one line
 words: "[register: parts.{part}.decision.reason]".
 Kind: [tracker: pure move | phase split | meaning change | vocabulary].
 Target: [tracker: what moves where / what becomes one table / which meaning changes].
-Record folder: [{root}/ + binding.reviews + binding.reviewName, filled: a full path, in ~/ form; this line holds the path only, in backticks if it has a space; notes go on the next line]
+Record folder: [tree mode: {root}/ + binding.reviews + binding.reviewName; records mode: {records}/runs/ + binding.reviewName; filled: a full path, in ~/ form; this line holds the path only, in backticks if it has a space; notes go on the next line]
+Record commits: [tree mode: "commit record files with git, by path"; records mode: "commit record files with `bakehouse record commit <the record folder> -m <message>`, a trailer in its own -m"]
 Gate (byte-identical): every gate in [binding.gates.byteIdentical, resolved: each gate's id,
 command, pass and when].
   Move code verbatim. Stop on any output change. Never edit a test or an output to make a gate
@@ -453,7 +463,7 @@ Prose gates to run and record: [preflight: check 4 ids, read from the binding's 
 Known suspects: [the engineer's report: its pre-mortem and its found-not-fixed list].
 RUN the risky case on real inputs in a scratch dir (a constructed case is fine); say "read, not run"
 where you could not run it.
-Record folder: [{root}/ + binding.reviews + binding.reviewName, filled: a full path, in ~/ form; this line holds the path only, in backticks if it has a space; notes go on the next line]
+Record folder: [tree mode: {root}/ + binding.reviews + binding.reviewName; records mode: {records}/runs/ + binding.reviewName; filled: a full path, in ~/ form; this line holds the path only, in backticks if it has a space; notes go on the next line]
 Write contract.md first, then each pass file as you finish it, then findings.md, into
 that record folder. Round: [PM: "the first review: findings.md and
 mutations.json" | "the re-check of fix round <N>: findings-fix<N>.md and mutations-fix<N>.json,
