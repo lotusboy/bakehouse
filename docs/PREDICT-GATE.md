@@ -140,23 +140,46 @@ The expect file `E` is written and committed before the shadow is read. It is th
 4. A copied value is marked: the scope starts with `[value from the shadow] `. A key that goes has no
    value, so it has no mark.
 5. `"value": "any"` writes no value and no mark.
-6. An entry may give `to`, `delta` or `range`. The tool checks the shadow against it, then writes
-   the entry's value, with no mark.
-7. A `"shadow": false` entry is a key the shadow cannot measure. It is copied as written.
+6. An entry may give `to`, `delta` or `range`. The tool checks the shadow against it, within
+   `tolerance`, then writes the entry's value, with no mark.
+7. A `"shadow": false` entry is a key the shadow file does not hold. It is copied as written. Its
+   scope is its `why`, or its `what`'s text in `--scopes`.
+8. When `--out`'s folder holds the gate's baseline for the round, `--before` is checked against it.
+   That file is the expect file's `baseline`, else `moves.baseline<R>.json`, else
+   `moves.baseline.json`: the file `predict-gate.sh check` reads.
 
-The tool refuses (exit 1, nothing written, each key named) when:
+The tool refuses (exit 1, nothing written, each key or entry named) when:
 
 1. a moved key matches no entry, or matches only a `"shadow": false` entry;
-2. an entry matches no moved key, unless it says `"optional": true`;
-3. an entry's `count` differs from the number of keys it took;
-4. the shadow does not reach an entry's `to`, `delta` or `range`;
-5. `--shadow-base` differs from `--sealed-base`;
-6. the round's prediction exists already (a revision goes through `predict-gate.sh revise`);
-7. the result names no move (a round that moves nothing is written by hand, `"noMoves": true`);
-8. the self-check, `compare` against the same pair, finds a failure.
+2. a `"shadow": false` entry matches a key in `--after`: the shadow measured that key, so a normal
+   entry gives it (a key only in `--before` is allowed);
+3. a moved key holds `*` or `?`: the gate reads them as wildcards in a move, and has no escape for
+   them, so the repo's measure tool renames the key;
+4. an entry matches no moved key, unless it says `"optional": true`;
+5. an entry with `to`, `delta` or `range` matches a moved key that an earlier entry took: its value
+   is never checked, so put the entry with the value first;
+6. an entry's `count` differs from the number of keys it took;
+7. the shadow does not reach an entry's `to`, `delta` or `range`;
+8. `--shadow-base` differs from `--sealed-base`;
+9. `--before` differs from the gate's baseline for the round (rule 8 above);
+10. the expect file names a `baseline` that is not beside `--out`;
+11. a `--scopes` key names no move;
+12. the round's prediction exists already (a revision goes through `predict-gate.sh revise`);
+13. the result names no move (a round that moves nothing is written by hand, `"noMoves": true`);
+14. the self-check, `compare` against the same pair, finds a failure.
 
-An unknown field, a bad entry, or an entry's `what` that is also in `mustNotMove` is bad input
-(exit 2). The written file passes `predict-gate.sh check` against the same pair.
+"Differs" is the gate's moved rule, within `tolerance`.
+
+Bad input (exit 2):
+
+1. an unknown field, or a bad entry;
+2. an `about` that is not text;
+3. an entry that gives both `count` and `optional`;
+4. a `why` or a `--scopes` text that starts with `[value from the shadow]`, or an empty scope text;
+5. an entry's `what` that is also in `mustNotMove`;
+6. a `mustNotMove` key equal to a moved key that a glob entry took (the gate's own rule).
+
+The written file passes `predict-gate.sh check` against the same pair.
 
 **Closing a work order.** `predict-gate.sh close <work-order> [--repo DIR] [--binding FILE]`, run
 from the repository, is the gate a team job's close step runs (`/bakehouse:change`, step 9). It is the
