@@ -1347,15 +1347,34 @@ class Sealed(unittest.TestCase):
         _, evs, _ = pg.sealed_state(self.ledger, "W-1")
         self.assertEqual(pg.sealed_stale(self.repo, "HEAD", evs, ["src/"], "W-1"), (True, None))
 
-    def test_seal_f3_round_labels_that_cannot_be_ordered_refuse(self):
-        self.flow()
-        self.fix_round("fix1", 3)
-        self.fix_round("r1", 4)
-        self.assertRefuses("cannot be ordered", "fix1", "r1")
+    def assert_seal_order_note(self, *labels):
+        rc, out = self.close("sealed: judged by", "cannot be ordered by round number",
+                             "the latest measurement is the last one sealed", *labels)
+        self.assertEqual(rc, 0, out)
+        self.assertNotIn("Refused:", out)
         _, evs, _ = pg.sealed_state(self.ledger, "W-1")
-        stale, why = pg.sealed_stale(self.repo, "HEAD", evs, ["src/"], "W-1")
-        self.assertTrue(stale)
-        self.assertIn("cannot be ordered", why or "")
+        self.assertEqual(pg.sealed_stale(self.repo, "HEAD", evs, ["src/"], "W-1"), (True, None))
+
+    def test_seal_f3_fallback_two_labels_with_one_number_use_seal_order_with_a_note(self):
+        self.flow()
+        self.fix_round("fix5", 3)
+        self.fix_round("r5", 4)
+        self.assert_seal_order_note("fix5", "r5")
+
+    def test_seal_f3_fallback_a_free_label_uses_seal_order_with_a_note(self):
+        self.flow()
+        self.fix_round("blocks2", 3)
+        self.assert_seal_order_note("blocks2")
+
+    def test_seal_f3_fallback_a_free_label_keeps_the_old_rule_exactly(self):
+        # free labels: the last measured seal in the ledger is the latest, as in 0.2.0, so a late seal of an
+        # earlier round still reads as the latest and the later code refuses
+        self.flow()
+        self.fix_round("v2", 3, seal=False)
+        self.fix_round("v3", 4)
+        self.assertEqual(self.seal("v2", "moves.measured.v2.json"), 0)
+        self.commit("W-1: v2 sealed late")
+        self.assertRefuses("cannot be ordered by round number", "code came after the latest measurement")
 
     def test_seal_f3_the_latest_measurement_by_round_number(self):
         def m(rnd, n=0):
@@ -1367,11 +1386,11 @@ class Sealed(unittest.TestCase):
         self.assertEqual(pg.latest_measured([m("fix10"), m("fix9")])[0]["round"], "fix10")
         self.assertEqual(pg.latest_measured([m("proto")]), (m("proto"), None), "one round needs no order")
         self.assertEqual(pg.latest_measured([]), (None, None))
-        for evs in ([m("fix5"), m("r5")], [m("first"), m("fix0")], [m("first"), m("proto")]):
-            got, why = pg.latest_measured(evs)
-            self.assertIsNone(got, evs)
-            self.assertIn("cannot be ordered", why)
-
+        for evs in ([m("fix5"), m("r5")], [m("first"), m("fix0")], [m("fix3"), m("blocks2")],
+                    [m("built-v5"), m("first")]):
+            got, note = pg.latest_measured(evs)
+            self.assertIs(got, evs[-1], "seal order, as before")
+            self.assertIn("cannot be ordered by round number", note)
 
 if __name__ == "__main__":
     unittest.main()

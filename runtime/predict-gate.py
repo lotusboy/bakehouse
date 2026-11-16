@@ -963,25 +963,21 @@ def round_number(label) -> int | None:
 
 
 def latest_measured(measured: list) -> tuple[dict | None, str | None]:
-    """(the latest measurement, None), or (None, why) when the rounds cannot be ordered. measured: the live
-    measured seals, in ledger order. The latest is the last seal of the highest-numbered round (round_number),
-    not the last seal in the ledger: a late seal of an earlier round is not the latest measurement. One round
-    needs no order. Labels with no number, or two labels with one number (fix5 and r5), cannot be ordered."""
+    """(the latest measurement, a note or None). measured: the live measured seals, in ledger order. When every
+    label is "first", "fix<N>" or "r<N>" and their numbers differ, the latest is the last seal of the
+    highest-numbered round (round_number), not the last seal in the ledger: a late seal of an earlier round is
+    not the latest measurement. Otherwise (a free label such as "v2" or "built", or fix5 beside r5) the latest is
+    the last seal in the ledger, as before, and the note says so. Never a refusal: free labels are allowed."""
     labels = list(dict.fromkeys(e.get("round") for e in measured))
+    nums = [round_number(x) for x in labels]
     if len(labels) > 1:
-        unknown = [str(x) for x in labels if round_number(x) is None]
-        by_n = {}
-        for x in labels:
-            by_n.setdefault(round_number(x), []).append(str(x))
-        same = [v for n, v in by_n.items() if n is not None and len(v) > 1]
-        if unknown or same:
-            return None, ("the round labels of the measured seals cannot be ordered ("
-                          + "; ".join([f"{x} has no round number" for x in unknown]
-                                      + [f"{' and '.join(v)} give one round number" for v in same])
-                          + "): close takes the latest measurement by round number, first = 0 and fixN or rN = N, "
-                          "so it cannot tell which measurement is the latest")
-        top = max(labels, key=round_number)
-        measured = [e for e in measured if e.get("round") == top]
+        if None not in nums and len(set(nums)) == len(nums):
+            top = labels[nums.index(max(nums))]
+            return [e for e in measured if e.get("round") == top][-1], None
+        return measured[-1], ("the round labels of the measured seals (" + ", ".join(map(str, labels))
+                              + ") cannot be ordered by round number (first = 0, fixN or rN = N, each number "
+                              "once), so the latest measurement is the last one sealed: "
+                              + str(measured[-1].get("path")))
     return (measured[-1] if measured else None), None
 
 
@@ -998,9 +994,7 @@ def sealed_stale(repo: Path, ref: str, evs: list, roots: list | None, wo: str | 
                 and isinstance(e.get("path"), str) and not retire_of(e, mine)]
     if not measured or not roots:
         return True, None
-    m, why = latest_measured(measured)
-    if why:
-        return True, why
+    m = latest_measured(measured)[0]
     if not m.get("head"):
         return True, f"{m['path']}: the latest measured seal names no head commit"
     return True, head_refusal(repo, ref, m["head"], m.get("headTrees"), roots, wo, form)
@@ -1023,7 +1017,7 @@ def round_baselines(repo: Path, at_head: dict, folder: Path) -> set:
 
 
 def sealed_refusals(repo: Path, folders: list, evs: list, decided: dict, wo: str, roots: list | None,
-                    form=None) -> list:
+                    form=None, notes: list | None = None) -> list:
     """The sealed rules: the first seal of a file is its prediction or measurement, a later different
     hash needs an approved revise; every sealed file is at HEAD with its latest sealed bytes, or retired
     to history/ by an approved retire; every moves file at HEAD is sealed; every refused check is
@@ -1154,10 +1148,10 @@ def sealed_refusals(repo: Path, folders: list, evs: list, decided: dict, wo: str
             out.append(f"round {rnd} of {wo}: the sealed code commit {str(cs.get('commit'))[:8]} is not the round's "
                        f"first code change: the code before it differs from the measured base {m['base'][:8]}")
     if measured:
-        m, why = latest_measured(measured)
-        if why:
-            out.append(f"{wo}: {why}")
-        elif not m.get("head"):
+        m, note = latest_measured(measured)
+        if note and notes is not None:
+            notes.append(note)
+        if not m.get("head"):
             out.append(f"{m['path']}: the latest measured seal names no head commit: seal it with --report")
         elif why := head_refusal(repo, "HEAD", m["head"], m.get("headTrees"), roots, wo, form):
             out.append(why)
@@ -1399,7 +1393,7 @@ def run_close(wo: str, repo_arg: str | None, binding_arg: str | None, merged: bo
     if sealed:
         notes.append(f"sealed: judged by {len(seal_events)} committed sealed event(s) in the ledger, not by git order")
         refused += seal_refused + sealed_refusals(repo, [rel(f) for f in folders if not f.is_symlink()], seal_events,
-                                                  decided, wo, sig.get("codeRoots"), form)
+                                                  decided, wo, sig.get("codeRoots"), form, notes)
     print(f"\nWork order {wo}: record folder(s) {', '.join(rel(f) for f in folders) or '(none)'}. "
           f"Pairs passed: {len(passed)}. Ledger: {ledger or '(none)'}. Decisions: {decision_ledger or '(none)'}")
     for n in notes:
