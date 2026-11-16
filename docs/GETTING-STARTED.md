@@ -14,6 +14,8 @@ The example project is made up. It is `notes-app`, a small web app. Its API rout
 - Python 3.10 or later, and Git 2.42 or later ([README, "Requirements"](../README.md#requirements)).
 - The project in git, with a remote `origin`. Setup asks `origin` whether it already holds the team's
   records branch.
+- You are the only person running bakehouse in this repo, on one machine
+  ([README, "One person per repo"](../README.md#one-person-per-repo)).
 
 ## 1. Install the plugin
 

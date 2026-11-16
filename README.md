@@ -11,6 +11,18 @@ delegates it to agents, and checks each result before it lands. The team brings:
 Status: early. Release R0 is the first move of these tools out of the notes tool where they grew. It
 works on one project at a time, on one machine.
 
+## One person per repo
+
+Run bakehouse in a repo where you are the only person running it, on one machine. Two people running
+bakehouse in one repo is not supported yet.
+
+- Why: each person's main clone, once set up with `bakehouse setup`, has its own `bakehouse-records`
+  branch, and the team writes its records there. bakehouse never pushes that branch, and nothing
+  merges two people's copies of it. Two people would end with two record histories that disagree.
+  Each person's status and gates would see only their own records.
+- What is fine: several sessions, and lane clones, on the same machine. A lane clone set up with
+  `bakehouse setup --pointer <main clone>` writes to the main clone's records, so there is one history.
+
 ## Install
 
 New here? `docs/GETTING-STARTED.md` takes one project from install to its first `/bakehouse:change` job.
