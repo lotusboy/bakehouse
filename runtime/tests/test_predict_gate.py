@@ -508,6 +508,34 @@ class Close(RepoFixture):
         self.assertEqual(closed["kind"], "work-order-closed")
         self.assertTrue(closed["note"].startswith("OVERRIDDEN"))
 
+    # ---- seal fix2 (review findings) ----
+
+    def refused_override(self, text):
+        p = self.close(env=dict(self.env, PREDICT_GATE_CLOSE_OVERRIDE=text))
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertNotIn("work-order-closed", [e["kind"] for e in self.events()])
+        return p.stdout.split("OVERRIDE REFUSED: ")[1].split("\n")[0]
+
+    def test_seal_fix2_a_refused_override_prints_no_ready_made_covers_list(self):
+        ids = self.ids(self.four_refusals())
+        line = self.refused_override("owner go")
+        self.assertIn('"<reason> | covers: <the ids of the refusals you accept>"', line)
+        for i in ids:
+            self.assertNotIn(i, line)
+
+    def test_seal_fix2_a_junk_word_or_an_empty_reason_refuses_the_override(self):
+        ids = self.ids(self.four_refusals())
+        self.assertIn("junk is not a refusal id", self.refused_override(f"owner go | covers: {','.join(ids)},junk"))
+        self.assertIn("gives no reason", self.refused_override(f" | covers: {','.join(ids)}"))
+
+    def test_seal_fix2_the_override_event_lists_the_fourth_refusal_in_its_refused_part(self):
+        ids = self.ids(self.four_refusals())
+        p = self.close(env=dict(self.env, PREDICT_GATE_CLOSE_OVERRIDE=f"owner go | covers: {','.join(ids)}"))
+        self.assertEqual(p.returncode, 0, p.stdout)
+        refused_part = self.events()[-2]["note"].split("| refused: ")[1]
+        for i in ids:
+            self.assertIn(f"{i} ", refused_part)
+
     def test_close_without_a_ledger_is_refused(self):
         self.trio()
         binding = self.binding

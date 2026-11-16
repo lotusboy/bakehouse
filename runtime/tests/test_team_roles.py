@@ -510,6 +510,39 @@ class TestPredictionRecord(Fixture):
         self.assertNotIn("moves.measured.json", listed)
         self.assertIn("moves.measured.json cannot be sealed", self.log())
 
+    def test_seal_fix2_a_prediction_changed_since_its_seal_blocks_with_the_gates_text(self):
+        # probe p4: the gate refuses this seal, but a revise clears it, so the stop still sends the engineer back
+        self.folder.mkdir(parents=True, exist_ok=True)
+        (self.folder / "moves.prediction.json").write_text(self.OKP)
+        self.sealed_lines(("first", "prediction", "moves.prediction.json"))
+        (self.folder / "moves.prediction.json").write_text(
+            json.dumps({"moves": [{"what": "tests:passed", "range": [10, 13]}], "mustNotMove": ["out:*"]}))
+        out = self.engineer_stop(self.marked(), seal=False)
+        self.assertIn('"decision": "block"', out)
+        self.assertIn("moves.prediction.json", out)
+        self.assertIn("changed since its seal", out)
+
+    def test_seal_fix2_a_retired_measured_seal_does_not_hide_its_rounds_baseline(self):
+        # M18: the round's measured seal is retired, so the gate seals the round's baseline, and the stop asks for it
+        self.folder.mkdir(parents=True, exist_ok=True)
+        files = {"moves.prediction.json": self.OKP, "moves.prediction.r4.json": self.OKP,
+                 "moves.baseline.r4.json": '{"tests:passed": 10}'}
+        for name, text in files.items():
+            (self.folder / name).write_text(text)
+        old = self.folder / "history" / "moves.measured.r4.json"
+        old.parent.mkdir()
+        old.write_text('{"tests:passed": 11}')
+        sha = hashlib.sha256(old.read_bytes()).hexdigest()
+        self.sealed_lines(("first", "prediction", "moves.prediction.json"), ("r4", "prediction", "moves.prediction.r4.json"))
+        with self.ledger.open("a") as fh:
+            for kind, path in (("sealed", f"records/{self.folder.name}/moves.measured.r4.json"),
+                               ("retired", f"records/{self.folder.name}/history/moves.measured.r4.json")):
+                fh.write(json.dumps({"kind": kind, "task": "T7", "prev": None, "round": "r4", "fileKind": "measured",
+                                     "path": path, "sha256": sha}) + "\n")
+        out = self.engineer_stop(self.marked(), seal=False)
+        self.assertIn('"decision": "block"', out)
+        self.assertIn("moves.baseline.r4.json", out.split("no seal in the ops ledger:")[1].split(". Seal")[0])
+
     def test_prediction_record_second_stop_is_let_through_and_told(self):
         out = self.engineer_stop(self.marked(), stop_hook_active=True)
         self.assertNotIn("block", out)

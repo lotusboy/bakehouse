@@ -1392,5 +1392,59 @@ class Sealed(unittest.TestCase):
             self.assertIs(got, evs[-1], "seal order, as before")
             self.assertIn("cannot be ordered by round number", note)
 
+    # ---- seal fix2 (review findings) ----
+
+    def test_seal_fix2_a_non_moves_baseline_keeps_the_old_rule_at_seal_and_close(self):
+        # probe p1: the prediction names a plain file beside it as its baseline; it is never a moves file
+        self.commit("W-1: prediction", {
+            self.r("moves.prediction.json"): {**GOOD_P, "baseline": "snapshot.json"},
+            self.r("snapshot.json"): BASE_M,
+        })
+        self.assertEqual(self.seal("first", "moves.prediction.json"), 0)
+        b = self.head()
+        self.assertEqual(self.code("W-1: the change", {"src/app.py": "v = 2\n"}), 0)
+        self.assertEqual(self.measure("first", PASS_M, b, self.head()), 0)
+        self.commit("W-1: measurement")
+        self.assertCloses()
+
+    def test_seal_fix2_an_unsealed_measured_file_named_as_a_baseline_still_needs_its_seal(self):
+        # probe p2: fix1's measured file holds the first round's sealed bytes and is never sealed; fix2 names it
+        self.flow()
+        self.commit("W-1: fix1 prediction", {self.r("moves.prediction.fix1.json"): GOOD_P})
+        self.assertEqual(self.seal("fix1", "moves.prediction.fix1.json"), 0)
+        self.commit("W-1: fix1 measurement (unsealed)", {self.r("moves.measured.fix1.json"): PASS_M})
+        self.commit("W-1: fix2 prediction", {self.r("moves.prediction.fix2.json"): {
+            "moves": [{"what": "out:v", "from": 2, "to": 3}], "mustNotMove": ["out:w"],
+            "baseline": "moves.measured.fix1.json"}})
+        self.assertEqual(self.seal("fix2", "moves.prediction.fix2.json"), 0)
+        b = self.head()
+        self.assertEqual(self.code("W-1: fix2 change", {"src/app.py": "v = 3\n"}, "fix2"), 0)
+        self.measure("fix2", {"out:v": 3, "out:w": 5}, b, self.head())
+        self.commit("W-1: fix2 measurement")
+        self.assertRefuses(f"{self.r('moves.measured.fix1.json')} is at HEAD and has no committed seal")
+
+    def test_seal_fix2_a_baseline_whose_bytes_only_a_retired_seal_holds_needs_its_seal(self):
+        # M5: the chained baseline's bytes are the first round's measured file, and that seal is retired
+        self.flow()
+        self.commit("W-1: fix1 prediction", {
+            self.r("moves.prediction.fix1.json"): {"moves": [{"what": "out:v", "from": 2, "to": 3}],
+                                                   "mustNotMove": ["out:w"]},
+            self.r("moves.baseline.fix1.json"): PASS_M,
+        })
+        self.assertEqual(self.seal("fix1", "moves.prediction.fix1.json"), 0)
+        b = self.head()
+        self.assertEqual(self.code("W-1: fix1 change", {"src/app.py": "v = 3\n"}, "fix1"), 0)
+        self.assertEqual(self.measure("fix1", {"out:v": 3, "out:w": 5}, b, self.head()), 0)
+        self.commit("W-1: fix1 measurement")
+        self.commit(
+            "W-1: first measurement to history/",
+            mv=[(self.r("moves.measured.json"), self.r("history/moves.measured.json"))],
+        )
+        self.decide("d20261101-bbbbb2", approves="retire", choice="retire", options=("keep", "retire"))
+        p = self.gate("retire", "W-1", "first", str(self.repo / self.r("history/moves.measured.json")),
+                      "--decision", "d20261101-bbbbb2")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertRefuses(f"{self.r('moves.baseline.fix1.json')} is at HEAD and has no committed seal")
+
 if __name__ == "__main__":
     unittest.main()

@@ -1308,5 +1308,53 @@ class SealTest(unittest.TestCase):
         self.assertEqual([e["fileKind"] for e in self.events() if e["kind"] == "sealed"], ["baseline"])
 
 
+    # ---- seal fix2 (review findings) ----
+
+    def sealed_kinds(self):
+        return [e["fileKind"] for e in self.events() if e["kind"] == "sealed"]
+
+    def test_seal_fix2_a_head_or_base_the_repository_does_not_hold_or_an_empty_one_is_refused(self):
+        self.assertEqual(self.seal("first", "moves.baseline.json").returncode, 0)
+        here = self.git("rev-parse", "HEAD")
+        for base, head, why in (("0" * 40, here, "base"), (here, "0" * 40, "head"), (here, "", "head.sha"),
+                                ("", here, "base.sha"), (None, here, "base.sha")):
+            self.write({f"{REC}/measure-report.json": {"base": {"sha": base}, "head": {"sha": head}}})
+            p = self.seal("first", "moves.measured.json")
+            self.assertEqual(p.returncode, 2, (base, head, p.stdout + p.stderr))
+            self.assertIn(why, p.stderr)
+        self.assertEqual(self.sealed_kinds(), ["baseline"])
+
+    def test_seal_fix2_a_baseline_whose_only_matching_seal_is_retired_is_not_covered(self):
+        self.assertEqual(self.seal("first", "moves.baseline.json").returncode, 0)
+        self.decide("d20261101-bbbbb1", approves="retire", choice="retire", options=("keep", "retire"))
+        (self.repo / REC / "history").mkdir()
+        self.git("mv", f"{REC}/moves.baseline.json", f"{REC}/history/moves.baseline.json")
+        p = self.gate("retire", "W-1", "first", self.f("history/moves.baseline.json"), "--decision", "d20261101-bbbbb1")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        shutil.copy(self.f("history/moves.baseline.json"), self.f("moves.baseline.json"))
+        here = self.git("rev-parse", "HEAD")
+        self.write({f"{REC}/measure-report.json": {"base": {"sha": here}, "head": {"sha": here}}})
+        p = self.seal("first", "moves.measured.json")
+        self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+        self.assertIn("no live seal of W-1 holds its bytes", p.stderr)
+
+    def test_seal_fix2_a_measured_file_named_as_the_baseline_is_sealed_first(self):
+        self.write({f"{REC}/moves.prediction.fix1.json": {"moves": [{"what": "out:w", "from": 5, "to": 6}],
+                                                           "baseline": "moves.measured.json"}})
+        here = self.git("rev-parse", "HEAD")
+        self.write({f"{REC}/measure-fix1-report.json": {"base": {"sha": here}, "head": {"sha": here}}})
+        p = self.seal("fix1", "moves.measured.fix1.json")
+        self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+        self.assertIn(f"seal that measured file first: predict-gate.sh seal W-1 first {REC}/moves.measured.json",
+                      p.stderr)
+
+    def test_seal_fix2_a_non_moves_baseline_adds_no_refusal_at_seal(self):
+        self.write({f"{REC}/snapshot.json": BASE,
+                    f"{REC}/moves.prediction.json": {**PRED, "baseline": "snapshot.json"}})
+        here = self.git("rev-parse", "HEAD")
+        self.write({f"{REC}/measure-report.json": {"base": {"sha": here}, "head": {"sha": here}}})
+        p = self.seal("first", "moves.measured.json")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+
 if __name__ == "__main__":
     unittest.main()
