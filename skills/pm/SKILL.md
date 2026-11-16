@@ -278,3 +278,5 @@ them, and each tool's header comment is its full reference.
   table, a mapping, a controlled list), do not ask the owner to judge the list by eye. `${CLAUDE_PLUGIN_ROOT}/runtime/ratify.sh`
   samples it for two readers who each work without seeing the other's answers; only entries both mark
   right are ratified.
+- Before asking the owner to judge items read from a source, use the `blind-readers` skill; only items
+  every reader agrees on go to the owner.
