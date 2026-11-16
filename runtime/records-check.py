@@ -129,6 +129,8 @@ DAY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _spec = importlib.util.spec_from_file_location("predict_gate", HERE / "predict-gate.py")
 pg = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(pg)
+sys.path.insert(0, str(HERE))
+import locator  # noqa: E402 - the plugin's own module, beside this file
 
 OVERRIDE = ('PREDICT_GATE_CLOSE_OVERRIDE="<reason> | covers: R-xxxxxx,..." predict-gate.sh close {wo}, naming '
             "every refusal id the close lists")
@@ -309,8 +311,9 @@ def step_name(form: str, wo: str, n: str = r"[0-9]+", flags=re.I) -> re.Pattern:
                               for t in re.split(r"(\{\w+\})", form) if t), flags)
 
 
-def code_commits(repo, ref, since, until, roots, rx):
-    """({work order: commits}, {work order: last committer time}, ["hash subject" naming no tracker id])."""
+def code_commits(repo, ref, since, until, roots, rx, after=None):
+    """({work order: commits}, {work order: last committer time}, ["hash subject" naming no tracker id]). after: a
+    time; only commits later than it count (records mode, where a record commit is no ancestor of the code)."""
     out = git(repo, "log", ref, "--no-merges", f"--since={since.isoformat()}T00:00:00",
               f"--until={until.isoformat()}T23:59:59", "--format=%h%x09%cI%x09%s", "--", *roots)
     by_id, last, uncredited = defaultdict(int), {}, []
@@ -318,6 +321,8 @@ def code_commits(repo, ref, since, until, roots, rx):
         if line.count("\t") < 2:
             continue
         h, at, subject = line.split("\t", 2)
+        if after is not None and datetime.fromisoformat(at) <= after:
+            continue
         m = rx.search(subject)
         if m:
             by_id[m.group()] += 1
@@ -890,16 +895,22 @@ def stream_currency(repo: Path) -> list:
     return why
 
 
-def history(repo, ref, binding: dict, base: str):
+def history(repo, ref, binding: dict, base: str, code=None):
     """The record's history at the ref, for check_folder: record_at(path) -> (Reader, gate ids) at the commit
     that last changed path; added(path) -> the day its adding commit was made; changed_at(folder) ->
-    check_folder's `changed`, for a folder under base."""
+    check_folder's `changed`, for a folder under base. code: (the code repository, its ref) when the record is
+    in the records worktree (records mode): there the code is read at the last code commit made no later than
+    the record's commit, and a test "changed after the findings" is a code commit made after the findings' commit,
+    by commit time, since a record commit is no ancestor of the code."""
     at_commit = {}
 
     def record_at(path):
         commit = git(repo, "log", "-1", "--format=%H", ref, "--", path).strip() or ref
+        if code:
+            t = git(repo, "log", "-1", "--format=%cI", commit).strip()
+            commit = git(code[0], "log", "-1", "--format=%H", f"--until={t}", code[1]).strip() or code[1]
         if commit not in at_commit:
-            r = Reader(repo, commit)
+            r = Reader(code[0] if code else repo, commit)
             at_commit[commit] = (r, gate_ids(binding, lambda x: None if (d := r.at_ref(x)) is None
                                              else d.decode("utf-8", "replace")))
         return at_commit[commit]
@@ -913,6 +924,10 @@ def history(repo, ref, binding: dict, base: str):
             if not first:
                 return None
             own = record_at(f"{base}/{w}/{n}")[0].ref
+            if code:
+                t = git(repo, "log", "-1", "--format=%cI", first).strip()
+                return lambda p: bool(git(code[0], "rev-list", "--no-merges", "--full-history", f"--since={t}", own,
+                                          "--", p).split())
             parents = git(repo, "rev-list", "--parents", "-n", "1", first).split()[1:]
 
             def changed(p):
@@ -928,7 +943,7 @@ def history(repo, ref, binding: dict, base: str):
     return record_at, added, changed_at
 
 
-def build(binding: dict, ledger: Path | None, repo: Path, a, contracts: dict) -> dict:
+def build(binding: dict, ledger: Path | None, repo: Path, a, contracts: dict, project=None) -> dict:
     jobs = merged_jobs(binding, contracts)
     tracker = binding.get("tracker") if isinstance(binding.get("tracker"), dict) else {}
     if not isinstance(tracker.get("id"), str):
@@ -949,22 +964,32 @@ def build(binding: dict, ledger: Path | None, repo: Path, a, contracts: dict) ->
     warnings = []
     if since > as_of:
         warnings.append(f"the window starts ({since.isoformat()}) after --as-of ({as_of.isoformat()}): it holds nothing")
-    reviews = posixpath.normpath(binding.get("reviews") or "axis/runs/")
+    # the record folders' place (locator.runs_location): read in rec at rec_ref; the code always in repo at ref
+    try:
+        rec, reviews, mode = locator.runs_location(project, binding, repo)
+    except locator.BadRuns as e:
+        raise BadInput(str(e))
+    reviews = posixpath.normpath(reviews or "axis/runs/")
+    rec_ref = ref if mode == "tree" else "HEAD"
+    if mode == "records" and subprocess.run(["git", "-C", str(rec), "rev-parse", "--verify", "--quiet", "HEAD^{commit}"],
+                                            capture_output=True).returncode:
+        raise BadInput(f"the records worktree {rec} has no commit: the record folders are read from git")
+    code = (repo, ref) if mode == "records" else None
     form = binding.get("reviewName") or "{date}-{id}-step{n}-review"
     owned = binding.get("owned") is True
     if owned and ledger is None:
         raise BadInput(f"{repo} has no team, so no ops ledger: pass --ledger")
 
     commits, last, uncredited = code_commits(repo, ref, since, as_of, roots, rx)
-    tree, below = record_tree(repo, ref, reviews)
-    record_at, added, changed_at = history(repo, ref, binding, reviews)
+    tree, below = record_tree(rec, rec_ref, reviews)
+    record_at, added, changed_at = history(rec, rec_ref, binding, reviews, code)
 
     per_gate, read_files, read_rows, counted = {}, 0, 0, set()
     test_dirs = test_roots(binding, contracts)
     folder_ids = {f: {m.group().casefold() for m in re.finditer(rx.pattern, f, re.I)} for f in tree}
     closed = closes(ledger) if owned else {}
     seal_scan = None
-    read = Reader(repo, ref)
+    read = Reader(rec, rec_ref)
     closer_id = next((n for n, j in jobs.items() if j.get("close") is True), None)
     prover_id = next((n for n, j in jobs.items() if j.get("close") is False), None)
     closer = jobs.get(closer_id, {})
@@ -1034,8 +1059,12 @@ def build(binding: dict, ledger: Path | None, repo: Path, a, contracts: dict) ->
             proofs = [f"{reviews}/{f}/{n}" for f in sorted(steps) for n in tree[f]
                       if (fnmatch.fnmatchcase(n, "moves.measured*.json") if marked(tree[f], closer)
                           else marked([n], jobs[prover_id]))]
-            at = git(repo, "log", "-1", "--format=%H", ref, "--", *proofs).strip() if proofs else ""
-            after = code_commits(repo, f"{at}..{ref}" if at else ref, since, as_of, roots, rx)[0].get(wo, 0)
+            at = git(rec, "log", "-1", "--format=%H", rec_ref, "--", *proofs).strip() if proofs else ""
+            if code:  # a record commit is no ancestor of the code: later code is later by commit time
+                after = code_commits(repo, ref, since, as_of, roots, rx, after=datetime.fromisoformat(
+                    git(rec, "log", "-1", "--format=%cI", at).strip()) if at else None)[0].get(wo, 0)
+            else:
+                after = code_commits(repo, f"{at}..{ref}" if at else ref, since, as_of, roots, rx)[0].get(wo, 0)
             if after:
                 found[proof].update(kind="proof", owner=jobs[prover_id]["owner"], folders=sorted(steps),
                                     what=[f"{after} code commit(s) come after the latest step proof"
@@ -1055,7 +1084,7 @@ def build(binding: dict, ledger: Path | None, repo: Path, a, contracts: dict) ->
                         named = None
                     need |= {f"{reviews}/{f}/{x}" for x in
                              (n, f"moves.measured{rnd}.json", named or pg.baseline_name(rnd, lambda x: x in tree[f]))}
-            rs = [r for f in folders if closable.fullmatch(f) for r in pg.rounds(repo, f"{reviews}/{f}", ref)]
+            rs = [r for f in folders if closable.fullmatch(f) for r in pg.rounds(rec, f"{reviews}/{f}", rec_ref)]
             judged = any(r[0] and r[0].date().isoformat() >= pg.ORDER_FROM for r in rs)
             measured_at = max((r[1] for r in rs if r[1]), default=None) if judged else None
             # the events close judges, from the same function: sealed is a fact in git
@@ -1109,7 +1138,8 @@ def build(binding: dict, ledger: Path | None, repo: Path, a, contracts: dict) ->
                   "binding's 'records'. Rewritten on every run; it holds no decision.",
         "computed": {
             "since": since.isoformat(), "ref": ref, "codeRoots": list(roots),
-            "reviews": reviews + "/", "ledger": str(ledger) if owned else None, "owned": owned,
+            "reviews": reviews + "/" if mode == "tree" else f"{rec}/{reviews}/", "ledger": str(ledger) if owned else None,
+            "owned": owned,
             "uncredited": len(uncredited), "workOrders": len(wos), "warnings": warnings,
             "openFlags": sum(1 for f in flags if f["state"] == "open"),
             "promoteAt": contracts["promoteAt"],
@@ -1223,7 +1253,7 @@ def main(argv=None) -> int:
                 raise BadInput(f"{repo} has no team, so no records folder: pass --register with a full path")
             register = project.records / "registers" / register
         ledger = Path(a.ledger) if a.ledger else project.ops_ledger if project else None
-        reg = build(binding, ledger, repo, a, load_contracts())
+        reg = build(binding, ledger, repo, a, load_contracts(), project)
     except BadInput as e:
         print(f"records-check: bad input: {e}", file=sys.stderr)
         refusal_event(e, path=Path(a.repo).resolve())
