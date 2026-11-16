@@ -20,7 +20,7 @@ Standard library only. Usage (normally through shadow-predict.sh):
          "expect": [{"what": KEY, "why": TEXT, ...}, ...]}
       An entry may add: "value": "any"; "count": N; "optional": true; one of "to", "delta", "range";
       "shadow": false (a key the shadow file does not hold; copied as written, with its "to", "delta"
-      or "range", or none).
+      or "range", or none; a key only in B that it matches first is left out of the diff).
   K   flat {key: scope text}: replaces "why" for that key.
   SB  the shadow's base side; X the record's sealed baseline. The tool refuses when they differ.
 
@@ -180,6 +180,17 @@ def build(e: dict, before: dict, after: dict, scopes: dict) -> tuple[dict, list]
     return pred, refused
 
 
+def shadow_before(e: dict, before: dict, after: dict) -> dict:
+    """--before without the keys the shadow does not measure: a key absent from --after whose first
+    matching entry says "shadow": false. It is not a move that goes; its entry is written as written."""
+    hits = [(x, G.key_matcher(x["what"])) for x in e["expect"]]
+
+    def unmeasured(k):
+        x = next((x for x, hit in hits if hit(k)), None)
+        return k not in after and x is not None and x.get("shadow") is False
+    return {k: v for k, v in before.items() if not unmeasured(k)}
+
+
 def refuse(lines: list) -> int:
     print("shadow-predict: refused. Nothing was written.")
     print("\n".join(f"  - {line}" for line in lines))
@@ -214,7 +225,7 @@ def run(a) -> int:
         g = G.flat(G.load(a.out.with_name(gate_base)), a.out.with_name(gate_base))
         refused += [f"{k}: --before says {G.show(b)}, {gate_base} (the gate's baseline for this round) says "
                     f"{G.show(s)}" for k, b, s in diff(before, g, tol)]
-    elif "baseline" in e:
+    elif e.get("baseline"):
         refused.append(f"the expect file names the baseline {gate_base}, and it is not beside {a.out}: "
                        "the gate reads it there")
     if a.shadow_base:
@@ -222,13 +233,14 @@ def run(a) -> int:
         sealed = G.flat(G.load(a.sealed_base), a.sealed_base)
         refused += [f"{k}: the shadow's base side says {G.show(s)}, the sealed base says {G.show(b)}"
                     for k, b, s in diff(sealed, sb, tol)]
-    pred, more = build(e, before, after, scopes)
+    measured = shadow_before(e, before, after)
+    pred, more = build(e, measured, after, scopes)
     refused += more
     if not refused and not pred["moves"]:
         refused.append('the result names no move. A round that moves nothing is written by hand: {"noMoves": true}')
     if refused:
         return refuse(refused)
-    r = G.compare(G.check_prediction(pred, a.out), before, after)
+    r = G.compare(G.check_prediction(pred, a.out), measured, after)
     if r["failures"]:
         print(G.report(r, {"prediction": f"{a.out} (not written)", "baseline": a.before, "measured": a.after}))
         return refuse([f"the self-check found {r['failures']} failure(s), in sections 3 to 6 above"])

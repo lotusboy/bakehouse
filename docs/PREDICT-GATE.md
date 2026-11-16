@@ -143,7 +143,10 @@ The expect file `E` is written and committed before the shadow is read. It is th
 6. An entry may give `to`, `delta` or `range`. The tool checks the shadow against it, within
    `tolerance`, then writes the entry's value, with no mark.
 7. A `"shadow": false` entry is a key the shadow file does not hold. It is copied as written. Its
-   scope is its `why`, or its `what`'s text in `--scopes`.
+   scope is its `why`, or its `what`'s text in `--scopes`. A key in `--before`, absent from
+   `--after`, whose first matching entry says `"shadow": false`, is not measured by the shadow. It is
+   not a move that goes: the tool leaves it out of the diff, and writes the entry as written. A key
+   that a normal entry matches first is still a move that goes.
 8. When `--out`'s folder holds the gate's baseline for the round, `--before` is checked against it.
    That file is the expect file's `baseline`, else `moves.baseline<R>.json`, else
    `moves.baseline.json`: the file `predict-gate.sh check` reads.
