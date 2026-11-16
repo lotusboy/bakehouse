@@ -257,6 +257,7 @@ class SealTest(unittest.TestCase):
                 }
             }
         )
+        self.seal("first", "moves.baseline.json")  # seal F1: the baseline first
         p = self.seal("first", "moves.measured.json")
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         ev = self.events()[-1]
@@ -283,6 +284,7 @@ class SealTest(unittest.TestCase):
                 }
             }
         )
+        self.seal("first", "moves.baseline.json")  # seal F1: the baseline first
         self.assertEqual(self.seal("first", "moves.measured.json").returncode, 0)
         ev = self.events()[-1]
         self.assertEqual((ev["base"], ev["head"], ev["report"]), (None, None, None))
@@ -308,6 +310,7 @@ class SealTest(unittest.TestCase):
         self.assertIn("has no base.sha and head.sha", p.stderr)
 
     def test_a_refused_check_is_still_sealed_and_exits_1(self):
+        self.seal("first", "moves.baseline.json")  # seal F1: the baseline first
         p = self.seal("fix1", "moves.measured.fix1.json")
         self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
         ev = self.events()[-1]
@@ -481,6 +484,7 @@ class SealTest(unittest.TestCase):
         return self.f("history/moves.measured.fix1.json")
 
     def test_retire_writes_a_retired_event_for_a_sealed_file_moved_to_history(self):
+        self.seal("first", "moves.baseline.json")  # seal F1: the baseline first
         self.seal("fix1", "moves.measured.fix1.json")
         self.decide(
             "d20261101-bbbbb1",
@@ -524,6 +528,7 @@ class SealTest(unittest.TestCase):
             f"{REC}/history/moves.measured.fix1.json",
             f"{REC}/moves.measured.fix1.json",
         )
+        self.seal("first", "moves.baseline.json")  # seal F1: the baseline first
         self.seal("fix1", "moves.measured.fix1.json")
         moved = self.to_history()
         p = self.gate("retire", "W-1", "first", moved, "--decision", "d20261101-bbbbb1")
@@ -816,6 +821,7 @@ class SealTest(unittest.TestCase):
         )
 
     def test_f2_retire_refuses_a_decision_asked_without_approves(self):
+        self.seal("first", "moves.baseline.json")  # seal F1: the baseline first
         self.seal("fix1", "moves.measured.fix1.json")
         self.decide("d20261101-bbbbb6", task="W-1", approves=None)
         p = self.gate(
@@ -827,6 +833,7 @@ class SealTest(unittest.TestCase):
         )
 
     def test_f6_retire_refuses_a_copy_elsewhere_or_with_the_original_in_place(self):
+        self.seal("first", "moves.baseline.json")  # seal F1: the baseline first
         self.seal("fix1", "moves.measured.fix1.json")
         self.decide(
             "d20261101-bbbbb1",
@@ -915,16 +922,23 @@ class SealTest(unittest.TestCase):
         )
 
     def test_f7_seal_refuses_a_first_prediction_after_the_measured_seal(self):
+        self.seal("first", "moves.baseline.json")  # seal F1: the baseline first
         self.seal("first", "moves.measured.json")
-        for n in ("moves.prediction.json", "moves.baseline.json"):
-            p = self.seal("first", n)
-            self.assertEqual(p.returncode, 2, n)
-            self.assertIn("has a sealed measured file and no sealed", p.stderr)
+        p = self.seal("first", "moves.prediction.json")
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("has a sealed measured file and no sealed", p.stderr)
         self.assertEqual(
             self.seal("fix1", "moves.prediction.fix1.json").returncode,
             0,
             "another round is not judged",
         )
+        # seal F1: a baseline after its measured seal is reached only through a baseline whose bytes another
+        # seal covers
+        self.write({f"{REC}/moves.baseline.fix1.json": (self.repo / REC / "moves.baseline.json").read_text()})
+        self.seal("fix1", "moves.measured.fix1.json")
+        p = self.seal("fix1", "moves.baseline.fix1.json")
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("has a sealed measured file and no sealed baseline", p.stderr)
 
     def test_f10_seal_checks_the_work_order_against_the_binding(self):
         self.binding.write_text(
@@ -1139,6 +1153,7 @@ class SealTest(unittest.TestCase):
                 }
             }
         )
+        self.seal("first", "moves.baseline.json")  # seal F1: the baseline first
         self.assertEqual(self.seal("first", "moves.measured.json").returncode, 0)
         self.assertEqual(
             self.events()[-1]["headTrees"],
@@ -1247,7 +1262,7 @@ class SealTest(unittest.TestCase):
         p = self.seal("first", "moves.measured.json", "--report", self.report())
         self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
         self.assertIn(f"predict-gate.sh seal W-1 first {REC}/moves.baseline.json", p.stderr)
-        self.assertWrote(1)
+        self.assertEqual([e["fileKind"] for e in self.events() if e["kind"] == "sealed"], ["prediction"])
         self.assertEqual(self.seal("first", "moves.baseline.json").returncode, 0)
         p = self.seal("first", "moves.measured.json", "--report", self.report())
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)

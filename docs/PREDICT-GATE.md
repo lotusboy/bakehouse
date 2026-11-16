@@ -363,6 +363,14 @@ by these events ("Closing a sealed work order", below).
    round) or `measure-<label>-report.json` beside the file. With no report they are `null`, and the
    event says `"report": null`. A report without both commits is refused. A refused check is still
    sealed, and the command exits 1: close will need an approved retire for it.
+   **Seal the baseline before the measured file.** A measured seal is refused (exit 2, no seal written)
+   while the baseline its check uses has no live seal of this work order. A live seal covers the baseline
+   when it holds the same bytes (the same sha256): the round's own sealed baseline, the first round's
+   sealed baseline, or any other sealed file of the work order, such as the earlier round's measured file
+   a chained round is measured against. A retired seal, or another work order's seal, does not cover it.
+   The refusal names the command: `predict-gate.sh seal <work-order> <round> <baseline path>`. Why: a
+   baseline first sealed after its round's measured file is refused (point 3), so a measured seal made
+   first would leave the baseline unsealed for good.
 3. A prediction or baseline is sealed once per round. Sealing the same bytes again writes another
    seal. Sealing changed bytes is refused: a changed prediction goes through `revise`, and a changed
    baseline is a new round. A round's first prediction or baseline seal is refused once the round has
@@ -452,7 +460,11 @@ is whole. It also refuses when the ledger file no longer begins with the ledger 
    A seal that comes after the retire of the path's latest bytes starts a new chain (a re-measure, point
    7 of "Sealing"). Its first seal stands. The retire that ended the earlier chain still needs its
    approving decision, and its copy in `history/` must still be at `HEAD` with the retired bytes.
-3. **Each moves file at `HEAD`** (top level of a record folder) has a committed seal.
+3. **Each moves file at `HEAD`** (top level of a record folder) has a committed seal. One exception: a
+   file that a top-level prediction uses as its round's baseline (its `baseline` field, else the
+   round's own or the first round's baseline) needs no seal of its own when a live seal of this work
+   order holds the same bytes. This is the measured seal's rule (point 2 of "Sealing"). So a chained
+   round's baseline that holds the earlier round's sealed measured file closes.
 4. **Each sealed measured file whose check REFUSED** is retired.
 5. **A round's prediction is sealed before its code.** Its first seal's commit is an ancestor of the
    round's measured base; or, if not, every file under the code roots that the round's measurement
