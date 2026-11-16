@@ -189,11 +189,14 @@ class SkillPaths(unittest.TestCase):
             with self.subTest(path=rel):
                 self.assertTrue((ROOT / rel).is_file(), f"{rel} is named by the skill but is not in the plugin")
 
-    def test_the_skill_names_no_old_personal_paths(self):
+    def test_the_skill_names_no_home_path_and_only_tools_the_plugin_ships(self):
         text = SKILL.read_text()
-        self.assertNotIn("~/permanence", text)
-        self.assertNotIn("record-prediction", text)
-        self.assertNotIn("~/.claude/skills", text)
+        self.assertNotIn("~/", text)
+        tools = set(re.findall(r"(?<![\w/.-])([a-z][\w-]*\.(?:sh|py))\b", text))
+        self.assertGreaterEqual(len(tools), 4, sorted(tools))
+        for name in sorted(tools):
+            with self.subTest(tool=name):
+                self.assertTrue((RUNTIME / name).is_file(), f"{name} is named by the skill but is not in runtime/")
 
 
 if __name__ == "__main__":
