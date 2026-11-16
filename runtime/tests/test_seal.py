@@ -1286,6 +1286,23 @@ class SealTest(unittest.TestCase):
         self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
         self.assertIn("no live seal of W-1 holds its bytes", p.stderr)
 
+    def test_seal_f2_a1179_a_measured_seal_with_no_report_is_refused(self):
+        self.assertEqual(self.seal("first", "moves.baseline.json").returncode, 0)
+        p = self.seal("first", "moves.measured.json")
+        self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+        self.assertIn("--report", p.stderr)
+        self.assertIn("base.sha", p.stderr)
+        self.assertIn("head.sha", p.stderr)
+        self.assertEqual([e["fileKind"] for e in self.events() if e["kind"] == "sealed"], ["baseline"])
+
+    def test_seal_f2_a_report_whose_head_sha_is_null_is_refused(self):
+        self.assertEqual(self.seal("first", "moves.baseline.json").returncode, 0)
+        self.write({f"{REC}/measure-report.json": {"base": {"sha": "a" * 40}, "head": {"sha": None}}})
+        p = self.seal("first", "moves.measured.json")
+        self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+        self.assertIn("head.sha", p.stderr)
+        self.assertEqual([e["fileKind"] for e in self.events() if e["kind"] == "sealed"], ["baseline"])
+
 
 if __name__ == "__main__":
     unittest.main()
