@@ -478,17 +478,21 @@ def run_check(pred_path: Path, base_path: Path, meas_path: Path, override: str, 
     return 0
 
 
-def git(repo, *args, check=True) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, check=check)
+def git(repo, *args, check=True, env=None) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, check=check, env=env)
 
 
-def run_hook() -> int:
+def run_hook(repo=None, env=None, paths=(), team=None) -> int:
     """Inside a repo, at pre-commit: check every staged moves.measured<R>.json against its round's
     prediction in the index. A measured file with no prediction of its round, that no prediction
     names as its baseline, is refused: a measurement that is not part of the record goes in a
-    history/ folder, which the hook skips."""
-    repo = Path(git(".", "rev-parse", "--show-toplevel").stdout.strip())
-    staged = git(repo, "diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z").stdout.split("\0")
+    history/ folder, which the hook skips. The one commit-time check: `bakehouse record commit` runs it too,
+    on a record folder in the records worktree (repo), with its own index (env: GIT_INDEX_FILE), on the staged
+    files under paths only; team: the project's folder, whose ledger an override and a refusal event go to."""
+    repo = repo or Path(git(".", "rev-parse", "--show-toplevel").stdout.strip())
+    team = team or repo
+    staged = git(repo, "diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z",
+                 *(["--", *paths] if paths else []), env=env).stdout.split("\0")
     rounds, stray = set(), []
     for f in staged:
         m = MEASURED_RE.match(Path(f).name)
@@ -497,7 +501,7 @@ def run_hook() -> int:
         parts = Path(f).parent.parts
         if HISTORY not in parts:
             rounds.add((str(Path(f).parent), m.group(1)))
-        elif not holds_prediction(repo, parts[:parts.index(HISTORY)]):
+        elif not holds_prediction(repo, parts[:parts.index(HISTORY)], env):
             stray.append(f)  # close checks history/ only directly inside a record folder
     if not rounds and not stray:
         return 0
@@ -515,14 +519,14 @@ def run_hook() -> int:
         d = Path(folder)
 
         def staged_text(name):
-            p = git(repo, "show", f":{(d / name).as_posix()}", check=False)
+            p = git(repo, "show", f":{(d / name).as_posix()}", check=False, env=env)
             return p.stdout if p.returncode == 0 else None
 
         pred_name = next((n for n in prediction_names(rnd) if staged_text(n) is not None), None)
         measured = f"moves.measured{rnd}.json"
         print(f"\n== {folder}" + (f" (round {rnd})" if rnd else ""))
         if rnd and pred_name is None:
-            if measured in named_baselines(repo, d, staged_text):
+            if measured in named_baselines(repo, d, staged_text, env):
                 print(f"{measured}: a prediction in this folder names it as its baseline; not a round.")
                 continue
             print(f"Predicted-moves gate: REFUSED. {folder}/{measured} is staged, and no "
@@ -549,7 +553,7 @@ def run_hook() -> int:
                  "measured": staged_text(measured)}
         try:
             rc = run_check(repo / d / pred_name, repo / d / base_name, repo / d / measured,
-                           override, task, texts, repo, gate="predict-gate:hook")
+                           override, task, texts, team, gate="predict-gate:hook")
             if rc and not override:
                 refused.append(f"{folder}/{measured}")
         except BadInput as e:
@@ -563,22 +567,22 @@ def run_hook() -> int:
     if refused:
         refusal_event("predict-gate:hook", "predicted-moves commit refused",
                       f"predicted-moves gate stopped a commit: {len(refused)} refused; " + "; ".join(refused[:3]),
-                      task, len(refused), repo)
+                      task, len(refused), team)
     return worst
 
 
-def holds_prediction(repo: Path, parts: tuple) -> bool:
+def holds_prediction(repo: Path, parts: tuple, env=None) -> bool:
     """True when the folder made of parts has a moves.prediction* of its own in the index."""
     if not parts:
         return False
     d = Path(*parts)
-    names = git(repo, "ls-files", "--cached", "-z", "--", f"{d.as_posix()}/").stdout.split("\0")
+    names = git(repo, "ls-files", "--cached", "-z", "--", f"{d.as_posix()}/", env=env).stdout.split("\0")
     return any(n and Path(n).parent == d and PREDICTION_RE.match(Path(n).name) for n in names)
 
 
-def named_baselines(repo: Path, d: Path, staged_text) -> set:
+def named_baselines(repo: Path, d: Path, staged_text, env=None) -> set:
     """The baseline names the predictions in the index at folder d give in their "baseline" field."""
-    names = git(repo, "ls-files", "--cached", "-z", "--", f"{d.as_posix()}/").stdout.split("\0")
+    names = git(repo, "ls-files", "--cached", "-z", "--", f"{d.as_posix()}/", env=env).stdout.split("\0")
     out = set()
     for n in names:
         if n and Path(n).parent == d and PREDICTION_RE.match(Path(n).name):
@@ -613,10 +617,22 @@ def find_binding(repo: Path, binding_arg: str | None, project) -> dict:
     return b
 
 
-def record_folders(repo: Path, b: dict, wo: str) -> tuple[str, list]:
+def runs_where(project, b: dict, repo: Path) -> tuple[Path, str, str]:
+    """locator.runs_location: (the checkout that holds the record folders, their folder in it, the mode)."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import locator
+    try:
+        return locator.runs_location(project, b, repo)
+    except locator.BadRuns as e:
+        raise BadInput(str(e))
+
+
+def record_folders(repo: Path, b: dict, wo: str, reviews=None) -> tuple[str, list]:
     """(the glob, the matching folders) for the work order: `reviews` + `reviewName`. {date} must be a
-    date (YYYY-MM-DD), {n} is 1, {id} is the work order; any other placeholder is one path part."""
-    reviews = b.get("reviews") or "axis/runs/"
+    date (YYYY-MM-DD), {n} is 1, {id} is the work order; any other placeholder is one path part. repo and
+    reviews: where runs_where says the record folders are (the records worktree and runs/ in records mode);
+    reviews None reads the binding's `reviews`."""
+    reviews = (b.get("reviews") if reviews is None else reviews) or "axis/runs/"
     name = b.get("reviewName") or "{date}-{id}-step{n}-review"
     if not isinstance(reviews, str) or os.path.isabs(reviews) or ".." in Path(reviews).parts:
         raise BadInput(f"binding reviews {reviews!r} is not a folder inside the repository")
@@ -739,12 +755,13 @@ def rounds(repo, folder: str, ref: str = "HEAD") -> list:
     return list(out.values())
 
 
-def code_order(repo: Path, roots: list, form, wo: str, folders: list) -> list:
+def code_order(repo: Path, roots: list, form, wo: str, folders: list, rec: Path | None = None) -> list:
     """Refusals of the code-order rules, by commit time, not ancestry: a lane
     branch merges after the record is committed on the run branch. Only a work order with a round whose
     prediction is first committed on or after ORDER_FROM is judged, and only its code after the earlier
-    rounds' last record commit."""
-    rs = [r for f in folders for r in rounds(repo, f) if r[0]]
+    rounds' last record commit. rec: the checkout that holds the record folders (the records worktree in records
+    mode), else repo."""
+    rs = [r for f in folders for r in rounds(rec or repo, f) if r[0]]
     new = [r for r in rs if r[0].date().isoformat() >= ORDER_FROM]
     if not new:
         return []
@@ -771,7 +788,8 @@ def code_order(repo: Path, roots: list, form, wo: str, folders: list) -> list:
 
 def merged_check(repo: Path, ledger: Path | None, wo: str) -> tuple[list, list, list]:
     """Step 10: (refusals, matched files, notes) for the record at HEAD against the latest
-    work-order-closed event of the work order. Its sha256 values only."""
+    work-order-closed event of the work order. Its sha256 values only. repo: the checkout that holds the
+    record (the records worktree in records mode), as the close hashed its paths there."""
     try:
         lines = ledger.read_text(encoding="utf-8").splitlines() if ledger else []
     except OSError:
@@ -1017,19 +1035,21 @@ def round_baselines(repo: Path, at_head: dict, folder: Path) -> set:
 
 
 def sealed_refusals(repo: Path, folders: list, evs: list, decided: dict, wo: str, roots: list | None,
-                    form=None, notes: list | None = None) -> list:
+                    form=None, notes: list | None = None, rec: Path | None = None) -> list:
     """The sealed rules: the first seal of a file is its prediction or measurement, a later different
     hash needs an approved revise; every sealed file is at HEAD with its latest sealed bytes, or retired
     to history/ by an approved retire; every moves file at HEAD is sealed; every refused check is
     retired; a round's prediction is sealed before its code; the code at HEAD is the code the latest
-    measurement read. Decisions are judged again here, by the rule revise and retire apply."""
+    measurement read. Decisions are judged again here, by the rule revise and retire apply. The record is read
+    in rec (the records worktree in records mode), the code in repo."""
     out = []
     now = datetime.datetime.now().astimezone()
     at_head = {}
+    rec = rec or repo
     for f in folders:
-        for e in git(repo, "ls-tree", "-r", "-z", "HEAD", "--", f"{f}/").stdout.split("\0"):
+        for e in git(rec, "ls-tree", "-r", "-z", "HEAD", "--", f"{f}/").stdout.split("\0"):
             if e:
-                at_head[e.split("\t", 1)[1]] = blob_sha(repo, e.split()[2])
+                at_head[e.split("\t", 1)[1]] = blob_sha(rec, e.split()[2])
 
     def approved(e, verb):
         did = e.get("decision")
@@ -1088,7 +1108,7 @@ def sealed_refusals(repo: Path, folders: list, evs: list, decided: dict, wo: str
     for path in sorted(at_head):
         if Path(path).parent.as_posix() in folders and SEAL_FILE.match(Path(path).name) and path not in by_path \
                 and not (SEAL_FILE.match(Path(path).name).group(1) == "baseline" and at_head[path] in live_shas
-                         and path in round_baselines(repo, at_head, Path(path).parent)):
+                         and path in round_baselines(rec, at_head, Path(path).parent)):
             out.append(f"{path} is at HEAD and has no committed seal: predict-gate.sh seal {wo} <round> {path}")
     for e in seals:
         if e.get("fileKind") == "measured" and (e.get("check") or {}).get("result") == "refused" \
@@ -1215,24 +1235,30 @@ def run_close(wo: str, repo_arg: str | None, binding_arg: str | None, merged: bo
     earlier = closed_hashes(ledger, wo)
     decided, decision_ledger = decisions(project)
     sealed, seal_events, seal_refused = (False, [], []) if merged else sealed_state(ledger, wo)
-    pattern, folders = record_folders(repo, b, wo)
+    # the record is read in rec (the records worktree in records mode, else the repo); the code always in repo
+    rec, reviews, mode = runs_where(project, b, repo)
+    if mode == "records" and git(rec, "rev-parse", "--verify", "-q", "HEAD", check=False).returncode != 0:
+        raise BadInput(f"the records worktree {rec} has no commit: close reads the record from git")
+    pattern, folders = record_folders(rec, b, wo, reviews)
+    if mode == "records":
+        pattern = f"{rec}/{pattern}"
     refused, passed, notes = [], [], []
     if not merged:  # every close, sealed or not: the ledger reads whole and matches its commit
         refused += ledger_refusals(ledger, wo)
 
     def rel(p: Path) -> str:
-        return p.relative_to(repo).as_posix()
+        return p.relative_to(rec).as_posix()
 
     def first(path: str) -> str | None:
-        c = git(repo, "log", "--reverse", "--format=%H", "HEAD", "--", path).stdout.split()
+        c = git(rec, "log", "--reverse", "--format=%H", "HEAD", "--", path).stdout.split()
         return c[0] if c else None
 
     def before(a: str, b: str) -> bool:
-        return a != b and git(repo, "merge-base", "--is-ancestor", a, b, check=False).returncode == 0
+        return a != b and git(rec, "merge-base", "--is-ancestor", a, b, check=False).returncode == 0
 
     def exception(what: str, commit: str, out: list) -> bool:
         """True when the commit carries the owner's approval; else a refusal naming the exception."""
-        ids, why = approval(repo, commit, decided, wo)
+        ids, why = approval(rec, commit, decided, wo)
         if why:
             refused.append(f"{what}: commit {commit[:8]}: {why}. This needs the owner's decision, cited as "
                            f"the trailer '{TRAILER}: <decision id>' on that commit.")
@@ -1241,7 +1267,7 @@ def run_close(wo: str, repo_arg: str | None, binding_arg: str | None, merged: bo
         return True
 
     if merged:
-        refused, passed, notes = merged_check(repo, ledger, wo)
+        refused, passed, notes = merged_check(rec, ledger, wo)
     elif not folders:
         refused.append(f"no record folder matches {pattern} (with {{date}} as YYYY-MM-DD)")
     for folder in [] if merged else folders:
@@ -1249,13 +1275,13 @@ def run_close(wo: str, repo_arg: str | None, binding_arg: str | None, merged: bo
         if folder.is_symlink():
             refused.append(f"{r_folder} is a symbolic link. A record folder is a real folder in git.")
             continue
-        dirty = [x for x in git(repo, "--no-optional-locks", "status", "--porcelain", "--untracked-files=all",
+        dirty = [x for x in git(rec, "--no-optional-locks", "status", "--porcelain", "--untracked-files=all",
                                 "--", f"{r_folder}/").stdout.split("\n") if x]
         if dirty:
             refused.append(f"{r_folder}: uncommitted or untracked file(s); close reads the record from git, so "
                            "commit them, or move them out: " + "; ".join(x.strip() for x in dirty))
         tree = {}  # path inside the folder -> (mode, blob)
-        for e in git(repo, "ls-tree", "-r", "-z", "HEAD", "--", f"{r_folder}/").stdout.split("\0"):
+        for e in git(rec, "ls-tree", "-r", "-z", "HEAD", "--", f"{r_folder}/").stdout.split("\0"):
             if e:
                 meta, path = e.split("\t", 1)
                 mode, _, blob = meta.split()
@@ -1264,12 +1290,12 @@ def run_close(wo: str, repo_arg: str | None, binding_arg: str | None, merged: bo
         if links:
             refused.append(f"{r_folder}: symbolic link(s) in the record: {', '.join(links)}")
         history = sorted(n for n in tree if n.split("/")[0] == HISTORY)
-        measured_at = git(repo, "log", "--reverse", "--diff-filter=A", "--format=%H", "HEAD", "--",
+        measured_at = git(rec, "log", "--reverse", "--diff-filter=A", "--format=%H", "HEAD", "--",
                           f":(glob){glob.escape(r_folder)}/moves.measured*.json").stdout.split()
         if history:
             hist_ok = []
             if measured_at and not sealed:  # a sealed work order's history/ is judged by its retire events
-                for c in git(repo, "log", "--format=%H", "HEAD", "--", f"{r_folder}/{HISTORY}/").stdout.split():
+                for c in git(rec, "log", "--format=%H", "HEAD", "--", f"{r_folder}/{HISTORY}/").stdout.split():
                     if not before(c, measured_at[0]):
                         exception(f"{r_folder}/{HISTORY}/ changed in or after the commit of the record's first "
                                   f"measurement ({measured_at[0][:8]})", c, hist_ok)
@@ -1278,13 +1304,13 @@ def run_close(wo: str, repo_arg: str | None, binding_arg: str | None, merged: bo
                          + (f"; changed after the first measurement, approved: {', '.join(hist_ok)}" if hist_ok else ""))
         if measured_at and not sealed:
             # a round removed outright (git rm, a rename) escapes as surely as one parked in history/
-            hist_commits = set(git(repo, "log", "--format=%H", "HEAD", "--", f"{r_folder}/{HISTORY}/").stdout.split()) \
+            hist_commits = set(git(rec, "log", "--format=%H", "HEAD", "--", f"{r_folder}/{HISTORY}/").stdout.split()) \
                 if history else set()
-            ever = {p.rsplit("/", 1)[-1] for p in git(repo, "log", "--format=", "--name-only", "--no-renames", "HEAD",
+            ever = {p.rsplit("/", 1)[-1] for p in git(rec, "log", "--format=", "--name-only", "--no-renames", "HEAD",
                                                       "--", f":(glob){glob.escape(r_folder)}/moves.*").stdout.split("\n") if p}
             gone_ok = []
             for n in sorted(n for n in ever if n not in tree and (PREDICTION_RE.match(n) or MEASURED_RE.match(n))):
-                c = git(repo, "log", "-1", "--diff-filter=D", "--no-renames", "--format=%H", "HEAD", "--",
+                c = git(rec, "log", "-1", "--diff-filter=D", "--no-renames", "--format=%H", "HEAD", "--",
                         f"{r_folder}/{n}").stdout.strip()
                 if c and c not in hist_commits and not before(c, measured_at[0]):
                     exception(f"{r_folder}/{n} was removed in or after the commit of the record's first measurement "
@@ -1299,10 +1325,10 @@ def run_close(wo: str, repo_arg: str | None, binding_arg: str | None, merged: bo
         top_names = {n for n in tree if "/" not in n and tree[n][0] != "120000"}
 
         def text(n):
-            return git(repo, "cat-file", "blob", tree[n][1]).stdout
+            return git(rec, "cat-file", "blob", tree[n][1]).stdout
 
         def raw(n):
-            return subprocess.run(["git", "-C", str(repo), "cat-file", "blob", tree[n][1]],
+            return subprocess.run(["git", "-C", str(rec), "cat-file", "blob", tree[n][1]],
                                   capture_output=True, check=True).stdout
 
         preds = sorted(n for n in top_names if PREDICTION_RE.match(n))
@@ -1329,9 +1355,9 @@ def run_close(wo: str, repo_arg: str | None, binding_arg: str | None, merged: bo
             if base_n not in top_names:
                 refused.append(f"{rel(base)} not found: the prediction {n} has no baseline (none in git at HEAD)")
                 continue
-            commits = git(repo, "log", "--format=%h", "HEAD", "--", rel(pred)).stdout.split()
+            commits = git(rec, "log", "--format=%h", "HEAD", "--", rel(pred)).stdout.split()
             meas_at = first(rel(meas))
-            late = git(repo, "log", "--format=%H", f"{meas_at}..HEAD", "--", rel(pred)).stdout.split() if meas_at else []
+            late = git(rec, "log", "--format=%H", f"{meas_at}..HEAD", "--", rel(pred)).stdout.split() if meas_at else []
             approved = []
             for c in [] if sealed else late:
                 exception(f"{rel(pred)} changed after {meas_n} was first committed ({meas_at[:8]})", c, approved)
@@ -1388,13 +1414,14 @@ def run_close(wo: str, repo_arg: str | None, binding_arg: str | None, merged: bo
                                "commit them in a measured round, or remove them: " + "; ".join(changed[:10])
                                + (f"; and {len(changed) - 10} more" if len(changed) > 10 else ""))
             if not sealed:
-                refused += code_order(repo, sig["codeRoots"], form, wo, [rel(f) for f in folders if not f.is_symlink()])
+                refused += code_order(repo, sig["codeRoots"], form, wo, [rel(f) for f in folders if not f.is_symlink()],
+                                      rec)
         else:
             notes.append("the binding names no signal.codeRoots, so the code-order checks were not run")  # nor the dirty-tree one
     if sealed:
         notes.append(f"sealed: judged by {len(seal_events)} committed sealed event(s) in the ledger, not by git order")
         refused += seal_refused + sealed_refusals(repo, [rel(f) for f in folders if not f.is_symlink()], seal_events,
-                                                  decided, wo, sig.get("codeRoots"), form, notes)
+                                                  decided, wo, sig.get("codeRoots"), form, notes, rec)
     print(f"\nWork order {wo}: record folder(s) {', '.join(rel(f) for f in folders) or '(none)'}. "
           f"Pairs passed: {len(passed)}. Ledger: {ledger or '(none)'}. Decisions: {decision_ledger or '(none)'}")
     for n in notes:
@@ -1460,10 +1487,15 @@ def file_round(name: str) -> tuple[str, str]:
     return m.group(1), m.group(2)[1:] or "first"
 
 
-def seal_target(path: Path, repo_arg: str | None, wo: str, folder: bool = False) -> tuple[Path, str, object, dict]:
-    """(repository, path in it, project, binding) for a file to seal. The project is the one the locator
-    finds for --repo, else for the file's repository; its ops ledger is the one close reads. The work order
-    must match the binding's tracker id form, when it names one."""
+def seal_target(path: Path, repo_arg: str | None, wo: str,
+                folder: bool = False) -> tuple[Path, str, object, dict, Path]:
+    """(repository, path in it, project, binding, code checkout) for a file to seal. The project is the one the
+    locator finds for --repo, else for the file's repository; its ops ledger is the one close reads. A file in a
+    project's records worktree (records mode) is that project's (locator.records_owner): its path is read in the
+    records worktree, as close reads it, and the code checkout, whose HEAD the seal names, is --repo's, else the
+    working folder's when it is a checkout of that project, else the project's own folder. Otherwise the code
+    checkout is the file's repository. The work order must match the binding's tracker id form, when it names
+    one."""
     for k in ("OPS_TS", "OPS_COMMIT"):
         if os.environ.get(k):
             os.environ.pop(k)  # so the refusal event is stamped now too
@@ -1475,7 +1507,16 @@ def seal_target(path: Path, repo_arg: str | None, wo: str, folder: bool = False)
         raise BadInput(f"{path} is not inside a git repository")
     repo = Path(top.stdout.strip())
     rel = path.resolve().relative_to(repo.resolve()).as_posix()
-    project = project_of(repo_arg or repo)
+    code = repo
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import locator
+    owner = None if folder else locator.records_owner(repo, {k: v for k, v in os.environ.items()
+                                                             if k != "CLAUDE_PROJECT_DIR"})
+    project = project_of(repo_arg) if repo_arg else owner or project_of(repo)
+    if owner is not None:
+        here = project_of(repo_arg or os.getcwd())
+        same = here is not None and here.records.resolve() == owner.records.resolve()
+        code = here.root if same else owner.root
     if project is None:
         raise BadInput(f"{repo_arg or repo} has no team (no .team/binding.json), so it keeps no ledger: "
                        "give --repo <the project's folder>")
@@ -1488,7 +1529,7 @@ def seal_target(path: Path, repo_arg: str | None, wo: str, folder: bool = False)
     form = (b.get("tracker") or {}).get("id") if isinstance(b.get("tracker"), dict) else None
     if isinstance(form, str) and not re.fullmatch(form, wo):
         raise BadInput(f"{wo!r} does not match the binding's tracker id form {form!r}")
-    return repo, rel, project, b
+    return repo, rel, project, b, code
 
 
 def code_trees(repo: Path, commit: str, roots: list) -> dict | None:
@@ -1500,11 +1541,12 @@ def code_trees(repo: Path, commit: str, roots: list) -> dict | None:
             or None for r in roots}
 
 
-def measured_fields(path: Path, repo: Path, report_arg: str | None) -> tuple[dict, int]:
+def measured_fields(path: Path, repo: Path, report_arg: str | None, code: Path | None = None) -> tuple[dict, int]:
     """The measured seal's check (against the round's prediction and baseline, as `check` finds them)
     and the base and head commits from the measure report: --report, else measure-report.json (first
     round) or measure-<label>-report.json beside the file. A seal with no report, or whose report gives no
-    head.sha, is refused: close judges the code at HEAD by that head commit."""
+    head.sha, is refused: close judges the code at HEAD by that head commit. repo: the checkout the file's path is
+    read in; code: the one that holds the commits (repo when not given)."""
     rs = MEASURED_RE.match(path.name).group(1)
     pred, base = round_files(path)
     report = Path(report_arg).absolute() if report_arg else path.with_name(
@@ -1522,7 +1564,7 @@ def measured_fields(path: Path, repo: Path, report_arg: str | None) -> tuple[dic
         if not (isinstance(shas[k], str) and shas[k].strip()):
             raise BadInput(f"{report} gives no {k}.sha: pass --report <a measure report holding base.sha and "
                            "head.sha, the commits the measurement read>")
-        if git(repo, "cat-file", "-e", f"{shas[k]}^{{commit}}", check=False).returncode != 0:
+        if git(code or repo, "cat-file", "-e", f"{shas[k]}^{{commit}}", check=False).returncode != 0:
             # not refused: close accepts it once the lane's commit arrives (a merge or a fetch)
             print(f"warning: {k} {shas[k][:8]} is not in this repository yet; close needs it, so fetch or merge "
                   "the lane before closing", file=sys.stderr)
@@ -1598,7 +1640,7 @@ def run_seal(cmd: str, wo: str, rnd: str, file: str, repo_arg: str | None, repor
     after its seal. retire: a sealed round's file moved to history/. Each writes one chained event under
     the ledger lock; the checks that read the ledger run under the lock too."""
     path = Path(file).absolute()
-    repo, rel, project, binding = seal_target(path, repo_arg, wo)
+    repo, rel, project, binding, code = seal_target(path, repo_arg, wo)
     ledger = project.ops_ledger
     data = path.read_bytes()
     digest = sha256(data)
@@ -1626,11 +1668,11 @@ def run_seal(cmd: str, wo: str, rnd: str, file: str, repo_arg: str | None, repor
             raise BadInput(why)
         extra["decision"] = decision_id
     if fkind == "measured":
-        fields, rc = measured_fields(path, repo, report)
+        fields, rc = measured_fields(path, repo, report, code)
         extra.update(fields)
         roots = (binding.get("signal") or {}).get("codeRoots") if isinstance(binding.get("signal"), dict) else None
         # the code the measurement read, by tree: close compares it when the head commit itself is gone
-        extra["headTrees"] = code_trees(repo, fields["head"], roots) if fields["head"] and roots else None
+        extra["headTrees"] = code_trees(code, fields["head"], roots) if fields["head"] and roots else None
 
     def make(events):
         mine = [e for e in events if isinstance(e, dict) and e.get("kind") in ledger_module().SEALED_KINDS
@@ -1656,7 +1698,7 @@ def run_seal(cmd: str, wo: str, rnd: str, file: str, repo_arg: str | None, repor
             if (repo / hit[-1]["path"]).exists():
                 raise BadInput(f"{hit[-1]['path']} is still there: retire follows its move to {HISTORY}/")
             fk = hit[-1].get("fileKind")
-        commit = git(repo, "rev-parse", "--short", "HEAD", check=False).stdout.strip() or None
+        commit = git(code, "rev-parse", "--short", "HEAD", check=False).stdout.strip() or None
         return {"ts": datetime.datetime.now().astimezone().isoformat(timespec="seconds"), "role": "engine",
                 "kind": kind, "task": wo, "purpose": f"{kind} {fk} file", "round": rnd, "fileKind": fk,
                 "path": rel, "sha256": digest, "commit": commit, "outcome": "done", **extra}
@@ -1695,7 +1737,7 @@ def run_seal_code(wo: str, rnd: str, repo_arg: str | None, commit_args: list) ->
     top = git(".", "rev-parse", "--show-toplevel", check=False)
     if top.returncode != 0:
         raise BadInput(f"{os.getcwd()} is not inside a git repository")
-    repo, _, project, binding = seal_target(Path(top.stdout.strip()), repo_arg, wo, folder=True)
+    repo, _, project, binding, _ = seal_target(Path(top.stdout.strip()), repo_arg, wo, folder=True)
     ledger = project.ops_ledger
     roots = (binding.get("signal") or {}).get("codeRoots") if isinstance(binding.get("signal"), dict) else None
     if not roots:
