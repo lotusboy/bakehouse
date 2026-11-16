@@ -138,7 +138,8 @@ def load_rules(binding_path, overrides=None, project=None):
         rec, prefix, mode = locator.runs_location(project, binding, ".")
     except locator.BadRuns as e:
         fail(str(e))
-    reviews = binding.get("reviews") if mode == "tree" else f"{rec / prefix}/"
+    # tree mode: the binding's `reviews`, or axis/runs/ when it names none, as the locator gives it
+    reviews = prefix if mode == "tree" else f"{rec / prefix}/"
     if not isinstance(reviews, str) or not reviews.strip():
         fail('the binding has no "reviews" folder: the run folders the drivers live in')
     given = binding.get("drivers", {})
@@ -181,6 +182,7 @@ def load_rules(binding_path, overrides=None, project=None):
     rules["families"] = fams
     rules["reviews"] = reviews.rstrip("/") + "/"
     rules["mode"] = mode
+    rules["shown"] = rules["reviews"] if mode == "tree" else prefix  # the register holds no machine path
     return rules
 
 
@@ -491,7 +493,7 @@ def build(repo, rules, register_path, as_of):
             "coherent": rules["coherent"],
             "maxBytes": rules["maxBytes"],
             "nested": rules["nested"],
-            "reviews": rules["reviews"],
+            "reviews": rules["shown"],
             "runFolders": len({f["run"] for f in files}),
             "driverFiles": len(files),
             "drivers": compared,

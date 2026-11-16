@@ -1138,7 +1138,7 @@ def build(binding: dict, ledger: Path | None, repo: Path, a, contracts: dict, pr
                   "binding's 'records'. Rewritten on every run; it holds no decision.",
         "computed": {
             "since": since.isoformat(), "ref": ref, "codeRoots": list(roots),
-            "reviews": reviews + "/" if mode == "tree" else f"{rec}/{reviews}/", "ledger": str(ledger) if owned else None,
+            "reviews": reviews + "/", "ledger": str(ledger) if owned else None,
             "owned": owned,
             "uncredited": len(uncredited), "workOrders": len(wos), "warnings": warnings,
             "openFlags": sum(1 for f in flags if f["state"] == "open"),
