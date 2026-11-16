@@ -138,8 +138,8 @@ The tool reads the last ```json block in each report. It prints one row per item
 from any reader counts as a disagreement. An item with an empty or missing label or action counts as
 a disagreement. The exit code is 0 when all items agree and 1 when any disagree. It is 2 when one
 reader is passed twice (the same file twice, or two reports naming the same reader), or when a
-report has no valid JSON block (none; a ```json opener after the last complete block; one that does
-not parse; an empty or missing `items` list; an item with no `id`; an id that appears twice).
+report has no valid JSON block (none; text after the last block, since a report must end with its
+JSON block; one that does not parse; an empty or missing `items` list; an item with no `id`; an id that appears twice).
 
 Check the table against the brief. Its row count must equal the item count in the brief, and every
 label and action must be in the closed vocabulary. An extra or missing id, or a label or action
@@ -210,8 +210,8 @@ ${CLAUDE_PLUGIN_ROOT}/runtime/decision.sh ask --category <correction|engine-desi
   leaves them out; the ledger keeps them, so the score can be measured.
 - `--read` names the source file of the example in the question, opened by the PM itself to check
   the quote. `--read-what` says which page and clause; it needs at least one word of two letters or
-more, and digits do not count (`p.14 cl 4.2` passes, `p.14` alone is refused). A reader's report is
-not a `--read` source.
+  more, and digits do not count (`p.14 cl 4.2` passes, `p.14` alone is refused). A reader's report is
+  not a `--read` source.
   The categories in the project's `groundingExempt` list need no `--read`.
 
 When the owner replies:

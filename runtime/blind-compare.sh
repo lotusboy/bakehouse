@@ -10,8 +10,9 @@
 #
 # Exit codes: 0 every item agrees; 1 any item disagrees or is missing; 2 usage, one reader passed
 # twice (the same file twice, or two reports naming the same reader), or a report that cannot be
-# read as UTF-8 or has no valid ```json block (none; a ```json opener after the last complete block;
-# it does not parse; no "items" list or an empty one; an item with no id; an id that appears twice).
+# read as UTF-8 or has no valid ```json block (none; text after the last block, since a report must
+# end with its JSON block; it does not parse; no "items" list or an empty one; an item with no id;
+# an id that appears twice).
 set -euo pipefail
 command -v python3 >/dev/null 2>&1 || { echo "$(basename "$0"): python3 not found on PATH — this tool needs it (standard library only)." >&2; exit 127; }
 exec python3 "$(dirname "$0")/blind-compare.py" "$@"

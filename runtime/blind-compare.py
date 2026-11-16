@@ -7,8 +7,9 @@ from a reader, or with an empty or missing label or action, is a disagreement. R
 and the table written, as UTF-8.
 Exit 0: all agree. Exit 1: any disagree or missing. Exit 2: usage; one reader passed twice (the same
 file twice, or two reports naming the same reader); or a report that cannot be read as UTF-8 or has
-no valid JSON block (no block, a ```json opener after the last complete block, a block that does
-not parse, no "items" list or an empty one, an item with no id, or an id that appears twice).
+no valid JSON block (no block, a block that does not parse, text after the last block (a report
+must end with its JSON block), no "items" list or an empty one, an item with no id, or an id that
+appears twice).
 Pure computation, standard library only, no AI. Usage: see blind-compare.sh.
 
   blind-compare.py reader-a.md reader-b.md [reader-c.md ...]
@@ -37,9 +38,9 @@ def load(path):
         data = json.loads(blocks[-1].group(1))
     except (json.JSONDecodeError, RecursionError) as e:
         bad(f"{path}: last ```json block does not parse: {e}")
-    if re.search(r"```json", text[blocks[-1].end():], re.I):
-        bad(f"{path}: a ```json opener after the last complete ```json block: the final block is not "
-            "closed, or not fenced as ```json")
+    if text[blocks[-1].end():].strip():
+        bad(f"{path}: text follows the last ```json block: a report must end with its JSON block "
+            "(is the final block unclosed, or fenced other than ```json?)")
     if not isinstance(data, dict) or not isinstance(data.get("items"), list):
         bad(f"{path}: last ```json block has no \"items\" list")
     if not data["items"]:
