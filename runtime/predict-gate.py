@@ -1514,7 +1514,10 @@ def seal_target(path: Path, repo_arg: str | None, wo: str,
                                                              if k != "CLAUDE_PROJECT_DIR"})
     project = project_of(repo_arg) if repo_arg else owner or project_of(repo)
     if owner is not None:
-        here = project_of(repo_arg or os.getcwd())
+        try:
+            here = project_of(repo_arg or os.getcwd())
+        except BadInput:  # a working folder that needs setup is not a checkout of this project
+            here = None
         same = here is not None and here.records.resolve() == owner.records.resolve()
         code = here.root if same else owner.root
     if project is None:
