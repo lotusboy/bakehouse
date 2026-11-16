@@ -168,12 +168,13 @@ def lookup_paths(path, named):
 
 def binding_at(path, named=False):
     """(binding, problem) for the repo at path (team_roles.read_binding; for the cwd, lookup_paths), read once
-    per run, the locator given what is left of the run's deadline. named: a path a brief names, not the cwd."""
+    per run, the locator given what is left of the run's deadline. named: a path a brief names, not the cwd; a
+    named path in a project's records worktree reads that project's binding (the locator's --owner)."""
     k = str(path)
     if (k, named) not in _BINDINGS:
         for at in lookup_paths(k, named):
             t = min(team_roles.RESOLVE_TIMEOUT, left())
-            b, why = team_roles.read_binding(at, log, timeout=t, env=NAMED_ENV)
+            b, why = team_roles.read_binding(at, log, timeout=t, env=NAMED_ENV, owner=named)
             if b or why:
                 break
         if why and t < team_roles.RESOLVE_TIMEOUT and ("did not answer" in why or "was not run" in why):
@@ -368,18 +369,26 @@ def shown(path):
 
 def place(v):
     """A full path's record folder: (kind, root, folder, v, path) for a folder under the `reviews` folder
-    of the bound repo the path itself is in (not the cwd's); None when it is not. path is the line
+    of the bound repo the path itself is in (not the cwd's), or, for a binding in records mode, under runs/ in
+    the records worktree of the path's project (root: that worktree); None when it is not. path is the line
     expanded, unresolved."""
     path = Path(os.path.normpath(Path(v).expanduser()))
     p = path.resolve()
     b = bound(path, named=True)
-    reviews, why = reviews_folder(b) if b else (None, None)
+    mode, bad = runs_mode(b) if b else (None, None)
+    reviews, why = reviews_folder(b) if mode == "tree" else (None, bad)
     if why:
         # the binding's own field is the cause, never the brief (R0.1 B-N4)
         where = team_roles.locate("binding", path, log, timeout=min(team_roles.RESOLVE_TIMEOUT, left()),
-                                  env=NAMED_ENV)[0]
-        raise Unreadable(f"the binding {where or 'of the repository ' + str(path)} has a bad field `reviews` "
-                         f"({why}): fix that field")
+                                  env=NAMED_ENV, owner=True)[0]
+        raise Unreadable(f"the binding {where or 'of the repository ' + str(path)} has a bad field "
+                         f"`{'runs' if bad else 'reviews'}` ({why}): fix that field")
+    if mode == "records":
+        # records mode: a folder under runs/ in the project's records worktree (the path's own project)
+        rec = records_of(path, named=True)
+        if rec and (rec / locator.RUNS).resolve() in p.parents:
+            return "repo", rec, p.relative_to(rec).as_posix(), v, str(path)
+        return None
     if reviews:
         q = path
         while not q.exists() and q != q.parent:
@@ -454,6 +463,11 @@ def record_line(prompt, cwd, binding):
         return None
     if problem:
         return "refused", top, f"which {problem}", v, p
+    if runs_mode(binding)[0] == "records":
+        rec = records_of(top)
+        if rec and (rec / locator.RUNS).resolve() in p.parents:
+            return "repo", rec, p.relative_to(rec).as_posix(), v
+        return "refused", top, f"which is not under this project's {runs_text(binding, top)}", v, p
     reviews = reviews_folder(binding)[0]
     if reviews and (top.resolve() / reviews).resolve() in p.parents:
         return "repo", top, p.relative_to(top.resolve()).as_posix(), v
@@ -519,6 +533,54 @@ def reviews_folder(binding):
     if os.path.isabs(v) or ".." in Path(v).parts:
         return None, f"reviews {v!r} is outside the repository"
     return v.rstrip("/") + "/", None
+
+
+def runs_mode(binding):
+    """(mode, None): where the binding keeps its run folders (locator.runs_mode: "records", runs/ in the records
+    worktree, or "tree", its `reviews` in the code tree); (None, why) for a bad `runs` field."""
+    try:
+        return locator.runs_mode(binding), None
+    except locator.BadRuns as e:
+        return None, str(e)
+
+
+_RECORDS = {}
+
+
+def records_of(path, named=False):
+    """The records worktree of the project of path (a path inside a records worktree: that project's), resolved,
+    or None; asked once per run, inside the run's deadline, in the paths the binding lookup asks (lookup_paths:
+    for the cwd, then the launch project). In records mode the run folders are runs/ in it."""
+    k = (str(path), named)
+    if k not in _RECORDS:
+        rec = None
+        for at in lookup_paths(str(path), named):
+            rec = team_roles.locate("records", at, log, timeout=min(team_roles.RESOLVE_TIMEOUT, left()),
+                                    env=NAMED_ENV, owner=True)[0]
+            if rec:
+                break
+        _RECORDS[k] = Path(rec).resolve() if rec else None
+    return _RECORDS[k]
+
+
+def runs_text(binding, where):
+    """The run folders' place as a brief names it: the binding's `reviews` (default axis/runs/), or, in records
+    mode, the full path of runs/ in the records worktree of the project of where."""
+    if binding and runs_mode(binding)[0] == "records":
+        rec = records_of(where)
+        return f"{shown(rec)}/{locator.RUNS}" if rec else locator.RUNS
+    return reviews_folder(binding or {})[0] or DEFAULT_REVIEWS
+
+
+def code_root(cwd, rec):
+    """The code checkout a records-mode record's code paths are read in: the cwd's repository when it is a
+    checkout of the project whose records worktree is rec, else that project's own folder."""
+    top = repo_root(cwd)
+    if top.resolve() != rec and records_of(top) == rec:
+        return top
+    root = team_roles.locate("root", str(rec), log, timeout=min(team_roles.RESOLVE_TIMEOUT, left()), env=NAMED_ENV,
+                             owner=True)[0]
+    return Path(root) if root else top
 
 
 def is_above(model, ceiling):
@@ -667,12 +729,12 @@ def pre_tool_use(d):
             if "{reviews}" in extra:
                 if binding is None:
                     binding = bound(cwd)
-                extra = extra.replace("{reviews}", reviews_folder(binding)[0] or DEFAULT_REVIEWS)
+                extra = extra.replace("{reviews}", runs_text(binding, cwd))
             ti["prompt"] = (ti.get("prompt") or "") + f"\n\n{MARKER}\n{extra}"
             notes.append("prompt_append added")
 
     if mark and PREDICTION_MARKER not in (ti.get("prompt") or ""):
-        reviews = reviews_folder(binding or {})[0] or DEFAULT_REVIEWS
+        reviews = runs_text(binding, cwd)
         where = f"your record folder {decided[3]}/" if decided else f"the record folder your brief names under {reviews}"
         # the marker is the prompt's own final line: the stop check reads it there and nowhere else
         ti["prompt"] = (ti.get("prompt") or "") + (
@@ -803,7 +865,7 @@ def unsealed_moves(folders, where, named, wo=None):
         gate = predict_gate()
         led, why = None, None
         for at in lookup_paths(where, named) if where else []:
-            led, why = team_roles.locate("ops_ledger", at, log, env=NAMED_ENV)
+            led, why = team_roles.locate("ops_ledger", at, log, env=NAMED_ENV, owner=named)
             if led or why:
                 break
         if not led:
@@ -871,7 +933,11 @@ def prediction_stop(d):
             log(f"PREDICTION check not run for {agent}: " + ("dispatched as a job that is not a change job"
                 if job is False else "a built-in agent, unmarked"))
         return None
-    reviews, why = reviews_folder(binding)
+    mode, why = runs_mode(binding)
+    if mode == "tree":
+        reviews, why = reviews_folder(binding)
+    else:
+        reviews = None if why else runs_text(binding, cwd)
     if not reviews:
         log(f"PREDICTION check skipped for {agent}: binding {why}")
         return with_note(None, note)
@@ -879,6 +945,10 @@ def prediction_stop(d):
     gate = predict_gate()
     if kind == "repo":
         folders, named = [line[1] / line[2]], line[2]
+    elif wo and mode == "records":
+        rec = records_of(repo)
+        folders = gate.record_folders(rec, binding, wo, locator.RUNS)[1] if rec else []
+        named = f"the {reviews} folder of work order {wo}"
     elif wo:
         folders, named = gate.record_folders(repo, binding, wo)[1], f"the {reviews} folder of work order {wo}"
     else:
@@ -972,9 +1042,10 @@ class DiskReader:
         return p.read_text(encoding="utf-8", errors="replace") if p.is_file() else None
 
 
-def record_problems(rname, root, folder, started, binding):
+def record_problems(rname, root, folder, started, binding, code=None):
     """[what is wrong] in the record folders this run wrote, against the role's job contract; [] when
-    the role is not a job in the record contracts. Fail open: an error is logged and passes."""
+    the role is not a job in the record contracts. code: the checkout the record's code paths (tests, gate files)
+    are read in, when it is not root (records mode). Fail open: an error is logged and passes."""
     try:
         rc = records_check()
         contracts = rc.load_contracts()
@@ -997,9 +1068,10 @@ def record_problems(rname, root, folder, started, binding):
                                                                      job, others) if n in wrote[f]]
         if not made:
             return out
-        gates = rc.gate_ids(binding, lambda x: (root / x).read_text(encoding="utf-8", errors="replace")
-                            if (root / x).is_file() else None)
-        read = DiskReader(root)
+        code = code or root
+        gates = rc.gate_ids(binding, lambda x: (code / x).read_text(encoding="utf-8", errors="replace")
+                            if (code / x).is_file() else None)
+        read = DiskReader(code)
         roots = rc.test_roots(binding, contracts)
         for f in sorted(made):
             files = {q.name: q for q in f.iterdir() if q.is_file()}
@@ -1063,8 +1135,13 @@ def subagent_stop(d):
     # The shipped table demands a record only in a repository that has opted in with a binding and
     # that the owner owns (or whose binding names a reviews folder). A rule in the owner's own table
     # is their explicit choice and applies everywhere (review 2026-10-11, H1).
+    mode = None
     if personal or (rbind and (rbind.get("owned") is True or "reviews" in rbind)):
-        folder, why = reviews_folder(rbind)
+        mode, why = runs_mode(rbind) if rbind else ("tree", None)
+        folder, why = reviews_folder(rbind) if mode == "tree" else (None if why else locator.RUNS, why)
+        if mode == "records" and folder and not (kind == "repo" and line[4]):
+            rroot = records_of(rroot)  # the run folders are runs/ in the records worktree
+            folder, why = (folder, None) if rroot else (None, "has no records worktree the locator finds")
         if not folder:
             log(f"RUN-RECORD check skipped for {d.get('agent_type')}: binding {why}")
         elif kind == "repo" and line[4]:
@@ -1079,7 +1156,8 @@ def subagent_stop(d):
                 fresh = fresh_folders(checks[-1][0] / folder, started)
     if not checks:
         return with_note(None, note)
-    bad = [x for root, f, b in checks for x in record_problems(rname, root, f, started, b)]
+    code = code_root(cwd, checks[0][0].resolve()) if mode == "records" else None
+    bad = [x for root, f, b in checks for x in record_problems(rname, root, f, started, b, code)]
     fix = (f" Role '{rname}' must also leave its job's artefacts in each record folder it wrote: "
            + "; ".join(bad) + ". A reviewer writes mutations.json beside findings.md (a re-check's "
            "findings-fix1.md: its own mutations-fix1.json, written in this run): one row per mutation "
@@ -1111,8 +1189,10 @@ def subagent_stop(d):
                                        f"{named}/, or in a subfolder of it, as your dispatch prompt describes"
                                        + (f": no file written in this run there matches {' or '.join(want)}." if want
                                           else ".") if named else
-                                       f"write {checks[-1][1]}<YYYY-MM-DD>-<subject>-<protocol>/ at the repository "
-                                       f"root with contract.md and findings.md, as your dispatch prompt describes.")
+                                       (f"write {checks[-1][1]}<YYYY-MM-DD>-<subject>-<protocol>/ at the repository "
+                                        "root" if mode != "records" else f"write {shown(checks[-1][0])}/{checks[-1][1]}"
+                                        "<YYYY-MM-DD>-<subject>-<protocol>/ in the records worktree")
+                                       + " with contract.md and findings.md, as your dispatch prompt describes.")
                                     + fix}, note)
     log(f"RUN-RECORD still missing for {d.get('agent_type')} — let it stop, told the user")
     return with_note({"systemMessage": f"bakehouse agent-roles: {d.get('agent_type')} stopped without writing a record "

@@ -15,8 +15,12 @@ Every hook and script asks this module, so path identity is computed once (desig
 There is no registry and no text matching of paths. git gives the repo's real path; the records path
 is compared after resolving both sides.
 
-Usage from a shell script: `python3 locator.py <field> [folder]` prints one path. Exit 3: no team here.
-Exit 4: a team, but setup is needed; the message says what to run.
+Usage from a shell script: `python3 locator.py [--owner] <field> [folder]` prints one path. Exit 3: no team here.
+Exit 4: a team, but setup is needed; the message says what to run. --owner: a folder inside a project's records
+worktree answers for that project (records_owner), as a path a brief names is judged.
+
+Run folders (record folders): runs_location says where a project keeps them, from its binding's `runs` field:
+`runs/` in the records worktree (records mode), or the binding's `reviews` in the code tree (tree mode).
 """
 
 from __future__ import annotations
@@ -253,11 +257,15 @@ def records_owner(folder, env=os.environ) -> Project | None:
 
 
 def main(argv) -> int:
+    owner = bool(argv) and argv[0] == "--owner"
+    argv = argv[1:] if owner else argv
     if not argv or argv[0] not in FIELDS:
-        print(f"usage: locator.py <{'|'.join(FIELDS)}> [folder]", file=sys.stderr)
+        print(f"usage: locator.py [--owner] <{'|'.join(FIELDS)}> [folder]", file=sys.stderr)
         return 2
     try:
         p = find(argv[1] if len(argv) > 1 else None)
+        if p is None and owner:
+            p = records_owner(argv[1] if len(argv) > 1 else Path.cwd())
     except SetupNeeded as e:
         print(f"bakehouse: {e}", file=sys.stderr)
         return SETUP_NEEDED

@@ -307,6 +307,7 @@ class TestReview(Fixture):
     def test_p2_4_prompt_names_the_bindings_review_folder(self):
         self.personal({"code-review": {"providers": ["design-author"],
                                        "prompt_append": "create {reviews}<date>-x/"}})
+        self.bpath.write_text(json.dumps({"owned": True, "runs": "tree"}))  # item 6: no runs, no reviews is records mode
         self.assertIn("create axis/runs/<date>-x/", self.dispatch("design-author")["prompt"])
         self.bpath.write_text(json.dumps({"owned": True, "reviews": "records"}))
         self.assertIn("create records/<date>-x/", self.dispatch("design-author")["prompt"])

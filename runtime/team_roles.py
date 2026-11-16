@@ -166,26 +166,27 @@ def providers(entry):
     return [p for p in entry if isinstance(p, str)] if isinstance(entry, list) else []
 
 
-def locate(field, path, log=None, timeout=RESOLVE_TIMEOUT, env=os.environ):
+def locate(field, path, log=None, timeout=RESOLVE_TIMEOUT, env=os.environ, owner=False):
     """(the locator's `field` for the project of the repo at path, or None when it has no team; problem or
     None). The locator runs as its own process, so a slow git is cut at timeout. problem says why the project
     cannot be known: the locator cannot be run, did not answer within timeout, or timeout left it no time at
     all, or the project needs setup (the locator's own message); the reason also goes to log. env: a lookup
-    for a path a brief names passes one without CLAUDE_PROJECT_DIR, so that path's own repo answers."""
+    for a path a brief names passes one without CLAUDE_PROJECT_DIR, so that path's own repo answers. owner: a path
+    in a project's records worktree answers for that project (the locator's --owner)."""
     p = Path(path).expanduser()
     if not p.is_absolute():
         return None, None
     # git needs a folder that exists: a record folder named before it is made is in its nearest parent's repo
     while not p.is_dir() and p != p.parent:
         p = p.parent
-    cmd = f"{LOCATOR} {field} {p}"
+    cmd = f"{LOCATOR} {'--owner ' if owner else ''}{field} {p}"
     if timeout <= 0:
         why = f"the project locator `{cmd}` was not run: no time was left before the deadline"
         if log:
             log(f"SKIP binding level: {why}")
         return None, why
     try:
-        proc = subprocess.Popen([sys.executable, str(LOCATOR), field, str(p)],
+        proc = subprocess.Popen([sys.executable, str(LOCATOR), *(["--owner"] if owner else []), field, str(p)],
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=dict(env),
                                 start_new_session=True)
         try:
@@ -219,12 +220,12 @@ def load_binding(path, log=None):
     return read_binding(path, log)[0]
 
 
-def read_binding(path, log=None, timeout=RESOLVE_TIMEOUT, env=os.environ):
+def read_binding(path, log=None, timeout=RESOLVE_TIMEOUT, env=os.environ, owner=False):
     """(binding, problem) for the repo at path. ({}, None): there is no binding (the locator finds no team
     there). ({}, problem): there may be one, and it cannot be read; problem names the cause and what to fix:
     the locator cannot be run or did not answer in time, the project needs setup, or binding.json does not
     parse, is not a JSON object, cannot be read or is a dangling symlink."""
-    where, why = locate("binding", path, log, timeout, env)
+    where, why = locate("binding", path, log, timeout, env, owner)
     if why or not where:
         return {}, why
     bpath = Path(where)
