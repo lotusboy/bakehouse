@@ -37,7 +37,9 @@ def team(repo: Path, binding: dict, env: dict) -> Path:
     """Give the git repo at repo a team: .team/binding.json and a records worktree beside it, named by
     `git config bakehouse.records`. Returns the records folder."""
     (repo / ".team").mkdir(exist_ok=True)
-    (repo / ".team" / "binding.json").write_text(json.dumps(binding))
+    # item 6: these records sit in the code tree, which a binding says with "runs": "tree" (no runs, no reviews
+    # is records mode, where a seal takes only a file under runs/ in the records worktree)
+    (repo / ".team" / "binding.json").write_text(json.dumps({"runs": "tree", **binding}))
     rec = repo.with_name(f"{repo.name}.team-records")
     for a in (["worktree", "add", "-q", "--orphan", "-b", "bakehouse-records", str(rec)],
               ["config", "bakehouse.records", str(rec)]):
@@ -948,7 +950,7 @@ class SealTest(unittest.TestCase):
 
     def test_f10_seal_checks_the_work_order_against_the_binding(self):
         self.binding.write_text(
-            json.dumps({"owned": True, "tracker": {"id": "^W-[0-9]+$"}})
+            json.dumps({"owned": True, "runs": "tree", "tracker": {"id": "^W-[0-9]+$"}})
         )
         p = self.gate("seal", "w-1", "first", self.f("moves.prediction.json"))
         self.assertEqual(p.returncode, 2)
@@ -1148,7 +1150,7 @@ class SealTest(unittest.TestCase):
 
     def test_a_measured_seal_carries_its_heads_code_trees(self):
         self.binding.write_text(
-            json.dumps({"owned": True, "signal": {"codeRoots": ["runs/"]}})
+            json.dumps({"owned": True, "runs": "tree", "signal": {"codeRoots": ["runs/"]}})
         )
         head = self.git("rev-parse", "HEAD")
         self.write(
@@ -1202,7 +1204,7 @@ class SealTest(unittest.TestCase):
 
     def code_roots(self):
         self.binding.write_text(
-            json.dumps({"owned": True, "signal": {"codeRoots": ["src/"]}})
+            json.dumps({"owned": True, "runs": "tree", "signal": {"codeRoots": ["src/"]}})
         )
 
     def seal_code(self, *commit_args, rnd="first"):

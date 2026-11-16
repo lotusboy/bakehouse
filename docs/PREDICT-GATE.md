@@ -380,10 +380,12 @@ by these events ("Closing a sealed work order", below).
    `prev` (below). `<round>` is `first` for the first round's files and the round label otherwise
    (`fix1` for `moves.prediction.fix1.json` or `moves.prediction-fix1.json`). A file whose name is not
    that round's is refused. When the project's binding names a `tracker.id` form, the work order of a
-   record in the bound repository must match it, as close requires. A file in a project's records
-   worktree (records mode) is that project's: its path is the one in the records worktree, as close
-   reads it, and the `HEAD` the seal names is the code checkout's: `--repo`'s, else the working folder's
-   when it is a checkout of that project, else the project's own folder.
+   record in the bound repository must match it, as close requires. In records mode the file must be under
+   `runs/` in the records worktree (exit 2 otherwise), and a file there is that project's: its path is the
+   one in the records worktree, as close reads it. The `HEAD` the seal names is the code checkout's:
+   `--repo`'s, else the working folder's. When neither is a checkout of that project the seal refuses
+   (exit 2): run seal from the code checkout, or pass `--repo <checkout>`. In tree mode a file inside a
+   records worktree is in no team's repository: give `--repo`.
 2. A measured seal also runs `check` against the round's prediction and baseline, found as `check`
    finds them, and carries the result (`pass` or `refused`, the failure count, and the sha256 of the
    prediction and baseline it used). It carries the `base` and `head` commits the measurement read,

@@ -1490,12 +1490,13 @@ def file_round(name: str) -> tuple[str, str]:
 def seal_target(path: Path, repo_arg: str | None, wo: str,
                 folder: bool = False) -> tuple[Path, str, object, dict, Path]:
     """(repository, path in it, project, binding, code checkout) for a file to seal. The project is the one the
-    locator finds for --repo, else for the file's repository; its ops ledger is the one close reads. A file in a
-    project's records worktree (records mode) is that project's (locator.records_owner): its path is read in the
-    records worktree, as close reads it, and the code checkout, whose HEAD the seal names, is --repo's, else the
-    working folder's when it is a checkout of that project, else the project's own folder. Otherwise the code
-    checkout is the file's repository. The work order must match the binding's tracker id form, when it names
-    one."""
+    locator finds for --repo, else for the file's repository; its ops ledger is the one close reads. The work
+    order must match the binding's tracker id form, when it names one.
+    Records mode (locator.runs_location): the file must be under runs/ in the project's records worktree, and a
+    file there is that project's (locator.records_owner). Its path is read in the records worktree, as close reads
+    it. The code checkout, whose HEAD the seal names, is --repo's, else the working folder's; either must be a
+    checkout of the project, or the seal refuses. Tree mode, as before records mode: the code checkout is the file's
+    repository, and a file in a records worktree with no --repo is in no team's repository."""
     for k in ("OPS_TS", "OPS_COMMIT"):
         if os.environ.get(k):
             os.environ.pop(k)  # so the refusal event is stamped now too
@@ -1510,16 +1511,16 @@ def seal_target(path: Path, repo_arg: str | None, wo: str,
     code = repo
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import locator
-    owner = None if folder else locator.records_owner(repo, {k: v for k, v in os.environ.items()
-                                                             if k != "CLAUDE_PROJECT_DIR"})
-    project = project_of(repo_arg) if repo_arg else owner or project_of(repo)
+    owner = None if folder or repo_arg else locator.records_owner(repo, {k: v for k, v in os.environ.items()
+                                                                        if k != "CLAUDE_PROJECT_DIR"})
     if owner is not None:
         try:
-            here = project_of(repo_arg or os.getcwd())
-        except BadInput:  # a working folder that needs setup is not a checkout of this project
-            here = None
-        same = here is not None and here.records.resolve() == owner.records.resolve()
-        code = here.root if same else owner.root
+            ob = json.loads(owner.binding.read_text())
+            keeps = isinstance(ob, dict) and locator.runs_mode(ob) == "records"
+        except (OSError, ValueError):  # locator.BadRuns is a ValueError
+            keeps = False
+        owner = owner if keeps else None  # a tree-mode project's records worktree holds no record to seal
+    project = project_of(repo_arg) if repo_arg else owner or project_of(repo)
     if project is None:
         raise BadInput(f"{repo_arg or repo} has no team (no .team/binding.json), so it keeps no ledger: "
                        "give --repo <the project's folder>")
@@ -1532,6 +1533,22 @@ def seal_target(path: Path, repo_arg: str | None, wo: str,
     form = (b.get("tracker") or {}).get("id") if isinstance(b.get("tracker"), dict) else None
     if isinstance(form, str) and not re.fullmatch(form, wo):
         raise BadInput(f"{wo!r} does not match the binding's tracker id form {form!r}")
+    if not folder:
+        rec, runs, mode = runs_where(project, b, repo)
+        if mode == "records":
+            base = (rec / runs).resolve()
+            if base not in path.resolve().parents:
+                raise BadInput(f"{path} is not under {base}/: in records mode a record file is sealed in the records "
+                               "worktree's runs/, where close reads it")
+            try:
+                here = project_of(repo_arg or os.getcwd())
+            except BadInput:  # a working folder that needs setup is not a checkout of this project
+                here = None
+            if here is None or here.records.resolve() != project.records.resolve():
+                raise BadInput(f"{repo_arg or os.getcwd()} is not a code checkout of {project.root}, and the seal "
+                               "names the HEAD of the code the record is about: run seal from the code checkout, or "
+                               "pass --repo <checkout>")
+            code = here.root
     return repo, rel, project, b, code
 
 
