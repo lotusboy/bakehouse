@@ -100,6 +100,64 @@ gate writes one `gate-refused` line, outcome `done`, to the repository's ops led
 `ops-event.sh`. The line carries the reason and the refused keys. If the line cannot be written, the
 override is refused. An override is never silent. An override on a passing check records nothing.
 
+**Writing the prediction from a shadow.** This is optional. It fits a shadow that the repo's own
+measure tool turned into a flat before/after pair. An engineer who derives the values by reasoning
+keeps writing the prediction by hand. `runtime/shadow-predict.sh` is a separate tool from the gate,
+so the gate never judges its own output. It reuses the gate's own functions.
+
+```bash
+runtime/shadow-predict.sh --before B.json --after S.json --expect E.json \
+  --out <record>/moves.prediction<R>.json
+# optional: --scopes K.json; --shadow-base SB.json --sealed-base X.json (give both or neither)
+```
+
+`B` is the round's before: `moves.baseline.json`, or the earlier measured file of a chained round.
+`S` is the shadow's after side. `K` is a flat `{key: scope text}` file. `SB` is the shadow's base
+side, and `X` is the record's sealed baseline. All five are flat `{key: value}` files.
+
+The expect file `E` is written and committed before the shadow is read. It is the independent part:
+
+```json
+{
+  "about": "T12: the example rule",
+  "mustNotMove": ["corpus:*"],
+  "expect": [
+    {"what": "page:home/title", "why": "the title is reworded"},
+    {"what": "hash:*", "why": "the hash changes", "value": "any"},
+    {"what": "score:demo|*|lost", "why": "lost counts change", "count": 2},
+    {"what": "count:pages", "why": "one page more", "to": 13},
+    {"what": "tests:passed", "why": "5 new tests", "delta": 5, "shadow": false}
+  ]
+}
+```
+
+1. The top-level fields are `about`, `baseline`, `tolerance`, `mustNotMove` and `expect`. The first
+   four are copied into the prediction.
+2. A key has moved by the gate's own rule (`tolerance` included). Each moved key takes the first
+   entry whose `what` matches it, by the gate's glob rule.
+3. A key in both files gets `from` and `to` copied from the files. A new key gets `to`. A key that
+   goes gets no value. The scope is the entry's `why`, or the key's text in `--scopes`.
+4. A copied value is marked: the scope starts with `[value from the shadow] `. A key that goes has no
+   value, so it has no mark.
+5. `"value": "any"` writes no value and no mark.
+6. An entry may give `to`, `delta` or `range`. The tool checks the shadow against it, then writes
+   the entry's value, with no mark.
+7. A `"shadow": false` entry is a key the shadow cannot measure. It is copied as written.
+
+The tool refuses (exit 1, nothing written, each key named) when:
+
+1. a moved key matches no entry, or matches only a `"shadow": false` entry;
+2. an entry matches no moved key, unless it says `"optional": true`;
+3. an entry's `count` differs from the number of keys it took;
+4. the shadow does not reach an entry's `to`, `delta` or `range`;
+5. `--shadow-base` differs from `--sealed-base`;
+6. the round's prediction exists already (a revision goes through `predict-gate.sh revise`);
+7. the result names no move (a round that moves nothing is written by hand, `"noMoves": true`);
+8. the self-check, `compare` against the same pair, finds a failure.
+
+An unknown field, a bad entry, or an entry's `what` that is also in `mustNotMove` is bad input
+(exit 2). The written file passes `predict-gate.sh check` against the same pair.
+
 **Closing a work order.** `predict-gate.sh close <work-order> [--repo DIR] [--binding FILE]`, run
 from the repository, is the gate a team job's close step runs (`/bakehouse:change`, step 9). It is the
 hard gate: the role hook's stop check (below) can miss a dispatch, close cannot be skipped.

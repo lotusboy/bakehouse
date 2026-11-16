@@ -28,9 +28,9 @@ The plugin's `bin/` is on the Bash tool's PATH, so these run from any Bash comma
 You rarely run these by hand: hooks and commands call them. Each script's header comment is its full
 reference.
 
-Seven tools are a `.sh` file you call and a `.py` file beside it that does the work: `decision`,
-`spend`, `ratify`, `save-report`, `predict-gate`, `driver-signal` and `mutate`. The table names the
-`.sh`.
+Eight tools are a `.sh` file you call and a `.py` file beside it that does the work: `decision`,
+`spend`, `ratify`, `save-report`, `predict-gate`, `shadow-predict`, `driver-signal` and `mutate`. The
+table names the `.sh`.
 
 "Records" below is the project's records folder; "machine" is the machine folder
 ([PROJECT-TEAM.md](./PROJECT-TEAM.md), "Where the team's files live").
@@ -45,6 +45,7 @@ Seven tools are a `.sh` file you call and a `.py` file beside it that does the w
 | `mutate.sh` | The mutation runner: plants each mutant of a reviewer's list in a clean `git archive` copy of a commit, runs the tests the binding's `mutation` block names for the file (an unmutated control first), and appends the rows of the reviewer's mutation record. Reviewers use it instead of writing a harness. | the round's `mutations.json` or `mutations-fix<N>.json`, in the review's record folder |
 | `records-check.py`, `record-contracts.json` | Checks each work order's record against what its job type must leave (a closed work order, the moves trio, a result, a reviewer's `mutations.json`), by content, and reports the kill rate per gate. | `registers/records.json`, in the records folder |
 | `predict-gate.sh` | The predicted-moves gate: refuses any measured move nobody predicted ([PREDICT-GATE.md](./PREDICT-GATE.md)). | `ops/events.jsonl` (seals and closes), in the records folder |
+| `shadow-predict.sh` | Optional. Writes a prediction from a shadow measured as a flat before/after pair and a written expect file, and refuses any move the expect file does not explain ([PREDICT-GATE.md](./PREDICT-GATE.md), "Writing the prediction from a shadow"). | the `--out` file, `moves.prediction<R>.json`, in the record folder |
 | `save-report.sh` | Saves an agent's report to a file byte for byte. | the file it is given |
 | `decision.sh` | Records each question put to the owner, the recommendation, the answer and the outcome. | `decisions/ledger.jsonl` and `DECISIONS.md`, in the records folder |
 | `spend.sh` | Records measured tokens per agent, and what each run was for and produced, grouped into waves with a ceiling. | `spend/ledger.jsonl`; a lesson stub in `TOOLS.md` when a run did worse than predicted; both in the records folder |

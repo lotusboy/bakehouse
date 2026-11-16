@@ -406,6 +406,10 @@ not a gate.
      input reaches listed;
    - a **static scan** of every stated value in the latest outputs and their data files, rows
      included, for the cases no input reaches.
+   A shadow measured as a flat before/after pair can go through
+   `"${CLAUDE_PLUGIN_ROOT}/runtime/shadow-predict.sh"`, which writes the prediction file from it and an
+   expect file written first (bakehouse `docs/PREDICT-GATE.md`, "Writing the prediction from a shadow").
+   The tool is optional: an engineer who derives the values by reasoning keeps doing so.
 2. Each predicted move names the output, the case, the value before and the value after. Each
    `mustNotMove` output is listed as unchanged. A bounded count (a test count, for example) is
    written in the prediction file as a `range`, never as words under `to`: the check compares `to`
@@ -506,7 +510,10 @@ command, pass and when]. The gates that prove the need: [work order: gates].
   Before your first edit, write the prediction (shadow run with calls per site and the unreached
   sites; static scan of every stated value, data rows included) to the record folder as
   [the file name in binding.gates.predictedMoves.prediction]: every expected move with its case and its value before
-  and after, and every must-not-move output as unchanged. A round that moves nothing writes
+  and after, and every must-not-move output as unchanged.
+  A shadow measured as a flat before/after pair can go through `${CLAUDE_PLUGIN_ROOT}/runtime/shadow-predict.sh`,
+  which writes the prediction from it and an expect file you write first. The tool is optional: values
+  you derive by reasoning stay hand-written. A round that moves nothing writes
   "noMoves": true and lists no move; it passes only when its measured pair shows 0 moved keys. Commit it by its path, its subject starting
   with the work-order id, before your first code edit; a fix round's prediction too, before that
   round's first code edit. Then STOP and report it. Switch no site
