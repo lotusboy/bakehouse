@@ -1,7 +1,7 @@
 ---
 name: blind-readers
 description: >-
-  Put a set of items to two (or more) isolated readers who each read the RAW source, and send the
+  Put a set of items to two isolated readers who each read the RAW source, and send the
   owner only the items every reader agrees on, as a phone-sized yes/no with the evidence. Use this
   skill whenever the owner must decide something that a careful reading of source material can
   settle: whether a correction is right, how a passage should be classified or turned into logic,
@@ -54,11 +54,15 @@ filled without them.
 | Source location | The folder or files that hold the raw source | `product-data/schemes/x/raw/` |
 | Rule or question | The one rule the readers apply to every item | "Is the stored value what the source states?" |
 | Answer vocabulary | The closed set of labels, and the closed set of actions | labels `CORRECT / WRONG / PARTLY`; actions `accept / reject / hold` |
-| Must not read | Everything that would anchor the reader | other readers' output, the PM's notes, prior labels, the item's current value if it is under test |
+| Must not read | Everything that would anchor the reader | other readers' output, the PM's notes, prior labels, and the item's stored value unless the rule is "Is the stored value what the source states?" |
 
 **Prior labels are the main anchor.** If the items already carry a label (a classification, a
 "fixed" flag, a gap class), strip it from what the readers see. Give them the id and the location
 only.
+
+**The stored value goes to the readers only when the rule tests it.** When the rule is "Is the
+stored value what the source states?", the brief gives the stored value, and nothing about why it is
+stored. For any other rule the stored value is on the must-not-read list.
 
 ## Step 1 — Estimate the spend, then get the go
 
@@ -79,25 +83,23 @@ ${CLAUDE_PLUGIN_ROOT}/runtime/spend.sh wave open <wave-name> --ceiling <tokens>
 ## Step 2 — Brief each reader
 
 Copy `${CLAUDE_PLUGIN_ROOT}/templates/blind-readers-brief.md`. Fill every `<…>` slot. Send the
-**same brief** to every reader, changing only the reader letter (A, B, …).
+**same brief** to every reader, changing only the reader letter (A or B).
 
 - Each reader is the `human-expert` agent (`${CLAUDE_PLUGIN_ROOT}/agents/human-expert.md`). Dispatch
   it as `subagent_type: "role:expert"`; that resolves to `bakehouse:human-expert` unless the project
   maps the `expert` role to another agent. Paste the project's expert role into the brief under
   "Your role".
-- **Reader A uses `opus`. Reader B uses `fable`.** Two runs of one model are one reader (the
-  `dev-team` skill, "Independence"). The `expert` role forces `fable` on every dispatch
+- **Reader A uses `opus`. Reader B uses `fable`.** The two readers run on two different models,
+  because two runs of one model are one reader (the `dev-team` skill, "Independence"). The `expert` role forces `fable` on every dispatch
   (`${CLAUDE_PLUGIN_ROOT}/runtime/agent-roles.json`). So reader A's dispatch sets `model: "opus"` and
   puts `[model-approved]` in its description, under the owner's yes from Step 1.
-- A third reader, if one is needed, uses a third model that neither A nor B used. If no third model
-  is available, say in the agreement table and in any question to the owner that reader C is not
-  independent of the reader whose model it shares.
 - Start each reader as a **fresh agent**. Never `SendMessage` an agent that has seen another
   reader's output or the PM's view.
 - Start the readers **in parallel**, in one message. Neither may wait on the other.
 - Do not tell a reader that another reader exists beyond the line the template already has.
 - Do not swap in a smaller model to save spend. A reading task is where a weak model guesses.
-- Tell readers where to write nothing. Readers report back; they do not edit files or commit.
+- Readers write nothing except page renders, in the scratch folder the brief names for them. Readers
+  report back; they do not edit files or commit.
 
 The brief enforces six rules. Do not remove any of them:
 
@@ -134,8 +136,14 @@ ${CLAUDE_PLUGIN_ROOT}/runtime/blind-compare.sh <run-folder>/reader-a.md <run-fol
 The tool reads the last ```json block in each report. It prints one row per item. An item
 **agrees** only when every reader gives the same label **and** the same action. An item missing
 from any reader counts as a disagreement. An item with an empty or missing label or action counts as
-a disagreement. The exit code is 0 when all items agree, 1 when any disagree, and 2 when a report
-has no valid JSON block (none, one that does not parse, no `items` list, or an item with no `id`).
+a disagreement. The exit code is 0 when all items agree and 1 when any disagree. It is 2 when one
+reader is passed twice (the same file twice, or two reports naming the same reader), or when a
+report has no valid JSON block (none; a ```json opener after the last complete block; one that does
+not parse; an empty or missing `items` list; an item with no `id`; an id that appears twice).
+
+Check the table against the brief. Its row count must equal the item count in the brief, and every
+label and action must be in the closed vocabulary. An extra or missing id, or a label or action
+outside the vocabulary, means that item is held.
 
 A report without a valid JSON block: fill `${CLAUDE_PLUGIN_ROOT}/templates/blind-readers-agreement.md`
 by hand from the reports. The same rule applies.
@@ -148,9 +156,13 @@ different reasons have not agreed. Mark such an item as disagreed.
 
 - **Agreed items** go to the owner (Step 6).
 - **Disagreed items are held.** They do not go to the owner as a question. Report them in one line
-  each with both readers' quotes side by side, and say what happens next: a third reader on that
-  item alone, a render of the exact page, or park it. Never resolve a disagreement by the PM's own
-  reading and then send it as agreed.
+  each with both readers' quotes side by side, and say which of three things happens next:
+  1. reword the rule, and re-run both readers on that item;
+  2. render the exact page, and re-run both readers on that item;
+  3. park it.
+
+  Never settle a disagreement by a majority vote, and never by the PM's own reading. A held item is
+  never sent as agreed.
 
 ## Step 6 — Write the phone-sized question
 
@@ -176,9 +188,11 @@ question reads in this order:
 Keep each question under about 8 lines, so it fits a phone screen. One question per message where
 the project asks for one decision at a time.
 
-`decision.sh ask` checks the question as sent. A guess word in it (probably, likely, seems, and the
-others the `bakehouse:pm` skill lists) must be labelled `guess:`, and a question that proposes a fix
-needs `--upstream`. State what the readers quoted instead of guessing.
+`decision.sh ask` checks the question as sent. A guess word in it must be labelled `guess:`; the
+words are `GUESS_WORDS` in `${CLAUDE_PLUGIN_ROOT}/runtime/decision.py`. In a correction question the
+one most likely to bite is "should": "the stored value should be 10" is refused, while a sentence
+that opens with "Should" is not counted. A question that proposes a fix needs `--upstream`. State
+what the readers quoted instead of guessing.
 
 ## Step 7 — Log it in the decision ledger
 
@@ -195,22 +209,34 @@ ${CLAUDE_PLUGIN_ROOT}/runtime/decision.sh ask --category <correction|engine-desi
 - `--recommendation` and `--confidence` are recorded even for `ask-blind`. The question as sent
   leaves them out; the ledger keeps them, so the score can be measured.
 - `--read` names the source file of the example in the question, opened by the PM itself to check
-  the quote. `--read-what` says which page and clause. A reader's report is not a `--read` source.
+  the quote. `--read-what` says which page and clause; it needs at least one word of two letters or
+more, and digits do not count (`p.14 cl 4.2` passes, `p.14` alone is refused). A reader's report is
+not a `--read` source.
   The categories in the project's `groundingExempt` list need no `--read`.
 
 When the owner replies:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/runtime/decision.sh answer <id> --choice "<the owner's words>"
+${CLAUDE_PLUGIN_ROOT}/runtime/decision.sh answer <id> --choice "<the owner's words>" --agreed <yes|no>
 ```
+
+`--agreed yes` means the owner's choice is the recommendation; `--agreed no` means it is not. Always
+pass it. Without it, `decision.sh answer` refuses a choice that is not the recommendation word for
+word, and a blind answer is left unscored, so a blind "no" would never count against the score.
 
 Held items are not logged as asks. They are logged when they come back agreed.
 
 ## Step 8 — Record what happened
 
-Record each reader's measured tokens with `${CLAUDE_PLUGIN_ROOT}/runtime/spend.sh record --kind expert`
-(the harness's figure, with the fields its usage line asks for). Compare the spend with the Step 1
-estimate, and close the wave (`spend.sh wave close`). Note the agreement rate (agreed / total). A low
+Record each reader's measured tokens (the harness's figure), with the other fields its usage line
+asks for:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/runtime/spend.sh record ... --kind expert --model <opus|fable> --wave <wave-name>
+```
+
+Compare the spend with the Step 1 estimate, and close the wave: `spend.sh wave close <wave-name>`.
+Note the agreement rate (agreed / total). A low
 agreement rate is a finding about the rule or the source, not about the readers. If more than a
 third of items disagree, the rule or the vocabulary is probably ambiguous. Rewrite it before a
 second round.
@@ -246,7 +272,9 @@ interchange format is not written up as a document: the input checks in
    This writes `sample.json`, `readers-sample.md` (what the readers see) and `brief-A.md`,
    `brief-B.md`. The briefs come from `${CLAUDE_PLUGIN_ROOT}/templates/ratify-vocabulary-brief.md`.
    The same seed and the same files give the same sample.
-4. **Two readers.** Start two fresh agents in parallel, one per brief (Step 2 above). They see the
+4. **Two readers.** Before sending each `brief-X.md` to `role:expert`, add to it a "Your role"
+   section (the project's expert role) and a length line, as the item-mode brief has. Then start two
+   fresh agents in parallel, one per brief (Step 2 above). They see the
    pattern, the class and the full matched passages. They do not see why the entry was added, its
    `kind` or `source`, or the code that holds it. Labels: **RIGHT** (right for every sample),
    **WRONG** (wrong for every sample, or most), **MIXED** (right for some, wrong for others).

@@ -1,4 +1,4 @@
-# Blind reader brief — reader <A | B | …>
+# Blind reader brief — reader <A | B>
 
 Fill every `<…>` slot. Send the same text to every reader; change only the reader letter.
 
@@ -29,7 +29,9 @@ For each item below, read the raw source and apply this rule:
 | <C-01> | <file, page or sheet, clause or cell> |
 | <C-02> | <…> |
 
-<If the rule tests a stored value, give the stored value here and nothing about why it is stored.>
+<Only when the rule is "Is the stored value what the source states?": give each item's stored value
+here, and nothing about why it is stored. For any other rule, leave this out: the stored value is on
+the do-not-read list below.>
 
 ## Answer vocabulary
 
@@ -41,6 +43,7 @@ For each item below, read the raw source and apply this rule:
 - Any other reader's report or output.
 - The PM's notes, plans, summaries or messages about these items.
 - Prior labels or classifications of these items: <name the files or fields>.
+- The stored value of these items, unless it is given above: <name the files or fields>.
 - <anything else that would anchor you>
 
 If you open one of these by accident, say so in your report.
@@ -48,7 +51,8 @@ If you open one of these by accident, say so in your report.
 ## How to read
 
 1. **Raw source first.** Render the page or sheet, or extract the text from the original file. On
-   macOS, `qlmanage -t -s 1600 -o <dir> <file>` renders a PDF or xlsx page. `qlmanage` exists only
+   macOS, `qlmanage -t -s 1600 -o <render folder> <file>` renders a PDF or xlsx page. Renders go
+   in <render folder: a scratch folder for this run>, and nowhere else. `qlmanage` exists only
    on macOS: elsewhere, extract the text from the original file, and say so for that item. Do not
    rely on an index, a summary or a derived file. If you can only reach a derived file, say so for
    that item.
@@ -63,7 +67,7 @@ If you open one of these by accident, say so in your report.
 
 Length: about <100–200> words per item, plus the JSON block. This replaces any default length.
 
-Do not edit files, commit, or start other agents.
+Do not edit files, commit, or start other agents. Write nothing except renders in <render folder>.
 
 ## Report shape
 

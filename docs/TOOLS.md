@@ -50,7 +50,7 @@ and `mutate`. The table names the `.sh`.
 | `decision.sh` | Records each question put to the owner, the recommendation, the answer and the outcome. | `decisions/ledger.jsonl` and `DECISIONS.md`, in the records folder |
 | `spend.sh` | Records measured tokens per agent, and what each run was for and produced, grouped into waves with a ceiling. | `spend/ledger.jsonl`; a lesson stub in `TOOLS.md` when a run did worse than predicted; both in the records folder |
 | `ratify.sh` | Records which entries of a closed vocabulary two blind readers agreed on. | `ratifications/ledger.jsonl`, in the records folder |
-| `blind-compare.sh` | Prints the agreement table for two or more blind readers' reports (the `blind-readers` skill): an item agrees only when every reader gives the same label and action. Exit 0 all agree, 1 any disagree, 2 a report has no valid JSON block. | nothing (the table goes to stdout) |
+| `blind-compare.sh` | Prints the agreement table for two or more blind readers' reports (the `blind-readers` skill): an item agrees only when every reader gives the same label and action. Exit 0 all agree, 1 any disagree, 2 one reader passed twice or a report has no valid JSON block. | nothing (the table goes to stdout) |
 | `ops-event.sh` | Appends one event to the repo's ops ledger. | `ops/events.jsonl`, in the records folder |
 | `ops-gap.sh` | Says how many commits the ops ledger is behind. | nothing |
 | `lane-event.sh`, `heavy-run.sh` | Record parallel work inside one project; run one heavy job under its lane's lock. | `ops/lanes.jsonl`, in the records folder; `locks/`, in the machine folder |
@@ -68,4 +68,4 @@ five skills:
 | `dev-team` | deciding whether to do work yourself or hand it to one agent or several, which model, and which checker to run before a finding or a change ships |
 | `step-back` | a chain of work shows strain — an estimate overrunning twice, a fix round producing a new finding of the same kind, a third agent on one item |
 | `live-prism` | one item keeps resisting a fix — look at its real input from at least three sides before writing another rule |
-| `blind-readers` | the owner must judge items read from a source — two or more blind readers read it, and only the items they all agree on go to the owner; also, ratifying a closed vocabulary with `ratify.sh` |
+| `blind-readers` | the owner must judge items read from a source — two blind readers read it, and only the items both agree on go to the owner; also, ratifying a closed vocabulary with `ratify.sh` |

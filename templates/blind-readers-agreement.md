@@ -17,7 +17,7 @@ Agreed: <n> of <total>. Disagreed: <n>.
 
 | Id | A quote and reading | B quote and reading | Next step |
 |---|---|---|---|
-| <C-02> | "<quote>" (p.N) — WRONG | "<quote>" (p.M) — PARTLY | <third reader on C-02 / render p.N / park> |
+| <C-02> | "<quote>" (p.N) — WRONG | "<quote>" (p.M) — PARTLY | <reword the rule and re-run both on C-02 / render p.N and re-run both / park> |
 
 ## Owner questions (agreed items, grouped by cause)
 

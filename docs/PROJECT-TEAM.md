@@ -81,7 +81,7 @@ A role names a job. An agent fills a role. A job dispatches `role:<job>:<role>`,
 | `reviewer` | reviews an engineer's diff in either job, `refactor` or `change`, and runs the risky case | `bakehouse:reviewer` |
 | `absence-check`, `count-check`, `blast-radius` | check a claim of absence, a count, the reach of a change | `bakehouse:` and the role's name |
 | `design-author`, `design-reviewer` | write and review a design | `bakehouse:` and the role's name |
-| `expert` | an independent reading of one question about what a source means, standing in for a human expert in the project's field; it reads blind and advises, never rules; two or more of them, on different models, are the readers of the `blind-readers` skill | `bakehouse:human-expert` |
+| `expert` | an independent reading of one question about what a source means, standing in for a human expert in the project's field; it reads blind and advises, never rules; two of them, on two different models, are the readers of the `blind-readers` skill | `bakehouse:human-expert` |
 | `code-review` | single-pass code review | none shipped; falls back to the built-in `general-purpose` agent |
 
 Before R0.1 the agents `bakehouse:engineer` and `bakehouse:reviewer` were named `refactor-engineer` and `refactor-reviewer`; an older record that names those agents means these two.
