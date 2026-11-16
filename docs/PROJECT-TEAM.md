@@ -85,9 +85,11 @@ role hook.
    binding that is in tree mode only because it names `reviews`: add `"runs": "tree"` to say so.
 3. `"runs": "records"` beside a `reviews` field fails preflight. So does any other `runs` value. Close
    and the other readers refuse such a binding too.
-4. In records mode, the project's git hooks do not run in the records worktree. So a record file is
+4. In records mode, bakehouse's pre-commit check does not run in the records worktree. So a record file is
    committed with `bakehouse record commit <record folder> -m <message>`. It runs the pre-commit
-   hook's own check on that folder, then commits that folder only (docs/TOOLS.md).
+   hook's own check on that folder, then commits that folder only (docs/TOOLS.md). A plain `git commit` in
+   the records worktree is not checked at commit time: bakehouse's hook launcher skips the records branch.
+   Close still checks the record.
 5. Do not change the mode while a work order is open. Close reads the record only where the mode says.
    After a switch, close finds no record folder for that work order and refuses. A work order that
    is already closed stays closed: `bakehouse status` reads the ledger, not the record folder.

@@ -1,8 +1,10 @@
 """`bakehouse record commit <record folder> -m <message> [-m <message> ...]`: commit one run folder on the records
 branch. Standard library only. Run through bin/bakehouse.
 
-In records mode (locator.runs_location) a project's run folders sit under `runs/` in its records worktree, where
-the project's git hooks do not run. This command is the commit the pre-commit hook would have checked:
+In records mode (locator.runs_location) a project's run folders sit under `runs/` in its records worktree. That
+worktree shares the main clone's git hooks, and bakehouse's hook launcher exits early on the records branch, so
+bakehouse's pre-commit check does not run there (a project's own pre-commit hook still does). This command is the
+commit that check would have judged:
 1. The folder must be under the records worktree's `runs/` (exit 2). A project that keeps its run folders in
    its code tree commits them with git (exit 2).
 2. It runs the predicted-moves gate's commit-time check (predict-gate.py run_hook, the hook's own function) on
@@ -10,7 +12,8 @@ the project's git hooks do not run. This command is the commit the pre-commit ho
    nothing. PREDICT_GATE_OVERRIDE="<reason>" [PREDICT_GATE_TASK=<id>] works as it does for the hook.
 3. It stages and commits that folder only, by path (`git add -- <folder>`, `git commit -m ... -- <folder>`),
    retrying while git's index.lock is held, as the ledger's anchor does, then reports. Each -m passes to git
-   unchanged, so a trailer such as `Prediction-approved: <decision id>` goes in its own -m.
+   unchanged, so a trailer such as `Prediction-approved: <decision id>` goes in its own -m. When git does not
+   commit (a project's own pre-commit hook refuses, say), the folder is unstaged again: nothing is left staged.
 
 Exit 0 committed; 1 the gate refused, or git did not commit (its message is shown); 2 bad usage or a folder this
 command does not commit.
@@ -137,6 +140,7 @@ def main(argv, root) -> int:
         return 1
     why = commit(rec, rel, got[1])
     if why:
+        git(rec, "reset", "-q", "--", rel)  # git add staged it; a failed commit leaves the index as it found it
         say(f"nothing committed: git did not commit {rel} in {rec}: {why}")
         return 1
     say(f"committed {rel} on the {locator.RECORDS_BRANCH} branch: "
