@@ -429,7 +429,8 @@ class Close(RepoFixture):
 
     def test_close_override_is_recorded_then_closes(self):
         self.trio(measured={**BASE, "rules:fired": 125})
-        env = dict(self.env, PREDICT_GATE_CLOSE_OVERRIDE="owner go: the +5 is accepted")
+        covers = ",".join(self.ids(self.close().stdout))  # seal F5: the override names what it covers
+        env = dict(self.env, PREDICT_GATE_CLOSE_OVERRIDE=f"owner go: the +5 is accepted | covers: {covers}")
         p = self.close(env=env)
         self.assertEqual(p.returncode, 0, p.stdout)
         self.assertIn("OVERRIDDEN by the owner", p.stdout)
@@ -513,8 +514,11 @@ class Close(RepoFixture):
         self.put("moves.measured.json", {**BASE, "rules:fired": 125})
         self.commit()
         p = subprocess.run([str(GATE), "close", "T7", "--repo", str(self.repo),
+                            "--binding", str(other)], capture_output=True, text=True, env=self.env)
+        covers = ",".join(self.ids(p.stdout))  # seal F5: the override names what it covers
+        p = subprocess.run([str(GATE), "close", "T7", "--repo", str(self.repo),
                             "--binding", str(other)], capture_output=True, text=True,
-                           env=dict(self.env, PREDICT_GATE_CLOSE_OVERRIDE="x"))
+                           env=dict(self.env, PREDICT_GATE_CLOSE_OVERRIDE=f"x | covers: {covers}"))
         self.assertEqual(p.returncode, 1, p.stdout)
         self.assertIn("OVERRIDE REFUSED", p.stdout)
         self.assertFalse(self.ledger.exists())

@@ -279,10 +279,26 @@ file, and when a file differs or is missing. It has no override: the full close'
 owner's exception. A pass writes a `note` event, never a second `work-order-closed` event. Close also unsets `OPS_TS` and `OPS_COMMIT`, the backfill variables: a close is stamped
 with its own time and the repository's own commit.
 
-**The owner's exception:** `PREDICT_GATE_CLOSE_OVERRIDE="<reason>" predict-gate.sh close
-<work-order>`. It writes a `gate-refused` line first, then the `work-order-closed` line marked as
-overridden. Close reads only this variable. The hook's `PREDICT_GATE_OVERRIDE` never overrides a
-close, so a value exported for a commit cannot close a work order.
+**The owner's exception:** `PREDICT_GATE_CLOSE_OVERRIDE="<reason> | covers: <refusal id>,..."
+predict-gate.sh close <work-order>`. An override names each refusal it covers.
+
+1. Close lists each refusal with an id: `  - R-3fa9c1: <the refusal's text>`. The id is `R-` and the
+   first 6 hex digits of the sha256 of the refusal's text. So the same refusal of the same record has
+   the same id on every run, and an id cannot come to mean a refusal the owner did not read.
+2. The override gives a reason, then `| covers:`, then the ids, separated by commas or spaces. For
+   example: `PREDICT_GATE_CLOSE_OVERRIDE="owner go, decision d20260101-a1b2c3 | covers: R-3fa9c1,R-07be22"`.
+3. Close refuses the override (exit 1, nothing closed, the output says `OVERRIDE REFUSED` and why) when
+   it has no `| covers:` part, no reason, a word that is not an id, or leaves a refusal uncovered. It
+   names each uncovered refusal, with its id and text, and prints the full form with every id.
+4. An id the override names that this close does not refuse is not an error. Close prints a note.
+5. A passing override writes a `gate-refused` line first (purpose `work order close overridden`), then
+   the `work-order-closed` line marked as overridden. The `gate-refused` line holds the reason, the ids
+   it covers, and every refusal with its id (not only the first 3).
+6. Close reads only this variable. The hook's `PREDICT_GATE_OVERRIDE` never overrides a close, so a
+   value exported for a commit cannot close a work order.
+7. Why ids, not the owner's decision id: the decision ledger records a question, its options and the
+   owner's choice. It has no field that lists refusals. The reason may still cite a decision id, as in
+   the example.
 
 **`history/`: what is not part of the closed record.** A record folder may hold files that close must
 not check: a prototype measurement, an older measurement, a superseded or revised prediction. Put each

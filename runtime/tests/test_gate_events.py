@@ -518,12 +518,13 @@ class TestRefusalsWriteOneEvent(SpendScratch):
             [(e["gate"], e["purpose"], e["task"]) for e in self.refusals()],
             [("predict-gate:close", "work order close refused", "T7")],
         )
+        covers = ",".join(re.findall(r"^  - (R-[0-9a-f]{6}): ", p.stdout, re.M))  # seal F5
         p = self.pg(
             "close",
             "T7",
             "--repo",
             str(self.work),
-            env={"PREDICT_GATE_CLOSE_OVERRIDE": "owner said yes"},
+            env={"PREDICT_GATE_CLOSE_OVERRIDE": f"owner said yes | covers: {covers}"},
         )
         self.assertEqual(p.returncode, 0, p.stdout)
         refused, closed = self.events()[-2:]
@@ -595,13 +596,15 @@ class TestRefusalsWriteOneEvent(SpendScratch):
         )
         self.git("add", "-A")
         self.git("commit", "-q", "-m", "T7 record")
-        self.assertEqual(self.pg("close", "T7", "--repo", str(self.work)).returncode, 1)
+        p = self.pg("close", "T7", "--repo", str(self.work))
+        self.assertEqual(p.returncode, 1)
+        covers = ",".join(re.findall(r"^  - (R-[0-9a-f]{6}): ", p.stdout, re.M))  # seal F5
         p = self.pg(
             "close",
             "T7",
             "--repo",
             str(self.work),
-            env={"PREDICT_GATE_CLOSE_OVERRIDE": "owner said yes"},
+            env={"PREDICT_GATE_CLOSE_OVERRIDE": f"owner said yes | covers: {covers}"},
         )
         self.assertEqual(p.returncode, 0, p.stdout)
         before = self.ledger.read_text()

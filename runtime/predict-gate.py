@@ -53,8 +53,9 @@ each code commit of the work order (the first tracker id in its subject) comes a
 prediction commit and no later than that round's measurement, and none comes after the latest
 measured file's commit. Ordered by commit time; judged only for work orders with a round whose
 prediction is first committed on or after ORDER_FROM. An uncommitted or untracked change under the code
-roots refuses any close, with no cut-off. The owner's override:
-PREDICT_GATE_CLOSE_OVERRIDE="<reason>", recorded as a `gate-refused` event first.
+roots refuses any close, with no cut-off. Each refusal is listed with its id (refusal_id). The owner's
+override names every refusal it covers: PREDICT_GATE_CLOSE_OVERRIDE="<reason> | covers: R-xxxxxx,...",
+recorded as a `gate-refused` event first, with every refusal.
 
 close WORK-ORDER --merged (step 10): checks only that the files the latest work-order-closed
 event of the work order hashed hash the same at HEAD; refuses when there is no such event. No
@@ -1162,6 +1163,44 @@ def sealed_refusals(repo: Path, folders: list, evs: list, decided: dict, wo: str
     return out
 
 
+REFUSAL_ID = re.compile(r"R-[0-9a-f]{6}")
+COVERS = re.compile(r"(.*)\|\s*covers:(.*)", re.S)
+
+
+def refusal_id(text: str) -> str:
+    """A close refusal's id: R- and the first 6 hex digits of its text's sha256. The same refusal of the same
+    record gets the same id on every run, so an override names the refusals the owner read, by their text."""
+    return "R-" + sha256(text.encode("utf-8"))[:6]
+
+
+def parse_override(text: str) -> tuple[str, list | None]:
+    """(the reason, the refusal ids it covers) from "<reason> | covers: R-xxxxxx,R-yyyyyy"; the ids are None when
+    the text has no "| covers:" part."""
+    m = COVERS.fullmatch(text)
+    if not m:
+        return text.strip(), None
+    return m.group(1).strip(), [x for x in re.split(r"[\s,]+", m.group(2)) if x]
+
+
+def override_refusal(text: str, ids: dict) -> str | None:
+    """Why the owner's close override does not pass this close's refusals; None when it does. ids: refusal id ->
+    its text. The override gives a reason and names every refusal it covers, by id."""
+    reason, covers = parse_override(text)
+    form = f'{CLOSE_OVERRIDE}="<reason> | covers: {",".join(ids)}"'
+    if covers is None:
+        return f"the override names no refusal it covers. Name each one by its id: {form}"
+    if not reason:
+        return f"the override gives no reason before '| covers:': {form}"
+    bad = [x for x in covers if not REFUSAL_ID.fullmatch(x)]
+    if bad:
+        return f"{', '.join(bad)} is not a refusal id (R- and 6 hex digits, as listed above): {form}"
+    left = [i for i in ids if i not in covers]
+    if left:
+        return ("the override does not cover " + "; ".join(f"{i} ({ids[i]})" for i in left)
+                + f". It covers only the refusals it names: {form}")
+    return None
+
+
 def run_close(wo: str, repo_arg: str | None, binding_arg: str | None, merged: bool = False) -> int:
     for k in ("OPS_TS", "OPS_COMMIT"):  # backfill only: a close is stamped with its own time and commit
         os.environ.pop(k, None)
@@ -1366,24 +1405,32 @@ def run_close(wo: str, repo_arg: str | None, binding_arg: str | None, merged: bo
         print(f"  note: {n}")
     override = os.environ.get(CLOSE_OVERRIDE, "").strip()
     if refused:
+        ids = {refusal_id(r): r for r in refused}
         print(f"Refused: {len(refused)}.")
         for r in refused:
-            print(f"  - {r}")
-        if not override or merged:
+            print(f"  - {refusal_id(r)}: {r}")
+        why = None if not override or merged else override_refusal(override, ids)
+        if not override or merged or why:
+            if why:
+                print(f"OVERRIDE REFUSED: {why}")
             print("Result: REFUSED. The work order does not close. Owner-approved exception only: "
-                  f'{CLOSE_OVERRIDE}="<reason>" predict-gate.sh close {wo}'
-                  + (" (the full close; --merged has no override)" if merged else ""))
+                  f'{CLOSE_OVERRIDE}="<reason> | covers: <refusal id>,..." predict-gate.sh close {wo}, naming '
+                  "every refusal id above" + (" (the full close; --merged has no override)" if merged else ""))
             refusal_event("predict-gate:close", "work order close refused",
                           "work order close refused | refused: " + "; ".join(refused[:3]), wo, len(refused), repo)
             return 1
+        reason, covers = parse_override(override)
+        extra = [i for i in covers if i not in ids]
+        if extra:
+            print(f"  note: the override also names {', '.join(extra)}, which this close does not refuse")
         err = ops_event(repo, "gate-refused", wo, "work order close overridden", len(refused),
-                        f"work order close overridden: {override} | refused: " + "; ".join(refused[:3]),
-                        "predict-gate:close")
+                        f"work order close overridden: {reason} | covers: {', '.join(covers)} | refused: "
+                        + "; ".join(f"{refusal_id(r)} {r}" for r in refused), "predict-gate:close")
         if err:
             print(f"OVERRIDE REFUSED: it could not be recorded in the ops ledger ({err}). "
                   "An override is never silent, so the close stays refused.")
             return 1
-        print(f"OVERRIDDEN by the owner, recorded in the ops ledger: {override}")
+        print(f"OVERRIDDEN by the owner, recorded in the ops ledger: {reason}, covering {', '.join(covers)}")
     note = "; ".join((["OVERRIDDEN, see the gate-refused line"] if refused else []) + (passed or ["no pair passed"])
                      + [f"note: {n}" for n in notes] + [f"ledger: {ledger}"])
     kind, purpose = (("note", "work order close confirmed on the default branch (--merged)") if merged else

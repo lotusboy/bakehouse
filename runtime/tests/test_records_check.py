@@ -4,6 +4,7 @@ repository with .team/binding.json and a records worktree (the ops ledger, the r
 import hashlib
 import json
 import os
+import re
 import subprocess
 import tempfile
 import unittest
@@ -796,8 +797,10 @@ class TestRealClose(Fixture):
     def test_an_override_written_by_predict_gate_counts(self):
         self.commit("T1: the change", {"src/a.py": "x\n"})
         self.record("2026-06-10-T1-step1-review", {"prediction.md": "prose\n", "result.md": "r\n"})
-        self.assertEqual(self.close().returncode, 1)
-        p = self.close(PREDICT_GATE_CLOSE_OVERRIDE="owner go")
+        p = self.close()
+        self.assertEqual(p.returncode, 1)
+        covers = ",".join(re.findall(r"^  - (R-[0-9a-f]{6}): ", p.stdout, re.M))  # seal F5
+        p = self.close(PREDICT_GATE_CLOSE_OVERRIDE=f"owner go | covers: {covers}")
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         r = self.check()
         self.assertEqual(r["workOrders"]["T1"]["close"], "overridden")
