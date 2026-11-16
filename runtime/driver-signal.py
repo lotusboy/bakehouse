@@ -100,6 +100,9 @@ from datetime import date, timedelta
 from itertools import combinations
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import locator  # noqa: E402 - the plugin's own module, beside this file
+
 DEFAULTS = {"threshold": 0.5, "boilerplate": 0.75, "windowDays": 30, "minRuns": 3, "minRunsNameOnly": 5,
             "coherent": 0.5, "maxBytes": 1_000_000, "nested": False, "register": "drivers.json", "owner": "pm",
             "families": []}
@@ -124,12 +127,18 @@ def fail(msg):
 
 # ---------- the rules ----------
 
-def load_rules(binding_path, overrides=None):
+def load_rules(binding_path, overrides=None, project=None):
+    """The rules from the binding. project: the project, for the run folders' place in records mode
+    (locator.runs_location): runs/ in its records worktree, a folder that need not exist yet."""
     try:
         binding = json.loads(Path(binding_path).read_text(encoding="utf-8"))
     except (OSError, ValueError) as e:
         fail(f"cannot read the binding {binding_path}: {e}")
-    reviews = binding.get("reviews")
+    try:
+        rec, prefix, mode = locator.runs_location(project, binding, ".")
+    except locator.BadRuns as e:
+        fail(str(e))
+    reviews = binding.get("reviews") if mode == "tree" else f"{rec / prefix}/"
     if not isinstance(reviews, str) or not reviews.strip():
         fail('the binding has no "reviews" folder: the run folders the drivers live in')
     given = binding.get("drivers", {})
@@ -171,6 +180,7 @@ def load_rules(binding_path, overrides=None):
         fams.append((f["id"], [n.lower() for n in names]))
     rules["families"] = fams
     rules["reviews"] = reviews.rstrip("/") + "/"
+    rules["mode"] = mode
     return rules
 
 
@@ -408,11 +418,12 @@ def family(kind, members, folded, files, since, as_of, decision, prior, rules):
 
 def build(repo, rules, register_path, as_of):
     root = Path(repo) / rules["reviews"]
-    if not root.is_dir():
+    if not root.is_dir() and rules.get("mode") != "records":
         fail(f"the reviews folder {root} does not exist")
     skipped = {k: [] for k in SKIPS}
     files, refused = [], 0
-    for p in driver_files(root, rules["nested"], rules["maxBytes"], skipped):
+    # records mode: runs/ is made with the first run folder; before it, there are none
+    for p in driver_files(root, rules["nested"], rules["maxBytes"], skipped) if root.is_dir() else []:
         rel = p.relative_to(root)
         try:
             text = p.read_text(encoding="utf-8", errors="replace")
@@ -558,6 +569,14 @@ def project_of(repo):
     return project
 
 
+def any_project(repo):
+    """The project of the repository, or None: only records mode needs it (its records worktree)."""
+    try:
+        return locator.find(repo, {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"})
+    except locator.SetupNeeded:
+        return None
+
+
 def write_whole(path, text):
     """Replace the register in one step, so a reader never sees half of it."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -582,7 +601,8 @@ def main(argv=None):
     started = time.monotonic()
     project = None if a.binding and a.register and Path(a.register).is_absolute() else project_of(a.repo)
     rules = load_rules(a.binding or project.binding,
-                       {"threshold": a.threshold, "windowDays": a.window_days, "minRuns": a.min_runs})
+                       {"threshold": a.threshold, "windowDays": a.window_days, "minRuns": a.min_runs},
+                       project or any_project(a.repo))
     register = Path(a.register or rules["register"])
     if not register.is_absolute():
         register = project.driver_register.parent / register

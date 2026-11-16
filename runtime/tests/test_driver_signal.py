@@ -200,7 +200,7 @@ class TestWindowAndRules(Fixture):
             code, out = self.run_signal()
             self.assertNotEqual(code, 0, bad)
             self.assertIn("driver-signal:", out)
-        self.binding.write_text(json.dumps({"owned": True}))
+        self.binding.write_text(json.dumps({"owned": True, "runs": "tree"}))  # item 6: no `runs` is records mode
         self.assertIn("reviews", self.run_signal()[1])
 
 

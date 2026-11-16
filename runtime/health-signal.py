@@ -57,6 +57,9 @@ from collections import Counter, defaultdict
 from datetime import date, timedelta
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import locator  # noqa: E402 - the plugin's own module, beside this file
+
 DEFAULT_SETTINGS = {
     "windowDays": 30,
     "threshold": 8.0,
@@ -84,7 +87,9 @@ def git(repo, *args):
 
 # ---------- the rules ----------
 
-def load_rules(binding_path):
+def load_rules(binding_path, project=None):
+    """The rules from the binding. project: the project, for the run folders' place in records mode
+    (locator.runs_location)."""
     try:
         binding = json.loads(Path(binding_path).read_text(encoding="utf-8"))
     except (OSError, ValueError) as e:
@@ -112,7 +117,12 @@ def load_rules(binding_path):
         if rx.groups < 1:
             fail(f"part pattern {rx.pattern!r} needs one group: the part id")
     ext = sig.get("extensions")
-    reviews = binding.get("reviews", "axis/runs/")
+    try:
+        rec, reviews, mode = locator.runs_location(project, binding, ".")
+    except locator.BadRuns as e:
+        fail(str(e))
+    if mode == "records":
+        reviews = f"{rec / reviews}/"  # a full path: the review folders are read in the records worktree
     return {
         "ref": sig.get("ref") or "HEAD",
         "fix": compile_re("signal.fix", sig.get("fix") or DEFAULT_FIX),
@@ -420,6 +430,14 @@ def project_of(repo):
     return project
 
 
+def any_project(repo):
+    """The project of the repository, or None: only records mode needs it (its records worktree)."""
+    try:
+        return locator.find(repo, {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"})
+    except locator.SetupNeeded:
+        return None
+
+
 def write_whole(path, text):
     """Replace the register in one step, so a reader never sees half of it."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -442,7 +460,7 @@ def main(argv=None):
     ap.add_argument("--no-write", action="store_true", help="print the block; leave the register as it is")
     a = ap.parse_args(argv)
     project = None if a.binding and a.register and Path(a.register).is_absolute() else project_of(a.repo)
-    rules = load_rules(a.binding or project.binding)
+    rules = load_rules(a.binding or project.binding, project or any_project(a.repo))
     repo = Path(a.repo)
     register = Path(a.register) if a.register else project.health_register
     if not register.is_absolute():
