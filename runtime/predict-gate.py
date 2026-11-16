@@ -948,6 +948,41 @@ def head_refusal(repo: Path, ref: str, head: str, sealed_trees: dict | None, roo
             "lane's parent equals the code the latest measurement read")
 
 
+ROUND_NUMBER = re.compile(r"(?:fix|r)([0-9]+)")
+
+
+def round_number(label) -> int | None:
+    """A round label's place in the round order: "first" is 0; "fix<N>" and "r<N>" are N (the two naming
+    schemes in use); any other label has no place (None)."""
+    if label == "first":
+        return 0
+    m = ROUND_NUMBER.fullmatch(label) if isinstance(label, str) else None
+    return int(m.group(1)) if m else None
+
+
+def latest_measured(measured: list) -> tuple[dict | None, str | None]:
+    """(the latest measurement, None), or (None, why) when the rounds cannot be ordered. measured: the live
+    measured seals, in ledger order. The latest is the last seal of the highest-numbered round (round_number),
+    not the last seal in the ledger: a late seal of an earlier round is not the latest measurement. One round
+    needs no order. Labels with no number, or two labels with one number (fix5 and r5), cannot be ordered."""
+    labels = list(dict.fromkeys(e.get("round") for e in measured))
+    if len(labels) > 1:
+        unknown = [str(x) for x in labels if round_number(x) is None]
+        by_n = {}
+        for x in labels:
+            by_n.setdefault(round_number(x), []).append(str(x))
+        same = [v for n, v in by_n.items() if n is not None and len(v) > 1]
+        if unknown or same:
+            return None, ("the round labels of the measured seals cannot be ordered ("
+                          + "; ".join([f"{x} has no round number" for x in unknown]
+                                      + [f"{' and '.join(v)} give one round number" for v in same])
+                          + "): close takes the latest measurement by round number, first = 0 and fixN or rN = N, "
+                          "so it cannot tell which measurement is the latest")
+        top = max(labels, key=round_number)
+        measured = [e for e in measured if e.get("round") == top]
+    return (measured[-1] if measured else None), None
+
+
 def sealed_stale(repo: Path, ref: str, evs: list, roots: list | None, wo: str | None = None,
                  form=None) -> tuple[bool, str | None]:
     """records-check's stale rule for a sealed work order (point 6): (True, why) when the code at ref is not
@@ -961,7 +996,9 @@ def sealed_stale(repo: Path, ref: str, evs: list, roots: list | None, wo: str | 
                 and isinstance(e.get("path"), str) and not retire_of(e, mine)]
     if not measured or not roots:
         return True, None
-    m = measured[-1]
+    m, why = latest_measured(measured)
+    if why:
+        return True, why
     if not m.get("head"):
         return True, f"{m['path']}: the latest measured seal names no head commit"
     return True, head_refusal(repo, ref, m["head"], m.get("headTrees"), roots, wo, form)
@@ -1115,8 +1152,10 @@ def sealed_refusals(repo: Path, folders: list, evs: list, decided: dict, wo: str
             out.append(f"round {rnd} of {wo}: the sealed code commit {str(cs.get('commit'))[:8]} is not the round's "
                        f"first code change: the code before it differs from the measured base {m['base'][:8]}")
     if measured:
-        m = measured[-1]
-        if not m.get("head"):
+        m, why = latest_measured(measured)
+        if why:
+            out.append(f"{wo}: {why}")
+        elif not m.get("head"):
             out.append(f"{m['path']}: the latest measured seal names no head commit: seal it with --report")
         elif why := head_refusal(repo, "HEAD", m["head"], m.get("headTrees"), roots, wo, form):
             out.append(why)

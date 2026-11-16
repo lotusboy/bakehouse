@@ -493,6 +493,18 @@ is whole. It also refuses when the ledger file no longer begins with the ledger 
    `HEAD` and every merged lane parent, using the seal's `headTrees` when the commit itself is gone. A
    head this repository does not hold, with no trees, refuses and names the fetch
    (`git fetch <lane clone> <branch>`): close does not fetch.
+   **Which measured seal is the latest.** It is taken by round order, not by ledger order. So a late
+   seal of an earlier round is not the latest measurement. The rules:
+   - Only live measured seals count (not retired, by `retire_of`).
+   - Each round label has a number: `first` is 0; `fix<N>` is N; `r<N>` is N. These are the two
+     naming schemes in use. So `r4` comes before `fix5`, and `fix10` comes after `fix9`.
+   - The latest round is the one with the highest number. Within that round, the last live seal in the
+     ledger wins.
+   - A work order whose measured seals are all of one round needs no order. Its label may be anything.
+   - With two or more rounds, close refuses when the labels cannot be ordered, and names them: a label
+     with no number (such as `proto` or `v2b`), or two labels with one number (`fix5` and `r5`, or
+     `first` and `fix0`).
+   - records-check's stale rule takes the latest measurement by the same rule (`latest_measured`).
 
 The pairing, `check` on each pair, the dirty-tree checks and the evidence-reuse check run as for any
 work order. The git-order rules are NOT run for a sealed work order: the code-order rules and
