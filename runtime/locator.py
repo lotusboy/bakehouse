@@ -227,15 +227,17 @@ def runs_location(project, binding: dict, repo=None) -> tuple[Path, str, str]:
     The one answer for every reader of a record folder (close, seal, records-check, the signals, the role hook).
     Records mode: (the records worktree, "runs/", "records"). Tree mode, as before records mode: (repo, else the
     project's root; the binding's `reviews` as written, or "axis/runs/" when it names none; "tree"). Each reader
-    checks a `reviews` value as it did before. BadRuns: a bad `runs` (runs_mode), or records mode with no project,
-    so no records worktree."""
+    checks a `reviews` value as it did before. With no project (a binding file given for a repo with no team)
+    there is no records worktree: tree mode in repo with the default folder, as before records mode. BadRuns: a
+    bad `runs` (runs_mode)."""
     mode = runs_mode(binding)
+    if mode == "records" and project is None and repo is not None:
+        mode = "tree"
     if mode == "tree":
         return (Path(repo) if repo is not None else project.root), binding.get("reviews", DEFAULT_REVIEWS), mode
     if project is None:
-        raise BadRuns(f"the binding keeps run folders on the {RECORDS_BRANCH} branch (it names no \"reviews\"), and "
-                      f"{repo or 'this folder'} has no team, so no records worktree: run it in the project's "
-                      "repository")
+        raise BadRuns(f"the binding keeps run folders on the {RECORDS_BRANCH} branch, and no project was given, "
+                      "so there is no records worktree")
     return project.records, RUNS, mode
 
 
