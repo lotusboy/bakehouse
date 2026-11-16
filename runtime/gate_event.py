@@ -36,9 +36,12 @@ def refused(
     path=None,
     outcome="refused",
     wait=WAIT_S,
+    note_chars=NOTE_CHARS,
 ):
     """Write one gate-refused event. None when written, else why not. wait: the seconds the write may take
-    (at most WAIT_S); a caller with its own deadline (the agent-roles hook) passes what is left of it."""
+    (at most WAIT_S); a caller with its own deadline (the agent-roles hook) passes what is left of it.
+    note_chars: the note is cut to this many characters; None keeps it whole (close's refusal, which lists
+    every refusal with its id)."""
     wait = min(wait, WAIT_S)
     if wait <= 0:
         return "no time was left before the caller's deadline; not written"
@@ -59,7 +62,7 @@ def refused(
             "-",
             "-",
             outcome,
-            (note or "")[:NOTE_CHARS],
+            (note or "")[:note_chars],
             gate,
         ]
         # its own process group, so a write cut at WAIT_S is killed whole: a child left alive would hold

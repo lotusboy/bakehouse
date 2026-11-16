@@ -574,7 +574,8 @@ is reported as a warning.
 There is one flag per work order and rule; it lists every folder it was found in. Each flag names
 its **owner** (the PM, for its own runs) and its **next step**: produce the artefact honestly, by
 measuring it, or bring the owner's override. A prediction cannot be written after the change, so a
-missing one needs the override: `PREDICT_GATE_CLOSE_OVERRIDE="<reason>" predict-gate.sh close <id>`.
+missing one needs the override: `PREDICT_GATE_CLOSE_OVERRIDE="<reason> | covers: R-xxxxxx,..." predict-gate.sh close <id>`,
+naming every refusal id the close lists (`docs/PREDICT-GATE.md`, "The owner's exception").
 A work order closed by that override shows its record flags as `overridden`, not `open`. A work
 order closed cleanly shows the flags found only in folders that are not step folders (a design or
 planning folder) as `superseded`: the closed step record replaces them. A step folder's flag is
@@ -875,7 +876,8 @@ refusals can be counted per tool and per check. The event is ops-event.sh's, wit
  "commit": <HEAD of the repository the tool ran in, or null>, "gate": "<tool>:<check>"}
 ```
 
-- **One writer.** `runtime/gate_event.py` calls `ops-event.sh <kind> ... <note> <gate>`. `ops-event.sh`
+- **One writer.** `runtime/gate_event.py` calls `ops-event.sh <kind> ... <note> <gate>`. It cuts the note to
+  300 characters, except for `predict-gate:close`, whose note lists every refusal with its id. `ops-event.sh`
   refuses a gate on any other kind, and a gate not of the form `<tool>:<check>` in lower case. An event
   without a gate keeps its old shape.
 - **Where it goes.** The project of the record's repository, when the tool knows the record's path;

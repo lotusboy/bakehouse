@@ -63,7 +63,8 @@ override. It writes a `note` event, never a work-order-closed one.
 
 seal, revise, retire, verify-chain: docs/PREDICT-GATE.md, "Sealing". Each writes
 one event to the project's ops ledger, under the ledger lock, chained to the line before it
-(runtime/ops_ledger.py). close does not read them yet.
+(runtime/ops_ledger.py). close judges a sealed work order by them (docs/PREDICT-GATE.md, "Closing a
+sealed work order").
 
 Exit: 0 pass (or failed and overridden, recorded); 1 the gate refused; 2 bad input.
 """
@@ -426,7 +427,7 @@ def record_override(reason: str, task: str, repo: Path, r: dict, gate: str = "pr
     return ops_event(repo, "gate-refused", task, "predicted-moves gate overridden", r["failures"], note, gate)
 
 
-def refusal_event(gate: str, purpose: str, note: str, task: str | None, count, path):
+def refusal_event(gate: str, purpose: str, note: str, task: str | None, count, path, whole: bool = False):
     """One gate-refused event for a refusal that stands (docs/PROJECT-TEAM.md, "Gate refusals"). Best
     effort: the gate has refused already, so a failed write changes nothing it prints or returns. Never
     called from run_check, which records-check also runs on every register build."""
@@ -434,7 +435,7 @@ def refusal_event(gate: str, purpose: str, note: str, task: str | None, count, p
         sys.path.insert(0, str(Path(__file__).resolve().parent))
         import gate_event
         gate_event.refused(gate, purpose, note, task=None if task in (None, "-") else task, count=count,
-                           path=str(path))
+                           path=str(path), **({"note_chars": None} if whole else {}))
     except Exception:  # noqa: BLE001, S110 - the event reports a refusal; it never changes one
         pass
 
@@ -1417,7 +1418,8 @@ def run_close(wo: str, repo_arg: str | None, binding_arg: str | None, merged: bo
                   f'{CLOSE_OVERRIDE}="<reason> | covers: <refusal id>,..." predict-gate.sh close {wo}, naming '
                   "every refusal id above" + (" (the full close; --merged has no override)" if merged else ""))
             refusal_event("predict-gate:close", "work order close refused",
-                          "work order close refused | refused: " + "; ".join(refused[:3]), wo, len(refused), repo)
+                          "work order close refused | refused: " + "; ".join(f"{refusal_id(r)} {r}" for r in refused),
+                          wo, len(refused), repo, whole=True)
             return 1
         reason, covers = parse_override(override)
         extra = [i for i in covers if i not in ids]

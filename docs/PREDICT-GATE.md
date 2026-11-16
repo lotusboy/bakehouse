@@ -293,7 +293,9 @@ predict-gate.sh close <work-order>`. An override names each refusal it covers.
 4. An id the override names that this close does not refuse is not an error. Close prints a note.
 5. A passing override writes a `gate-refused` line first (purpose `work order close overridden`), then
    the `work-order-closed` line marked as overridden. The `gate-refused` line holds the reason, the ids
-   it covers, and every refusal with its id (not only the first 3).
+   it covers, and every refusal with its id (not only the first 3). A refused close with no passing
+   override writes a `gate-refused` line too (purpose `work order close refused`), with every refusal
+   and its id.
 6. Close reads only this variable. The hook's `PREDICT_GATE_OVERRIDE` never overrides a close, so a
    value exported for a commit cannot close a work order.
 7. Why ids, not the owner's decision id: the decision ledger records a question, its options and the

@@ -464,6 +464,14 @@ class Close(RepoFixture):
         self.assertEqual(self.ids(self.close().stdout), ids, "the same record gives the same ids")
         self.assertIn(f'{CLOSE_OVERRIDE}="<reason> | covers: <refusal id>,..."', out)
 
+    def test_seal_f5_a_refused_close_records_every_refusal_with_its_id(self):
+        ids = self.ids(self.four_refusals())
+        ev = [e for e in self.events() if e.get("purpose") == "work order close refused"][-1]
+        self.assertEqual((ev["kind"], ev["count"]), ("gate-refused", 4))
+        for i in ids:
+            self.assertIn(i, ev["note"])
+        self.assertIn("moves.measured.proto2.json: a measured file with no prediction", ev["note"])
+
     def test_seal_f5_an_override_that_names_no_refusal_is_refused(self):
         ids = self.ids(self.four_refusals())
         p = self.close(env=dict(self.env, PREDICT_GATE_CLOSE_OVERRIDE="owner go"))
