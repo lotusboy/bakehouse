@@ -507,8 +507,9 @@ class TestPredictionRecord(Fixture):
         self.assertIn('"decision": "block"', out)
         listed = out.split("no seal in the ops ledger:")[1].split(". Seal")[0]
         self.assertIn("moves.baseline.json", listed)
-        self.assertNotIn("moves.measured.json", listed)
-        self.assertIn("moves.measured.json cannot be sealed", self.log())
+        # seal fix2: a refusal an action clears is shown with the gate's text, not hidden
+        self.assertIn("moves.measured.json", listed)
+        self.assertIn("seal it first: predict-gate.sh seal T7 first 2026-01-02-T7-step1-review/moves.baseline.json", out)
 
     def test_seal_fix2_a_prediction_changed_since_its_seal_blocks_with_the_gates_text(self):
         # probe p4: the gate refuses this seal, but a revise clears it, so the stop still sends the engineer back

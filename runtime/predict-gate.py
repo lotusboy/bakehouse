@@ -1087,7 +1087,8 @@ def sealed_refusals(repo: Path, folders: list, evs: list, decided: dict, wo: str
     live_shas = {e.get("sha256") for e in seals if not retire_of(e, evs)} - {None}
     for path in sorted(at_head):
         if Path(path).parent.as_posix() in folders and SEAL_FILE.match(Path(path).name) and path not in by_path \
-                and not (at_head[path] in live_shas and path in round_baselines(repo, at_head, Path(path).parent)):
+                and not (SEAL_FILE.match(Path(path).name).group(1) == "baseline" and at_head[path] in live_shas
+                         and path in round_baselines(repo, at_head, Path(path).parent)):
             out.append(f"{path} is at HEAD and has no committed seal: predict-gate.sh seal {wo} <round> {path}")
     for e in seals:
         if e.get("fileKind") == "measured" and (e.get("check") or {}).get("result") == "refused" \
@@ -1181,7 +1182,7 @@ def override_refusal(text: str, ids: dict) -> str | None:
     """Why the owner's close override does not pass this close's refusals; None when it does. ids: refusal id ->
     its text. The override gives a reason and names every refusal it covers, by id."""
     reason, covers = parse_override(text)
-    form = f'{CLOSE_OVERRIDE}="<reason> | covers: {",".join(ids)}"'
+    form = f'{CLOSE_OVERRIDE}="<reason> | covers: <the ids of the refusals you accept>"'
     if covers is None:
         return f"the override names no refusal it covers. Name each one by its id: {form}"
     if not reason:
@@ -1409,8 +1410,8 @@ def run_close(wo: str, repo_arg: str | None, binding_arg: str | None, merged: bo
             if why:
                 print(f"OVERRIDE REFUSED: {why}")
             print("Result: REFUSED. The work order does not close. Owner-approved exception only: "
-                  f'{CLOSE_OVERRIDE}="<reason> | covers: <refusal id>,..." predict-gate.sh close {wo}, naming '
-                  "every refusal id above" + (" (the full close; --merged has no override)" if merged else ""))
+                  f'{CLOSE_OVERRIDE}="<reason> | covers: <the ids of the refusals you accept>" predict-gate.sh '
+                  f"close {wo}; it must name every refusal id above" + (" (the full close; --merged has no override)" if merged else ""))
             refusal_event("predict-gate:close", "work order close refused",
                           "work order close refused | refused: " + "; ".join(f"{refusal_id(r)} {r}" for r in refused),
                           wo, len(refused), repo, whole=True)
@@ -1517,9 +1518,13 @@ def measured_fields(path: Path, repo: Path, report_arg: str | None) -> tuple[dic
         shas = {k: d[k]["sha"] for k in ("base", "head")}
     except (KeyError, TypeError):
         raise BadInput(f"{report} has no base.sha and head.sha")
-    if not (isinstance(shas["head"], str) and shas["head"].strip()):
-        raise BadInput(f"{report} gives no head.sha: pass --report <a measure report holding base.sha and head.sha, "
-                       "the commits the measurement read>")
+    for k in ("base", "head"):
+        if not (isinstance(shas[k], str) and shas[k].strip()):
+            raise BadInput(f"{report} gives no {k}.sha: pass --report <a measure report holding base.sha and "
+                           "head.sha, the commits the measurement read>")
+        if git(repo, "cat-file", "-e", f"{shas[k]}^{{commit}}", check=False).returncode != 0:
+            raise BadInput(f"{report}: the {k} commit {shas[k]} is not in this repository ({repo}): seal where the "
+                           "measured commits are, or fetch them first (git fetch <lane clone> <branch>)")
     result = {}
     rc = run_check(pred, base, path, "", "-", result=result)
 
@@ -1542,11 +1547,14 @@ def round_files(path: Path) -> tuple[Path, Path]:
     return pred, path.with_name(named_baseline(pred) or baseline_name(rs, lambda n: path.with_name(n).is_file()))
 
 
-def seal_refusal(path: Path, rel: str, wo: str, rnd: str, fkind: str, digest: str, events: list) -> str | None:
-    """Why `predict-gate.sh seal` refuses this file now, from the files beside it and the ledger's events
-    (any work order's; only wo's count); None when it would seal it. The one set of seal rules, for run_seal
-    and the stop hook (agent-roles.py unsealed_moves), so the hook never asks for a seal the gate refuses.
-    The measure report is the seal command's argument, not the record's state, so run_seal checks it alone."""
+def seal_refusal(path: Path, rel: str, wo: str, rnd: str, fkind: str, digest: str,
+                 events: list) -> tuple[str, bool] | None:
+    """(why `predict-gate.sh seal` refuses this file now, whether that refusal is final), from the files beside
+    it and the ledger's events (any work order's; only wo's count); None when it would seal it. Final: no
+    action clears it (a prediction or baseline whose round already has a sealed measured file). The one set of
+    seal rules, for run_seal and the stop hook (agent-roles.py unsealed_moves): the hook hides only a final
+    refusal, and shows any other with this text. The measure report is the seal command's argument, not the
+    record's state, so run_seal checks it alone."""
     mine = [e for e in events if isinstance(e, dict) and e.get("kind") in ledger_module().SEALED_KINDS
             and e.get("task") == wo]
     live = [e for e in mine if e.get("kind") != "retired" and not retire_of(e, mine)]
@@ -1555,30 +1563,31 @@ def seal_refusal(path: Path, rel: str, wo: str, rnd: str, fkind: str, digest: st
         if same and same[-1].get("sha256") != digest:
             return f"{rel} changed since its seal: " + (
                 "a changed prediction is sealed by predict-gate.sh revise, with the owner's decision"
-                if fkind == "prediction" else "a changed baseline is a new round, not a new seal")
+                if fkind == "prediction" else "a changed baseline is a new round, not a new seal"), False
         if not same and any(e.get("round") == rnd and e.get("fileKind") == "measured" for e in live):
             return (f"round {rnd} of {wo} has a sealed measured file and no sealed {fkind}: a {fkind} first "
-                    "sealed after its measurement is not evidence of a prediction made before it")
+                    "sealed after its measurement is not evidence of a prediction made before it"), True
         return None
     if fkind == "measured":
         try:
             base = round_files(path)[1]
         except BadInput as e:
-            return str(e)
+            return str(e), False
         if not base.is_file():
-            return f"cannot read {base}: the round's check needs its baseline"
-        base_rel = (Path(rel).parent / base.name).as_posix()
-        if sha256(base.read_bytes()) in {e.get("sha256") for e in live} - {None}:
-            return None
+            return f"cannot read {base}: the round's check needs its baseline", False
         try:
             bkind, brnd = file_round(base.name)
         except BadInput:
-            bkind = None
-        how = (f"seal it first: predict-gate.sh seal {wo} {brnd} {base_rel}" if bkind == "baseline" else
-               "it is not a moves.baseline file, so only a live seal of the same bytes covers it")
+            return None  # a baseline that is not a moves file (a prediction's "baseline": "snapshot.json") is never sealed
+        base_rel = (Path(rel).parent / base.name).as_posix()
+        if sha256(base.read_bytes()) in {e.get("sha256") for e in live} - {None}:
+            return None
+        how = {"baseline": f"seal it first: predict-gate.sh seal {wo} {brnd} {base_rel}",
+               "measured": f"seal that measured file first: predict-gate.sh seal {wo} {brnd} {base_rel} --report "
+                           "<its measure report>"}.get(bkind, f"seal it first: predict-gate.sh seal {wo} {brnd} {base_rel}")
         return (f"{base_rel} is the baseline round {rnd}'s check uses, and no live seal of {wo} holds its bytes "
                 f"(a sealed baseline, or a sealed file with the same sha256, such as an earlier round's measured "
-                f"file): {how}. A measured seal needs its baseline sealed before it")
+                f"file): {how}. A measured seal needs its baseline sealed before it"), False
     return None
 
 
@@ -1628,7 +1637,7 @@ def run_seal(cmd: str, wo: str, rnd: str, file: str, repo_arg: str | None, repor
         kind, fk = {"seal": "sealed", "revise": "revised", "retire": "retired"}[cmd], fkind
         live = [e for e in mine if e.get("kind") != "retired" and not retire_of(e, mine)]
         if cmd == "seal" and (why := seal_refusal(path, rel, wo, rnd, fk, digest, events)):
-            raise BadInput(why)
+            raise BadInput(why[0])
         if cmd == "revise":
             same_round = [e for e in mine if e.get("round") == rnd and e.get("fileKind") == "prediction"]
             if not same_round:

@@ -794,10 +794,11 @@ def first_prompt(path):
 def unsealed_moves(folders, where, named, wo=None):
     """The top-level moves files of the record folders whose bytes no seal in their project's ops ledger names:
     the project of `where`, the path the hook's binding lookup used (the cwd, or the record line's path:
-    named), found by the binding's own rule (lookup_paths). With the work order wo, only the files
-    `predict-gate.sh seal` would accept now (predict-gate's seal_refusal, the seal's own rules): a file it would
-    refuse is logged as "cannot be sealed" and not listed. Fail-open, like the rest of this hook: an error
-    reads as sealed, and says so."""
+    named), found by the binding's own rule (lookup_paths). Returns [(file, why the gate refuses its seal now, or
+    None)]. With the work order wo, each file is judged by predict-gate's seal_refusal, the seal's own rules: a
+    file whose refusal no action can clear (a round's prediction or baseline after its measured seal) is logged
+    as "cannot be sealed" and not listed; any other refusal is listed with the gate's text. Fail-open, like the
+    rest of this hook: an error reads as sealed, and says so."""
     try:
         gate = predict_gate()
         led, why = None, None
@@ -815,17 +816,18 @@ def unsealed_moves(folders, where, named, wo=None):
         out = []
         for p in [p for f in folders for p in (sorted(f.iterdir()) if f.is_dir() else [])
                   if p.is_file() and gate.SEAL_FILE.match(p.name) and ol.line_sha(p.read_bytes()) not in sealed]:
+            why = None
             if wo:
                 try:
                     kind, rnd = gate.file_round(p.name)
-                    why = gate.seal_refusal(p, f"{p.parent.name}/{p.name}", wo, rnd, kind, ol.line_sha(p.read_bytes()),
-                                            events)
+                    why, final = gate.seal_refusal(p, f"{p.parent.name}/{p.name}", wo, rnd, kind,
+                                                   ol.line_sha(p.read_bytes()), events) or (None, False)
                 except gate.BadInput as e:
-                    why = str(e)
-                if why:
+                    why, final = str(e), False
+                if final:
                     log(f"SEAL {p.parent.name}/{p.name} cannot be sealed, so the stop does not ask for it: {why}")
                     continue
-            out.append(p)
+            out.append((p, why))
         return out
     except Exception as e:  # noqa: BLE001 - fail-open: the stop is never blocked by this check's own error
         log(f"SEAL check skipped: {e!r}")
@@ -908,8 +910,12 @@ def prediction_stop(d):
         if not unsealed:
             log(f"PREDICTION ok for {agent}: {', '.join(p.parent.name + '/' + p.name for p in good)}")
             return with_note(None, note)
-        what = (f"moves file(s) with no seal in the ops ledger: {', '.join(p.parent.name + '/' + p.name for p in unsealed)}"
+        what = (f"moves file(s) with no seal in the ops ledger: "
+                f"{', '.join(p.parent.name + '/' + p.name for p, _ in unsealed)}"
                 f". Seal each one as you write it: predict-gate.sh seal {wo or '<work order>'} <round> <file>")
+        refused = [f"{p.parent.name}/{p.name}: {why}" for p, why in unsealed if why]
+        if refused:
+            what += ". The gate refuses these seals as the files are now: " + "; ".join(refused)
         if not d.get("stop_hook_active"):
             log(f"SEAL missing for {agent} — sent back: {what}")
             out = with_note({"decision": "block", "reason": f"bakehouse agent-roles: this change job has {what}, "

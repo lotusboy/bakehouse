@@ -73,6 +73,9 @@ class SealTest(unittest.TestCase):
             GIT_COMMITTER_EMAIL="t@t",
         )
         subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
+        for _ in range(2):  # seal fix2: a measure report names commits this repository holds
+            self.git("commit", "-q", "--allow-empty", "-m", "base")
+        self.c1, self.c2 = self.git("rev-parse", "HEAD~1"), self.git("rev-parse", "HEAD")
         self.records = team(self.repo, {"owned": True}, self.env)
         self.binding = self.repo / ".team" / "binding.json"
         self.ledger = self.records / "ops/events.jsonl"
@@ -86,8 +89,8 @@ class SealTest(unittest.TestCase):
                 f"{REC}/moves.prediction.fix1.json": PRED,
                 f"{REC}/moves.measured.fix1.json": {"out:v": 2, "out:w": 6},
                 # seal F2: a measured seal needs its measure report
-                f"{REC}/measure-report.json": {"base": {"sha": "e" * 40}, "head": {"sha": "f" * 40}},
-                f"{REC}/measure-fix1-report.json": {"base": {"sha": "e" * 40}, "head": {"sha": "f" * 40}},
+                f"{REC}/measure-report.json": {"base": {"sha": self.c1}, "head": {"sha": self.c2}},
+                f"{REC}/measure-fix1-report.json": {"base": {"sha": self.c1}, "head": {"sha": self.c2}},
             }
         )
         self.git("add", "-A")
@@ -255,8 +258,8 @@ class SealTest(unittest.TestCase):
         self.write(
             {
                 f"{REC}/measure-report.json": {
-                    "base": {"sha": "a" * 40},
-                    "head": {"sha": "b" * 40},
+                    "base": {"sha": self.c1},
+                    "head": {"sha": self.c2},
                 }
             }
         )
@@ -266,7 +269,7 @@ class SealTest(unittest.TestCase):
         ev = self.events()[-1]
         self.assertEqual(
             (ev["base"], ev["head"], ev["report"]),
-            ("a" * 40, "b" * 40, f"{REC}/measure-report.json"),
+            (self.c1, self.c2, f"{REC}/measure-report.json"),
         )
         self.assertEqual(ev["check"]["result"], "pass")
         self.assertEqual(ev["check"]["failures"], 0)
@@ -282,8 +285,8 @@ class SealTest(unittest.TestCase):
         self.write(
             {
                 f"{REC}/measure-stepA-report.json": {
-                    "base": {"sha": "c" * 40},
-                    "head": {"sha": "d" * 40},
+                    "base": {"sha": self.c2},
+                    "head": {"sha": self.c1},
                 }
             }
         )
@@ -301,12 +304,12 @@ class SealTest(unittest.TestCase):
             0,
         )
         self.assertEqual(
-            (self.events()[-1]["base"], self.events()[-1]["head"]), ("c" * 40, "d" * 40)
+            (self.events()[-1]["base"], self.events()[-1]["head"]), (self.c2, self.c1)
         )
 
     def test_a_report_without_commits_is_refused(self):
         self.write(
-            {f"{REC}/measure-report.json": {"base": {}, "head": {"sha": "b" * 40}}}
+            {f"{REC}/measure-report.json": {"base": {}, "head": {"sha": self.c2}}}
         )
         p = self.seal("first", "moves.measured.json")
         self.assertEqual(p.returncode, 2)
@@ -1165,16 +1168,15 @@ class SealTest(unittest.TestCase):
         self.write(
             {
                 f"{REC}/measure-report.json": {
-                    "base": {"sha": "a" * 40},
+                    "base": {"sha": head},
                     "head": {"sha": "b" * 40},
                 }
             }
         )
-        self.assertEqual(self.seal("first", "moves.measured.json").returncode, 0)
-        self.assertIsNone(
-            self.events()[-1]["headTrees"],
-            "a head this repository does not hold has no trees",
-        )
+        # seal fix2: a head this repository does not hold is refused at seal (it was sealed with no trees before)
+        p = self.seal("first", "moves.measured.json")
+        self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+        self.assertIn("is not in this repository", p.stderr)
 
     def test_k6_the_anchor_commits_the_ledger_alone_and_leaves_staged_files_staged(
         self,
@@ -1257,7 +1259,7 @@ class SealTest(unittest.TestCase):
     # ---- seal fixes: seal refuses what close would refuse later ----
 
     def report(self, name="measure-report.json"):
-        self.write({f"{REC}/{name}": {"base": {"sha": "a" * 40}, "head": {"sha": "b" * 40}}})
+        self.write({f"{REC}/{name}": {"base": {"sha": self.c1}, "head": {"sha": self.c2}}})
         return self.f(name)
 
     def test_seal_f1_a_measured_seal_refuses_while_its_baseline_is_unsealed(self):
@@ -1301,7 +1303,7 @@ class SealTest(unittest.TestCase):
 
     def test_seal_f2_a_report_whose_head_sha_is_null_is_refused(self):
         self.assertEqual(self.seal("first", "moves.baseline.json").returncode, 0)
-        self.write({f"{REC}/measure-report.json": {"base": {"sha": "a" * 40}, "head": {"sha": None}}})
+        self.write({f"{REC}/measure-report.json": {"base": {"sha": self.c1}, "head": {"sha": None}}})
         p = self.seal("first", "moves.measured.json")
         self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
         self.assertIn("head.sha", p.stderr)

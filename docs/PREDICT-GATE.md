@@ -289,7 +289,9 @@ predict-gate.sh close <work-order>`. An override names each refusal it covers.
    example: `PREDICT_GATE_CLOSE_OVERRIDE="owner go, decision d20260101-a1b2c3 | covers: R-3fa9c1,R-07be22"`.
 3. Close refuses the override (exit 1, nothing closed, the output says `OVERRIDE REFUSED` and why) when
    it has no `| covers:` part, no reason, a word that is not an id, or leaves a refusal uncovered. It
-   names each uncovered refusal, with its id and text, and prints the full form with every id.
+   names each uncovered refusal, with its id and text, and prints the form with a placeholder:
+   `"<reason> | covers: <the ids of the refusals you accept>"`. It never prints a ready-made list of
+   every id: the ids are only in the refusal list, so the owner reads each one before naming it.
 4. An id the override names that this close does not refuse is not an error. Close prints a note.
 5. A passing override writes a `gate-refused` line first (purpose `work order close overridden`), then
    the `work-order-closed` line marked as overridden. The `gate-refused` line holds the reason, the ids
@@ -380,9 +382,10 @@ by these events ("Closing a sealed work order", below).
    from the measure report's `base.sha` and `head.sha`: `--report`, else `measure-report.json` (first
    round) or `measure-<label>-report.json` beside the file. **A measured seal needs its report.** With
    no report, the seal is refused (exit 2, no seal written), and the message says to pass `--report`
-   with the file that holds `base.sha` and `head.sha`. A report without both commits is refused, and so
-   is a report whose `head.sha` is empty. Why: close judges the code at `HEAD` by that head commit, so a
-   measured seal with no head could never close. (Seals written before this rule may say
+   with the file that holds `base.sha` and `head.sha`. A report without both commits is refused. So is
+   a report whose `base.sha` or `head.sha` is empty or null, or names a commit the file's repository
+   does not hold (seal where the measured commits are, or fetch them first). Why: close judges the code
+   at `HEAD` by that head commit, so a measured seal with no head could never close. (Seals written before this rule may say
    `"report": null`; close still refuses them, as before.) A refused check is still
    sealed, and the command exits 1: close will need an approved retire for it.
    **Seal the baseline before the measured file.** A measured seal is refused (exit 2, no seal written)
@@ -390,9 +393,13 @@ by these events ("Closing a sealed work order", below).
    when it holds the same bytes (the same sha256): the round's own sealed baseline, the first round's
    sealed baseline, or any other sealed file of the work order, such as the earlier round's measured file
    a chained round is measured against. A retired seal, or another work order's seal, does not cover it.
-   The refusal names the command: `predict-gate.sh seal <work-order> <round> <baseline path>`. Why: a
-   baseline first sealed after its round's measured file is refused (point 3), so a measured seal made
-   first would leave the baseline unsealed for good.
+   The refusal names the command: `predict-gate.sh seal <work-order> <round> <baseline path>`. When the
+   baseline is an earlier round's `moves.measured` file, the refusal says to seal that measured file
+   first, with its command. Why: a baseline first sealed after its round's measured file is refused
+   (point 3), so a measured seal made first would leave the baseline unsealed for good.
+   The rule applies only to a baseline that is a `moves.*` file. A prediction's `baseline` field may name
+   another plain file beside it (`"baseline": "snapshot.json"`). Such a file is never sealed, so its
+   measured seal keeps the rule before this change: no refusal for the baseline.
 3. A prediction or baseline is sealed once per round. Sealing the same bytes again writes another
    seal. Sealing changed bytes is refused: a changed prediction goes through `revise`, and a changed
    baseline is a new round. A round's first prediction or baseline seal is refused once the round has
@@ -483,9 +490,10 @@ is whole. It also refuses when the ledger file no longer begins with the ledger 
    7 of "Sealing"). Its first seal stands. The retire that ended the earlier chain still needs its
    approving decision, and its copy in `history/` must still be at `HEAD` with the retired bytes.
 3. **Each moves file at `HEAD`** (top level of a record folder) has a committed seal. One exception: a
-   file that a top-level prediction uses as its round's baseline (its `baseline` field, else the
-   round's own or the first round's baseline) needs no seal of its own when a live seal of this work
-   order holds the same bytes. This is the measured seal's rule (point 2 of "Sealing"). So a chained
+   `moves.baseline` file that a top-level prediction uses as its round's baseline (its `baseline`
+   field, else the round's own or the first round's baseline) needs no seal of its own when a live seal
+   of this work order holds the same bytes. A `moves.measured` file named as a baseline still needs its
+   own seal, because a measured seal carries its check and its commits. This is the measured seal's rule (point 2 of "Sealing"). So a chained
    round's baseline that holds the earlier round's sealed measured file closes.
 4. **Each sealed measured file whose check REFUSED** is retired.
 5. **A round's prediction is sealed before its code.** Its first seal's commit is an ancestor of the
@@ -643,12 +651,16 @@ hard gate.
    and the `predict-gate.sh seal` command. On the second stop it lets the engineer stop and tells the
    user. Gate `stop:seal`. Fail-open: an error in this check reads as sealed.
    It asks only for a seal the gate would accept now. The seal's rules sit in one function,
-   `seal_refusal` in `runtime/predict-gate.py`, which both `seal` and this check call. A file the gate
-   would refuse is not listed. The check writes one line to `logs/agent-roles.log` for it ("cannot be
-   sealed", with the gate's reason) and does not block the stop for it. Examples: a round's baseline
-   once its measured file is sealed; a measured file whose baseline is not sealed yet (the check asks
-   for the baseline first). The measure report is the seal command's argument, not the record's
-   state, so this check does not judge it. It judges this way only when the brief names its work order
+   `seal_refusal` in `runtime/predict-gate.py`, which both `seal` and this check call. It sorts the
+   gate's refusals into two kinds:
+   - A refusal no action can clear: a round's prediction or baseline once the round has a live sealed
+     measured file. The file is not listed. The check writes one line to `logs/agent-roles.log` for it,
+     per stop check ("cannot be sealed", with the gate's reason), and does not block the stop for it.
+   - Any other refusal: a prediction or baseline changed since its seal (revise it, or start a new
+     round), or a measured file whose baseline is not sealed yet. The file is listed, and the reason
+     adds the gate's own text, so the engineer sees what to do first.
+   The measure report is the seal command's argument, not the record's state, so this check does not
+   judge it. It judges this way only when the brief names its work order
    (`Work order <id>:`); without one it lists every unsealed file, as before.
 6. Every stop of that agent type writes a `PROMPT-SOURCE` line to `logs/agent-roles.log` in the machine folder. It
    says whether line 1 of the agent's transcript ends with the marker. On the first live marked

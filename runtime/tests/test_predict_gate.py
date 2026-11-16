@@ -462,7 +462,7 @@ class Close(RepoFixture):
         self.assertEqual(len(ids), 4, out)
         self.assertEqual(len(set(ids)), 4)
         self.assertEqual(self.ids(self.close().stdout), ids, "the same record gives the same ids")
-        self.assertIn(f'{CLOSE_OVERRIDE}="<reason> | covers: <refusal id>,..."', out)
+        self.assertIn(f'{CLOSE_OVERRIDE}="<reason> | covers: <the ids of the refusals you accept>"', out)
 
     def test_seal_f5_a_refused_close_records_every_refusal_with_its_id(self):
         ids = self.ids(self.four_refusals())
@@ -478,7 +478,7 @@ class Close(RepoFixture):
         self.assertEqual(p.returncode, 1, p.stdout)
         self.assertIn("OVERRIDE REFUSED", p.stdout)
         for i in ids:
-            self.assertIn(i, p.stdout.split("OVERRIDE REFUSED")[1])
+            self.assertIn(f"  - {i}: ", p.stdout, "the ids are in the refusal list")
         self.assertNotIn("work-order-closed", [e["kind"] for e in self.events()])
 
     def test_seal_f5_an_override_that_leaves_a_refusal_uncovered_is_refused_and_names_it(self):
