@@ -85,6 +85,9 @@ class SealTest(unittest.TestCase):
                 f"{REC}/moves.measured.json": {"out:v": 2, "out:w": 5},
                 f"{REC}/moves.prediction.fix1.json": PRED,
                 f"{REC}/moves.measured.fix1.json": {"out:v": 2, "out:w": 6},
+                # seal F2: a measured seal needs its measure report
+                f"{REC}/measure-report.json": {"base": {"sha": "e" * 40}, "head": {"sha": "f" * 40}},
+                f"{REC}/measure-fix1-report.json": {"base": {"sha": "e" * 40}, "head": {"sha": "f" * 40}},
             }
         )
         self.git("add", "-A")
@@ -275,7 +278,7 @@ class SealTest(unittest.TestCase):
             ).hexdigest(),
         )
 
-    def test_measured_seal_reads_a_named_report_and_says_when_there_is_none(self):
+    def test_measured_seal_reads_a_named_report_and_refuses_when_there_is_none(self):
         self.write(
             {
                 f"{REC}/measure-stepA-report.json": {
@@ -284,10 +287,10 @@ class SealTest(unittest.TestCase):
                 }
             }
         )
+        (self.repo / REC / "measure-report.json").unlink()
         self.seal("first", "moves.baseline.json")  # seal F1: the baseline first
-        self.assertEqual(self.seal("first", "moves.measured.json").returncode, 0)
-        ev = self.events()[-1]
-        self.assertEqual((ev["base"], ev["head"], ev["report"]), (None, None, None))
+        # seal F2: no report, no seal (it was sealed with "report": null before)
+        self.assertEqual(self.seal("first", "moves.measured.json").returncode, 2)
         self.assertEqual(
             self.seal(
                 "first",
@@ -1287,6 +1290,7 @@ class SealTest(unittest.TestCase):
         self.assertIn("no live seal of W-1 holds its bytes", p.stderr)
 
     def test_seal_f2_a1179_a_measured_seal_with_no_report_is_refused(self):
+        (self.repo / REC / "measure-report.json").unlink()
         self.assertEqual(self.seal("first", "moves.baseline.json").returncode, 0)
         p = self.seal("first", "moves.measured.json")
         self.assertEqual(p.returncode, 2, p.stdout + p.stderr)

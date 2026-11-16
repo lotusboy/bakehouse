@@ -360,8 +360,12 @@ by these events ("Closing a sealed work order", below).
    finds them, and carries the result (`pass` or `refused`, the failure count, and the sha256 of the
    prediction and baseline it used). It carries the `base` and `head` commits the measurement read,
    from the measure report's `base.sha` and `head.sha`: `--report`, else `measure-report.json` (first
-   round) or `measure-<label>-report.json` beside the file. With no report they are `null`, and the
-   event says `"report": null`. A report without both commits is refused. A refused check is still
+   round) or `measure-<label>-report.json` beside the file. **A measured seal needs its report.** With
+   no report, the seal is refused (exit 2, no seal written), and the message says to pass `--report`
+   with the file that holds `base.sha` and `head.sha`. A report without both commits is refused, and so
+   is a report whose `head.sha` is empty. Why: close judges the code at `HEAD` by that head commit, so a
+   measured seal with no head could never close. (Seals written before this rule may say
+   `"report": null`; close still refuses them, as before.) A refused check is still
    sealed, and the command exits 1: close will need an approved retire for it.
    **Seal the baseline before the measured file.** A measured seal is refused (exit 2, no seal written)
    while the baseline its check uses has no live seal of this work order. A live seal covers the baseline

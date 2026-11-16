@@ -1420,20 +1420,26 @@ def code_trees(repo: Path, commit: str, roots: list) -> dict | None:
 def measured_fields(path: Path, repo: Path, report_arg: str | None) -> tuple[dict, int]:
     """The measured seal's check (against the round's prediction and baseline, as `check` finds them)
     and the base and head commits from the measure report: --report, else measure-report.json (first
-    round) or measure-<label>-report.json beside the file; null when there is none."""
+    round) or measure-<label>-report.json beside the file. A seal with no report, or whose report gives no
+    head.sha, is refused: close judges the code at HEAD by that head commit."""
     rs = MEASURED_RE.match(path.name).group(1)
     pred, base = round_files(path)
-    result = {}
-    rc = run_check(pred, base, path, "", "-", result=result)
     report = Path(report_arg).absolute() if report_arg else path.with_name(
         f"measure-{rs[1:]}-report.json" if rs else "measure-report.json")
-    shas = {"base": None, "head": None}
-    if report_arg or report.is_file():
-        d = load(report)
-        try:
-            shas = {k: d[k]["sha"] for k in ("base", "head")}
-        except (KeyError, TypeError):
-            raise BadInput(f"{report} has no base.sha and head.sha")
+    if not (report_arg or report.is_file()):
+        raise BadInput(f"no measure report for {path.name} (looked for {report}): pass --report <the measure report>, "
+                       "the JSON file holding the base and head commits the measurement read, as base.sha and "
+                       "head.sha. Close judges the code at HEAD by that head commit")
+    d = load(report)
+    try:
+        shas = {k: d[k]["sha"] for k in ("base", "head")}
+    except (KeyError, TypeError):
+        raise BadInput(f"{report} has no base.sha and head.sha")
+    if not (isinstance(shas["head"], str) and shas["head"].strip()):
+        raise BadInput(f"{report} gives no head.sha: pass --report <a measure report holding base.sha and head.sha, "
+                       "the commits the measurement read>")
+    result = {}
+    rc = run_check(pred, base, path, "", "-", result=result)
 
     def rel(p: Path) -> str:
         return os.path.relpath(p.resolve(), repo.resolve())
