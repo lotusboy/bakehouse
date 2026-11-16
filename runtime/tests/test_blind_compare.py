@@ -234,6 +234,47 @@ class BlindCompare(unittest.TestCase):
                 b = self.write("reader-b.md", report("B", [item("C-01")]) + "\nThe final answer:\n\n" + tail)
                 self.exits_2(self.run_(a, b), "reader-b.md", "```json")
 
+    # fix round 2: a report ends with its JSON block; any text after the last matched block exits 2
+
+    def draft_then(self, final_fenced):
+        """Reader A says WRONG; reader B's draft block says WRONG and its real final answer says CORRECT.
+        Reading B's draft would show a false 'yes'."""
+        a = self.write("reader-a.md", report("A", [item("C-01", "WRONG", "reject")]))
+        draft = json.dumps({"reader": "B", "items": [item("C-01", "WRONG", "reject")]})
+        final = json.dumps({"reader": "B", "items": [item("C-01")]})
+        b = self.write("reader-b.md", "# Reader B\n\nDraft:\n\n" + final_fenced(draft, final))
+        return self.run_(a, b)
+
+    def test_a_draft_block_with_no_closing_fence_before_the_final_block_exits_2(self):
+        p = self.draft_then(lambda d, f: f"```json\n{d}\n\n```json\n{f}\n```\n")
+        self.exits_2(p, "reader-b.md", "text follows the last")
+
+    def test_a_final_block_fenced_with_tildes_exits_2(self):
+        p = self.draft_then(lambda d, f: f"```json\n{d}\n```\n\nFinal:\n\n~~~json\n{f}\n~~~\n")
+        self.exits_2(p, "reader-b.md", "text follows the last")
+
+    def test_a_final_block_fenced_with_a_space_before_json_exits_2(self):
+        p = self.draft_then(lambda d, f: f"```json\n{d}\n```\n\nFinal:\n\n``` json\n{f}\n```\n")
+        self.exits_2(p, "reader-b.md", "text follows the last")
+
+    def test_a_final_block_fenced_with_a_plain_fence_exits_2(self):
+        p = self.draft_then(lambda d, f: f"```json\n{d}\n```\n\nFinal:\n\n```\n{f}\n```\n")
+        self.exits_2(p, "reader-b.md", "text follows the last")
+
+    def test_only_whitespace_after_the_last_block_is_a_good_report(self):
+        a = self.write("reader-a.md", report("A", [item("C-01")]) + "\n\n   \n\t\n")
+        b = self.write("reader-b.md", report("B", [item("C-01")]) + "  \r\n")
+        p = self.run_(a, b)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn("Agreed: 1 of 1.", p.stdout)
+
+    def test_number_id_and_text_id_in_either_order_are_a_repeated_id(self):
+        a = self.write("reader-a.md", report("A", [item("C-01")]))
+        for first, second in ((1, "1"), ("1", 1)):
+            with self.subTest(order=(first, second)):
+                b = self.write("reader-b.md", report("B", [item(first), item(second)]))
+                self.exits_2(self.run_(a, b), "reader-b.md", "id 1 appears twice")
+
     def test_crlf_and_trailing_spaces_after_the_opening_fence_still_open_a_block(self):
         a = self.write("reader-a.md", report("A", [item("C-01")]))
         block = json.dumps({"reader": "B", "items": [item("C-01")]})
