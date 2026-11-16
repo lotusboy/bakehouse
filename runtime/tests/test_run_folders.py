@@ -85,9 +85,38 @@ class Location(unittest.TestCase):
                 locator.runs_location(self.project, {"runs": bad})
             self.assertIn("runs", str(e.exception))
 
-    def test_records_mode_needs_a_project(self):
-        with self.assertRaises(locator.BadRuns):
-            locator.runs_location(None, {"owned": True}, repo=self.repo)
+    def test_with_no_project_a_records_mode_binding_reads_the_tree_default(self):
+        # fix 8: no team (a --binding in a repo with no team) means no records worktree: tree mode, as on main
+        self.assertEqual(locator.runs_location(None, {"owned": True}, repo=self.tmp),
+                         (self.tmp, "axis/runs/", "tree"))
+
+    def test_tree_mode_reads_the_repo_it_is_given(self):
+        # L06: a lane clone's close passes its own repo, which is not the project's root
+        self.assertEqual(locator.runs_location(self.project, {"reviews": "r/"}, repo=self.tmp),
+                         (self.tmp, "r/", "tree"))
+
+    def test_a_reviews_key_that_is_present_counts_whatever_its_value(self):
+        # L04: "runs": "records" beside "reviews": null or "" is still a bad binding; without runs, tree mode
+        for v in (None, ""):
+            with self.subTest(reviews=v), self.assertRaises(locator.BadRuns):
+                locator.runs_location(self.project, {"runs": "records", "reviews": v})
+            self.assertEqual(locator.runs_mode({"reviews": v}), "tree")
+
+    def test_a_project_that_needs_setup_owns_no_records_worktree(self):
+        # L15: records_owner answers None, never raises, when the main clone needs setup
+        (self.records / "runs" / "x").mkdir(parents=True)
+        self.git(self.repo, "config", "--unset", "bakehouse.records")
+        self.assertIsNone(locator.records_owner(self.records / "runs" / "x"))
+
+    def test_a_symlinked_records_pointer_still_maps_back(self):
+        # L14: the pointer names a link to the records worktree; both sides are compared resolved
+        link = self.tmp / "records-link"
+        link.symlink_to(self.records)
+        self.git(self.repo, "config", "bakehouse.records", str(link))
+        (self.records / "runs" / "x").mkdir(parents=True)
+        p = locator.records_owner(self.records / "runs" / "x")
+        self.assertIsNotNone(p)
+        self.assertEqual((p.root, p.records), (self.repo, link))
 
     def test_the_records_worktree_maps_back_to_its_project(self):
         (self.records / "runs" / "x").mkdir(parents=True)
@@ -320,6 +349,26 @@ class Close(Project):
                                  "--no-write", "--as-of", "2026-11-10", "--since", "2026-11-01"])
         self.assertEqual(rc, 0, out)
         self.assertIn("| W-1 | 1 | closed |", out)
+        rc, out = self.run_tool(["python3", str(RUNTIME / "records-check.py"), "--repo", str(self.repo),
+                                 "--register", str(self.t / "records.json"), "--as-of", "2026-11-10",
+                                 "--since", "2026-11-01"])
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(json.loads((self.t / "records.json").read_text())["computed"]["reviews"], "runs/")
+
+    def test_a_binding_file_in_a_repo_with_no_team_closes_in_the_tree_as_on_main(self):
+        # fix 8: no project, so no records worktree: the record is read in the code tree, axis/runs/
+        bare = self.t / "bare"
+        subprocess.run(["git", "init", "-q", "-b", "main", str(bare)], check=True, env=self.env)
+        bfile = self.t / "binding.json"
+        bfile.write_text(json.dumps(BINDING))
+        self._commit(bare, "base", {"src/app.py": "v = 1\n"})
+        self._commit(bare, "W-1: prediction", {f"axis/runs/{REC}/moves.prediction.json": GOOD_P,
+                                               f"axis/runs/{REC}/moves.baseline.json": BASE_M})
+        self._commit(bare, "W-1: the change", {"src/app.py": "v = 2\n"})
+        self._commit(bare, "W-1: measurement", {f"axis/runs/{REC}/moves.measured.json": PASS_M})
+        rc, out = self.gate("close", "W-1", "--repo", str(bare), "--binding", str(bfile), cwd=bare)
+        self.assertIn(f"record folder(s) axis/runs/{REC}", out)
+        self.assertNotIn("records worktree", out)
 
     def test_a_bad_runs_field_is_bad_input(self):
         self.unsealed_flow()
@@ -327,6 +376,62 @@ class Close(Project):
         rc, out = self.gate("close", "W-1")
         self.assertEqual(rc, 2, out)
         self.assertIn("runs", out)
+
+
+class SealCheckout(Project):
+    """Fix round 1: in records mode the seal names a code checkout's HEAD, never the main clone's by default,
+    and seals only a file under runs/ in the records worktree."""
+
+    def lane(self):
+        lane = self.t / "lane"
+        self.git(self.t, "clone", "-q", str(self.repo), str(lane))
+        self.git(lane, "config", "bakehouse.records", str(self.records))
+        self._commit(lane, "W-1: lane work", {"src/lane.py": "x = 1\n"})
+        return lane
+
+    def sealed(self):
+        return [e for e in self.events() if e["kind"] == "sealed"]
+
+    def test_a_seal_from_the_records_worktree_with_no_repo_is_refused(self):
+        self.write(self.rec(), {"moves.prediction.json": GOOD_P})
+        rc, out = self.seal("first", "moves.prediction.json", cwd=self.records)
+        self.assertEqual(rc, 2, out)
+        self.assertIn("run seal from the code checkout, or pass --repo <checkout>", out)
+        self.assertEqual(self.sealed(), [])
+
+    def test_a_seal_names_the_lane_checkouts_head(self):
+        lane = self.lane()
+        head = self.git(lane, "rev-parse", "--short", "HEAD")
+        self.assertNotEqual(head, self.git(self.repo, "rev-parse", "--short", "HEAD"))
+        self.write(self.rec(), {"moves.prediction.json": GOOD_P, "moves.baseline.json": BASE_M})
+        rc, out = self.seal("first", "moves.prediction.json", "--repo", str(lane), cwd=self.records)
+        self.assertEqual(rc, 0, out)
+        rc, out = self.seal("first", "moves.baseline.json", cwd=lane)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual([e["commit"] for e in self.sealed()], [head, head])
+
+    def test_a_records_mode_seal_refuses_a_file_outside_runs(self):
+        self.write(self.repo, {f"axis/runs/{REC}/moves.prediction.json": GOOD_P})
+        rc, out = self.gate("seal", "W-1", "first", str(self.repo / "axis" / "runs" / REC / "moves.prediction.json"))
+        self.assertEqual(rc, 2, out)
+        self.assertIn(f"{self.records}/runs/", out)
+        self.assertEqual(self.sealed(), [])
+
+    def test_a_tree_mode_seal_of_a_file_in_the_records_worktree_is_refused_as_on_main(self):
+        self.bind(dict(BINDING, reviews="axis/runs/"))
+        self.write(self.rec(), {"moves.prediction.json": GOOD_P})
+        rc, out = self.seal("first", "moves.prediction.json")
+        self.assertEqual(rc, 2, out)
+        self.assertIn("has no team", out)
+        self.assertEqual(self.sealed(), [])
+
+    def test_a_project_that_needs_setup_is_a_clean_refusal(self):
+        # L15: no traceback when the records worktree's project needs setup
+        self.write(self.rec(), {"moves.prediction.json": GOOD_P})
+        self.git(self.repo, "config", "--unset", "bakehouse.records")
+        rc, out = self.seal("first", "moves.prediction.json")
+        self.assertEqual(rc, 2, out)
+        self.assertNotIn("Traceback", out)
 
 
 # ---------- `bakehouse status`: the ledger, in either mode ----------
@@ -383,7 +488,19 @@ class Signals(Project):
         self.assertEqual(rc, 0, out)
         c = json.loads((self.t / "drivers.json").read_text())["computed"]
         self.assertEqual((c["runFolders"], c["driverFiles"]), (3, 3))
-        self.assertEqual(c["reviews"], f"{self.records}/runs/")
+        self.assertEqual(c["reviews"], "runs/")  # fix 4: no machine path in the register
+
+    def test_driver_signal_in_tree_mode_with_no_reviews_reads_the_default_folder(self):
+        # fix 6: as the locator, close and health-signal do
+        self.bind(dict(self.binding, runs="tree"))
+        body = "".join(f"value_{i} = compute(item_{i}, limit={i})\n" for i in range(12))
+        for i, d in enumerate(("2026-06-10", "2026-06-20")):
+            self.write(self.repo, {f"axis/runs/{d}-job{i}/drivers/probe.py": body})
+        rc, out = self.run_tool(["python3", str(RUNTIME / "driver-signal.py"), "--repo", str(self.repo),
+                                 "--as-of", "2026-06-30", "--register", str(self.t / "drivers.json")])
+        self.assertEqual(rc, 0, out)
+        c = json.loads((self.t / "drivers.json").read_text())["computed"]
+        self.assertEqual((c["runFolders"], c["reviews"]), (2, "axis/runs/"))
 
 
 # ---------- W3: bakehouse record commit ----------
@@ -434,6 +551,18 @@ class RecordCommit(Project):
         over = [e for e in self.events() if e["kind"] == "gate-refused"]
         self.assertEqual(len(over), 1, self.events())
         self.assertIn("owner go", over[0]["note"])
+
+    def test_a_failed_git_commit_leaves_nothing_staged(self):
+        hook = Path(self.git(self.repo, "rev-parse", "--path-format=absolute", "--git-path", "hooks")) / "pre-commit"
+        hook.parent.mkdir(parents=True, exist_ok=True)
+        hook.write_text("#!/bin/sh\necho the project's own hook refuses >&2\nexit 1\n")
+        hook.chmod(0o755)
+        self.write(self.rec(), {"moves.prediction.json": GOOD_P, "moves.baseline.json": BASE_M})
+        rc, out = self.bakehouse("record", "commit", str(self.rec()), "-m", "W-1: prediction")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("nothing committed", out)
+        self.assertEqual(self.git(self.records, "log", "--format=%s"), "records")
+        self.assertEqual(self.git(self.records, "diff", "--cached", "--name-only"), "")
 
     def test_tree_mode_exits_2(self):
         self.bind(dict(BINDING, reviews="axis/runs/"))
@@ -554,7 +683,7 @@ class RoleHook(roles_tests.Fixture):
         self.assertEqual(self.send("role:change:engineer", self.brief(self.records / "notes" / "x")), "DENY")
         self.assertEqual(self.send("role:change:engineer", self.brief(self.records / "runs")), "DENY")
 
-    def test_a_folder_in_another_projects_records_is_refused(self):
+    def test_a_folder_in_a_tree_mode_projects_records_or_in_an_unnamed_worktree_is_refused(self):
         theirs = roles_tests.project(Path(self.tmp.name).resolve() / "theirs", {"owned": True, "reviews": "records/"})
         self.assertEqual(self.send("role:change:engineer", self.brief(theirs / "runs" / "x")), "DENY")
         # a worktree on another branch, which no records pointer names
@@ -562,6 +691,16 @@ class RoleHook(roles_tests.Fixture):
         subprocess.run(["git", "-C", str(self.repo), "worktree", "add", "-q", "-b", "side", str(side)],
                        check=True, capture_output=True, env=self.env())
         self.assertEqual(self.send("role:change:engineer", self.brief(side / "runs" / "x")), "DENY")
+
+    def test_a_folder_under_another_records_mode_projects_runs_is_judged_by_that_project(self):
+        # the path's own project judges it, as in tree mode (PM ruling, fix round 1): accepted under its rules
+        theirs = roles_tests.project(Path(self.tmp.name).resolve() / "theirs", {"owned": True})
+        folder = theirs / "runs" / "2026-01-02-T7-step1-review"
+        self.assertNotEqual(self.send("role:change:engineer", self.brief(folder)), "DENY")
+        rec = self.dispatched()
+        self.assertEqual((rec["kind"], rec["root"], rec["folder"]),
+                         ("repo", str(theirs), "runs/2026-01-02-T7-step1-review"))
+        self.assertEqual(self.send("role:change:engineer", self.brief(theirs / "notes" / "x")), "DENY")
 
     def test_a_folder_in_the_code_tree_is_refused_in_records_mode(self):
         self.assertEqual(self.send("role:change:engineer", self.brief(self.repo / "axis" / "runs" / "x")), "DENY")
