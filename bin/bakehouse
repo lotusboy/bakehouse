@@ -4,6 +4,8 @@
   bakehouse setup [--pointer <main clone>] [--pre-commit] [--no-remote-check]   make this clone ready for its team
                                   (runtime/bakehouse_setup.py; bakehouse setup --help lists the options)
   bakehouse status [--json] [--since <ISO time>] [--repo <folder>]   the team's state (runtime/bakehouse_status.py)
+  bakehouse record commit <record folder> -m <message> [-m ...]   check and commit one run folder on the records
+                                  branch (runtime/bakehouse_record.py)
   bakehouse run <script> [args]   run runtime/<script> with the args: the stable way to name a plugin script,
                                   since the plugin folder changes on every update
 """
@@ -14,7 +16,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "runtime"))
-COMMANDS = {"setup": "bakehouse_setup", "status": "bakehouse_status"}
+COMMANDS = {"record": "bakehouse_record", "setup": "bakehouse_setup", "status": "bakehouse_status"}
 
 
 def run(argv) -> int:
