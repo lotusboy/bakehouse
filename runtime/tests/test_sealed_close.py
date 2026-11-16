@@ -1299,7 +1299,7 @@ class Sealed(unittest.TestCase):
 
     # ---- seal fixes: seal refuses what close would refuse later ----
 
-    def test_seal_f1_a1176_a_chained_round_whose_baseline_equals_the_earlier_measured_file_closes(self):
+    def test_seal_f1_a_chained_round_whose_baseline_equals_the_earlier_measured_file_closes(self):
         # the fix round's own baseline holds the first round's sealed measured bytes and has no seal of its own
         self.flow()
         self.commit(
@@ -1336,7 +1336,7 @@ class Sealed(unittest.TestCase):
             self.assertEqual(self.seal(rnd, f"moves.measured.{rnd}.json"), 0)
         self.commit(f"W-1: {rnd} measurement")
 
-    def test_seal_f3_a1176_a_late_seal_of_an_earlier_round_is_not_the_latest_measurement(self):
+    def test_seal_f3_a_late_seal_of_an_earlier_round_is_not_the_latest_measurement(self):
         # fix1's measured file is sealed after fix2's: the latest measurement is fix2's, by round order
         self.flow()
         self.fix_round("fix1", 3, seal=False)

@@ -481,7 +481,7 @@ class TestPredictionRecord(Fixture):
                                      "path": f"records/{self.folder.name}/{name}",
                                      "sha256": hashlib.sha256((self.folder / name).read_bytes()).hexdigest()}) + "\n")
 
-    def test_seal_f4_a1063_the_stop_does_not_ask_for_a_baseline_the_gate_refuses(self):
+    def test_seal_f4_the_stop_does_not_ask_for_a_baseline_the_gate_refuses(self):
         # round r4's measured file is sealed and its own baseline is not: the gate refuses that baseline's seal
         self.folder.mkdir(parents=True, exist_ok=True)
         files = {"moves.prediction.json": self.OKP, "moves.prediction.r4.json": self.OKP,

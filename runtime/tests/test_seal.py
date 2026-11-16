@@ -1272,7 +1272,7 @@ class SealTest(unittest.TestCase):
         self.assertEqual(self.events()[-1]["fileKind"], "measured")
 
     def test_seal_f1_a_chained_baseline_equal_to_a_sealed_measured_file_needs_no_seal_of_its_own(self):
-        # A1176's shape: the round's own baseline holds the bytes of the earlier round's sealed measured file
+        # a chained round: its own baseline holds the bytes of the earlier round's sealed measured file
         self.write({f"{REC}/moves.baseline.fix1.json": (self.repo / REC / "moves.measured.json").read_text(),
                     f"{REC}/moves.prediction.fix1.json": {"moves": [{"what": "out:w", "from": 5, "to": 6}]}})
         for name in ("moves.prediction.json", "moves.baseline.json"):
@@ -1289,7 +1289,7 @@ class SealTest(unittest.TestCase):
         self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
         self.assertIn("no live seal of W-1 holds its bytes", p.stderr)
 
-    def test_seal_f2_a1179_a_measured_seal_with_no_report_is_refused(self):
+    def test_seal_f2_a_measured_seal_with_no_report_is_refused(self):
         (self.repo / REC / "measure-report.json").unlink()
         self.assertEqual(self.seal("first", "moves.baseline.json").returncode, 0)
         p = self.seal("first", "moves.measured.json")
