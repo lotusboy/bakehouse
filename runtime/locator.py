@@ -194,6 +194,64 @@ def find(folder=None, env=os.environ) -> Project | None:
     return Project(root=top, team=team, records=records)
 
 
+DEFAULT_REVIEWS = "axis/runs/"
+RUNS = "runs/"
+
+
+class BadRuns(ValueError):
+    """The binding's `runs` field is not one the run-folder rule reads; the message names the fix."""
+
+
+def runs_mode(binding: dict) -> str:
+    """"records" or "tree": the binding's `runs`; without it, "tree" when the binding names `reviews` (a binding
+    from before records mode keeps its run folders where they are), else "records". BadRuns: `runs` is any other
+    value, or "records" beside a `reviews` folder."""
+    if "runs" not in binding:
+        return "tree" if "reviews" in binding else "records"
+    runs = binding["runs"]
+    if runs not in ("records", "tree"):
+        raise BadRuns(f'the binding\'s "runs" is {runs!r}: it is "records" (run folders on the records branch, '
+                      f'under {RUNS}) or "tree" (in the code tree, under "reviews")')
+    if runs == "records" and "reviews" in binding:
+        raise BadRuns('the binding says "runs": "records" and names a "reviews" folder: in records mode the run '
+                      f'folders are {RUNS} in the records worktree, so drop "reviews", or say "runs": "tree"')
+    return runs
+
+
+def runs_location(project, binding: dict, repo=None) -> tuple[Path, str, str]:
+    """Where the project keeps its run (record) folders: (the checkout git reads them in, the folder in it, mode).
+    The one answer for every reader of a record folder (close, seal, records-check, the signals, the role hook).
+    Records mode: (the records worktree, "runs/", "records"). Tree mode, as before records mode: (repo, else the
+    project's root; the binding's `reviews` as written, or "axis/runs/" when it names none; "tree"). Each reader
+    checks a `reviews` value as it did before. BadRuns: a bad `runs` (runs_mode), or records mode with no project,
+    so no records worktree."""
+    mode = runs_mode(binding)
+    if mode == "tree":
+        return (Path(repo) if repo is not None else project.root), binding.get("reviews", DEFAULT_REVIEWS), mode
+    if project is None:
+        raise BadRuns(f"the binding keeps run folders on the {RECORDS_BRANCH} branch (it names no \"reviews\"), and "
+                      f"{repo or 'this folder'} has no team, so no records worktree: run it in the project's "
+                      "repository")
+    return project.records, RUNS, mode
+
+
+def records_owner(folder, env=os.environ) -> Project | None:
+    """The project whose records worktree holds folder (a folder not made yet: its nearest parent), or None. git's
+    common dir names the main clone, and that clone's `bakehouse.records` pointer must name this checkout."""
+    p = Path(folder)
+    while not p.is_dir() and p != p.parent:
+        p = p.parent
+    top = toplevel(p)
+    common = _git(p, "rev-parse", "--path-format=absolute", "--git-common-dir") if top else None
+    if not common or Path(common).parent.resolve() == top.resolve():
+        return None  # not in a git repo, or in a main checkout: no records worktree
+    try:
+        project = find(Path(common).parent, env)
+    except SetupNeeded:
+        return None
+    return project if project is not None and project.records.resolve() == top.resolve() else None
+
+
 def main(argv) -> int:
     if not argv or argv[0] not in FIELDS:
         print(f"usage: locator.py <{'|'.join(FIELDS)}> [folder]", file=sys.stderr)
