@@ -791,10 +791,12 @@ def first_prompt(path):
     return c if isinstance(c, str) else ""
 
 
-def unsealed_moves(folders, where, named):
+def unsealed_moves(folders, where, named, wo=None):
     """The top-level moves files of the record folders whose bytes no seal in their project's ops ledger names:
     the project of `where`, the path the hook's binding lookup used (the cwd, or the record line's path:
-    named), found by the binding's own rule (lookup_paths). Fail-open, like the rest of this hook: an error
+    named), found by the binding's own rule (lookup_paths). With the work order wo, only the files
+    `predict-gate.sh seal` would accept now (predict-gate's seal_refusal, the seal's own rules): a file it would
+    refuse is logged as "cannot be sealed" and not listed. Fail-open, like the rest of this hook: an error
     reads as sealed, and says so."""
     try:
         gate = predict_gate()
@@ -808,10 +810,23 @@ def unsealed_moves(folders, where, named):
             return []
         ol = gate.ledger_module()
         led = Path(led)
-        sealed = {e.get("sha256") for e in map(ol.parse, ol.lines_of(led.read_bytes() if led.is_file() else b""))
-                  if isinstance(e, dict) and e.get("kind") in ("sealed", "revised")}
-        return [p for f in folders for p in (sorted(f.iterdir()) if f.is_dir() else [])
-                if p.is_file() and gate.SEAL_FILE.match(p.name) and ol.line_sha(p.read_bytes()) not in sealed]
+        events = list(map(ol.parse, ol.lines_of(led.read_bytes() if led.is_file() else b"")))
+        sealed = {e.get("sha256") for e in events if isinstance(e, dict) and e.get("kind") in ("sealed", "revised")}
+        out = []
+        for p in [p for f in folders for p in (sorted(f.iterdir()) if f.is_dir() else [])
+                  if p.is_file() and gate.SEAL_FILE.match(p.name) and ol.line_sha(p.read_bytes()) not in sealed]:
+            if wo:
+                try:
+                    kind, rnd = gate.file_round(p.name)
+                    why = gate.seal_refusal(p, f"{p.parent.name}/{p.name}", wo, rnd, kind, ol.line_sha(p.read_bytes()),
+                                            events)
+                except gate.BadInput as e:
+                    why = str(e)
+                if why:
+                    log(f"SEAL {p.parent.name}/{p.name} cannot be sealed, so the stop does not ask for it: {why}")
+                    continue
+            out.append(p)
+        return out
     except Exception as e:  # noqa: BLE001 - fail-open: the stop is never blocked by this check's own error
         log(f"SEAL check skipped: {e!r}")
         return []
@@ -889,7 +904,7 @@ def prediction_stop(d):
                     bad.append(str(e))
     if good and not bad:
         decided = kind == "repo" and bool(line[4])
-        unsealed = unsealed_moves(folders, line[4] if decided else cwd, decided)
+        unsealed = unsealed_moves(folders, line[4] if decided else cwd, decided, wo)
         if not unsealed:
             log(f"PREDICTION ok for {agent}: {', '.join(p.parent.name + '/' + p.name for p in good)}")
             return with_note(None, note)

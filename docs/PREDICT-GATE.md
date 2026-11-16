@@ -623,6 +623,14 @@ hard gate.
    project of the bound repository. The reason names each unsealed file
    and the `predict-gate.sh seal` command. On the second stop it lets the engineer stop and tells the
    user. Gate `stop:seal`. Fail-open: an error in this check reads as sealed.
+   It asks only for a seal the gate would accept now. The seal's rules sit in one function,
+   `seal_refusal` in `runtime/predict-gate.py`, which both `seal` and this check call. A file the gate
+   would refuse is not listed. The check writes one line to `logs/agent-roles.log` for it ("cannot be
+   sealed", with the gate's reason) and does not block the stop for it. Examples: a round's baseline
+   once its measured file is sealed; a measured file whose baseline is not sealed yet (the check asks
+   for the baseline first). The measure report is the seal command's argument, not the record's
+   state, so this check does not judge it. It judges this way only when the brief names its work order
+   (`Work order <id>:`); without one it lists every unsealed file, as before.
 6. Every stop of that agent type writes a `PROMPT-SOURCE` line to `logs/agent-roles.log` in the machine folder. It
    says whether line 1 of the agent's transcript ends with the marker. On the first live marked
    dispatch, "ends" proves the transcript records the rewritten prompt. "does not end" means it

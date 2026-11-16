@@ -439,7 +439,9 @@ class TestPredictionRecord(Fixture):
     def test_f7_an_unsealed_measured_file_beside_a_sealed_prediction_sends_the_engineer_back(self):
         self.folder.mkdir(parents=True, exist_ok=True)
         (self.folder / "moves.measured.json").write_text('{"tests:passed": 11}')
-        out = self.engineer_stop(self.marked(), files={"moves.prediction.json": self.OKP})
+        # seal F4: the measured file is sealable only once its baseline is sealed
+        out = self.engineer_stop(self.marked(), files={"moves.prediction.json": self.OKP,
+                                                       "moves.baseline.json": '{"tests:passed": 10}'})
         self.assertIn('"decision": "block"', out)
         self.assertIn("moves.measured.json", out)
         self.assertNotIn("/moves.prediction.json", out.split("no seal in the ops ledger:")[1].split(".")[0])
