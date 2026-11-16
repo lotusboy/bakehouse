@@ -1,6 +1,7 @@
 """Tests for runtime/blind-compare.sh and the paths the blind-readers skill names.
 Standard library only: python3 -m unittest runtime/tests/test_blind_compare.py"""
 import json
+import os
 import re
 import subprocess
 import tempfile
@@ -177,6 +178,95 @@ class BlindCompare(unittest.TestCase):
         self.assertIn("reader-x.md", p.stderr)
         self.assertNotIn("Traceback", p.stderr)
 
+    # fix round 1
+
+    def exits_2(self, p, *words):
+        self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+        self.assertNotIn("Traceback", p.stderr)
+        self.assertEqual(p.stdout, "")
+        for w in words:
+            self.assertIn(w, p.stderr)
+
+    def test_one_file_passed_twice_is_one_reader_and_exits_2(self):
+        a = self.write("reader-a.md", report("A", [item("C-01")]))
+        self.exits_2(self.run_(a, a), "reader-a.md", "same file")
+        # the same file by another spelling of its path
+        self.exits_2(self.run_(a, str(self.t / "." / "reader-a.md")), "same file")
+
+    def test_two_reports_that_name_the_same_reader_exit_2(self):
+        a = self.write("reader-a.md", report("A", [item("C-01")]))
+        for name in ("A", " a "):
+            with self.subTest(name=name):
+                b = self.write("reader-b.md", report(name, [item("C-01")]))
+                self.exits_2(self.run_(a, b), "two reports name the same reader")
+        # a reader named by its file stem counts too
+        (self.t / "x").mkdir()
+        stem = self.write("x/reader-a.md", report(None, [item("C-01")]))
+        named = self.write("reader-b.md", report("reader-a", [item("C-01")]))
+        self.exits_2(self.run_(stem, named), "two reports name the same reader")
+
+    def test_an_id_that_appears_twice_in_one_report_exits_2(self):
+        a = self.write("reader-a.md", report("A", [item("C-01")]))
+        for items in ([item("C-01"), item("C-01", "WRONG")], [item(1), item("1")]):
+            with self.subTest(ids=[i["id"] for i in items]):
+                b = self.write("reader-b.md", report("B", items))
+                self.exits_2(self.run_(a, b), "reader-b.md", "appears twice")
+
+    def test_number_ids_are_text_so_1_and_quoted_1_are_one_item(self):
+        p = self.run_(self.write("reader-a.md", report("A", [item(1)])),
+                      self.write("reader-b.md", report("B", [item("1")])))
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn("Agreed: 1 of 1.", p.stdout)
+
+    def test_a_report_with_an_empty_items_list_exits_2(self):
+        a = self.write("reader-a.md", report("A", [item("C-01")]))
+        b = self.write("reader-b.md", report("B", []))
+        self.exits_2(self.run_(a, b), "reader-b.md", "no items")
+        self.exits_2(self.run_(b, a), "reader-b.md", "no items")
+
+    def test_a_json_opener_after_the_last_complete_block_exits_2(self):
+        a = self.write("reader-a.md", report("A", [item("C-01")]))
+        final = json.dumps({"reader": "B", "items": [item("C-01", "WRONG")]})
+        for tail in (f"```json\n{final}\n",            # the final block is never closed
+                     f"```JSON\n{final}\n```\n",       # a closed block whose opener is in another case
+                     f"```Json  \n{final}\n"):          # both
+            with self.subTest(tail=tail[:8]):
+                b = self.write("reader-b.md", report("B", [item("C-01")]) + "\nThe final answer:\n\n" + tail)
+                self.exits_2(self.run_(a, b), "reader-b.md", "```json")
+
+    def test_crlf_and_trailing_spaces_after_the_opening_fence_still_open_a_block(self):
+        a = self.write("reader-a.md", report("A", [item("C-01")]))
+        block = json.dumps({"reader": "B", "items": [item("C-01")]})
+        for opener in ("```json\r\n", "```json   \n", "```json \t\r\n"):
+            with self.subTest(opener=repr(opener)):
+                b = self.write("reader-b.md", f"# Reader B\r\n\r\n{opener}{block}\r\n```\r\n")
+                p = self.run_(a, b)
+                self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+                self.assertIn("| C-01 | CORRECT | accept | CORRECT | accept | yes |", p.stdout)
+
+    def test_unreadable_input_exits_2_with_the_file_named_never_a_crash(self):
+        a = self.write("reader-a.md", report("A", [item("C-01")]))
+        bad_bytes = self.t / "reader-b.md"
+        bad_bytes.write_bytes(report("B", [item("C-01")]).encode() + b"\xff\xfe\x80 not utf-8\n")
+        self.exits_2(self.run_(a, str(bad_bytes)), "reader-b.md")
+        folder = self.t / "reader-d.md"
+        folder.mkdir()
+        self.exits_2(self.run_(a, str(folder)), "reader-d.md")
+        deep = self.write("reader-c.md", "# Reader C\n\n```json\n" + "[" * 100000 + "]" * 100000 + "\n```\n")
+        self.exits_2(self.run_(a, deep), "reader-c.md")
+
+    def test_reports_are_read_as_utf_8(self):
+        a = self.t / "reader-a.md"
+        b = self.t / "reader-b.md"
+        a.write_bytes(report("A", [item("C-01", quote="Le tarif est de 10 € par unité")]).encode("utf-8"))
+        b.write_bytes(report("B", [item("C-01", "WRONG", quote="Le tarif — 10 €")]).encode("utf-8"))
+        # a locale whose encoding is not UTF-8: the tool still reads and writes UTF-8
+        env = {k: v for k, v in os.environ.items() if not k.startswith(("LC_", "LANG", "PYTHONUTF8", "PYTHONIOENCODING"))}
+        p = subprocess.run([str(TOOL), str(a), str(b)], capture_output=True,
+                           env=dict(env, LC_ALL="en_US.ISO8859-1", LANG="en_US.ISO8859-1"))
+        self.assertEqual(p.returncode, 1, p.stderr.decode("utf-8", "replace"))
+        self.assertIn("10 € par unité".encode("utf-8"), p.stdout)
+
 
 class SkillPaths(unittest.TestCase):
     """Every ${CLAUDE_PLUGIN_ROOT}/... path the blind-readers skill names is a file in the plugin."""
@@ -197,6 +287,15 @@ class SkillPaths(unittest.TestCase):
         for name in sorted(tools):
             with self.subTest(tool=name):
                 self.assertTrue((RUNTIME / name).is_file(), f"{name} is named by the skill but is not in runtime/")
+
+    def test_every_answer_the_skill_records_passes_agreed(self):
+        # decision.sh answer refuses a choice that is not the recommendation word for word without --agreed,
+        # and leaves a blind answer unscored without it
+        answers = re.findall(r"decision\.sh answer [^\n]*", SKILL.read_text())
+        self.assertTrue(answers)
+        for line in answers:
+            with self.subTest(line=line):
+                self.assertIn("--agreed", line)
 
 
 if __name__ == "__main__":
