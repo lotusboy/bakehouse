@@ -407,7 +407,7 @@ class ShadowPredict(unittest.TestCase):
         self.ok(p)
         self.assertEqual(self.moves()["count:pages"], {"what": "count:pages", "to": 13, "scope": "one more"})
 
-    def test_m13_a_count_larger_than_the_keys_taken_and_one_smaller_both_refuse(self):
+    def test_m13_a_count_smaller_than_the_keys_taken_refuses(self):
         after = self.after(**{"score:demo|a|lost": 4, "score:demo|b|lost": 6})
         p = self.run_tool({"expect": [{"what": "score:demo|*|lost", "why": "lost", "count": 1}]}, after)
         self.refused(p, 1, "score:demo|*|lost: the expect entry says 1 key(s) move, and the shadow moved 2")
