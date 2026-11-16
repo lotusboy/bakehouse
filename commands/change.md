@@ -268,7 +268,10 @@ branch), `BASE` and the record folder. Commit by path, with the trailer. Fill th
    baseline seals it at that commit: `predict-gate.sh seal {id} <round> <file>`, `<round>` being
    `first` or the round label. When the PM commits it in the main checkout, the project is found
    from the file's repository. The engineer seals each measured file the moment it writes it, with the measure
-   report: `predict-gate.sh seal {id} <round> <measured file> --report <measure report>`. A clone of
+   report: `predict-gate.sh seal {id} <round> <measured file> --report <measure report>`. Seal the
+   round's baseline before its measured file: a measured seal is refused while the baseline its check
+   uses has no seal (a chained round's baseline that holds an earlier round's sealed measured file is
+   already covered). A measured seal with no report, or a report with no `head.sha`, is refused. A clone of
    the project runs `bakehouse setup --pointer <the main clone>` first; without it the seal refuses (or give
    `--repo <the main clone>`). Never set `OPS_TS` or `OPS_COMMIT` for a seal: it refuses them.
    The engineer commits each round's first code through `predict-gate.sh seal-code {id} <round> --
