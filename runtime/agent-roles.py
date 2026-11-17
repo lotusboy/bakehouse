@@ -399,12 +399,13 @@ def place(v):
     return None
 
 
-def dispatch_decision(prompt, cwd, in_care):
+def dispatch_decision(prompt, cwd, in_care, records=False):
     """The record folder a brief names, decided once, at dispatch: ("record", line) / ("refuse", why) /
     None (no line, or not this hook's: no line's full path is under a bound repository's reviews folder
     and in_care is False). Every line labelled as a record folder is read; a line round 1's reader cannot read, a
     path that is not full, a full path no check reads and two lines naming different folders are
-    refused, each naming the line and where it resolves from the dispatch's cwd."""
+    refused, each naming the line and where it resolves from the dispatch's cwd. records: the cwd's binding is in
+    records mode, so a refusal names the records runs/ folder, not a reviews folder (R0.3 D5)."""
     texts = [m.group(0) + prompt[m.end():].split("\n", 1)[0] for m in RECORD_LABEL.finditer(prompt or "")]
     if not texts:
         return None
@@ -433,8 +434,9 @@ def dispatch_decision(prompt, cwd, in_care):
             if got:
                 places.append(got)
             else:
-                refusals.append(f"`{t.strip()}` resolves to {shown(p)}, which is not under a bound repository's "
-                                "reviews folder")
+                refusals.append(f"`{t.strip()}` resolves to {shown(p)}, which is not under "
+                                + ("a project's records runs/ folder" if records
+                                   else "a bound repository's reviews folder"))
     if not in_care:
         return None
     if not refusals and len({(k, str(root), f) for k, root, f, _, _ in places}) > 1:
@@ -572,6 +574,18 @@ def runs_text(binding, where):
     return reviews_folder(binding or {})[0] or DEFAULT_REVIEWS
 
 
+def dispatch_runs_text(binding, cwd):
+    """runs_text, for the text a dispatch writes into the agent's prompt: a bad `runs` or `reviews` field refuses
+    the dispatch, naming the field and the binding file, as place() does (R0.3 B7), where runs_text would put
+    axis/runs/ in its place without a word."""
+    mode, bad = runs_mode(binding) if binding else (None, None)
+    why = bad or (reviews_folder(binding)[1] if binding and mode == "tree" else None)
+    if why:
+        raise Unreadable(f"the binding {binding_file(cwd) or 'of the repository ' + str(cwd)} has a bad field "
+                         f"`{'runs' if bad else 'reviews'}` ({why}): fix that field")
+    return runs_text(binding, cwd)
+
+
 def code_root(cwd, rec):
     """The code checkout a records-mode record's code paths are read in: the cwd's repository when it is a
     checkout of the project whose records worktree is rec, else that project's own folder."""
@@ -642,8 +656,13 @@ def pre_tool_use(d):
     engineer = False
     before = ti.get("prompt")
     by_role = st.startswith("role:")
-    if by_role:
-        spec = st[5:]
+    # an agent's name from before R0.1 that no installed agent has is resolved as a role, so it is refused with its
+    # new name (R0.3 B1); a user's own agent of that name is left alone
+    renamed = team_roles.renamed_hint(st[5:] if by_role else st)
+    if renamed and not by_role and any(team_roles.is_agent(st, a) for a in team_roles.installed_agents(cwd)):
+        renamed = None
+    if by_role or renamed:
+        spec = st[5:] if by_role else st.split(":")[-1]
         binding = bound(cwd)
         broken = broken_tables(cwd, binding)
         if broken:
@@ -663,8 +682,9 @@ def pre_tool_use(d):
             log(f"SKIP role:{spec}: {where} key '{key}' names {provs}, not installed")
         if not res["agent"]:
             what = "no installed agent fills it" if team_roles.known_role(spec, lvls) else "no level names it"
-            reason = (f"bakehouse agent-roles: role '{spec}' is unresolved ({what}). "
-                      f"Do the work in this session instead, behind the same gates.")
+            who = f"role '{spec}'" if by_role else f"agent '{st}'"
+            then = f"{renamed}." if renamed else "Do the work in this session instead, behind the same gates."
+            reason = f"bakehouse agent-roles: {who} is unresolved ({what}). {then}"
             log(f"DENY {reason}")
             refusal_event("dispatch:role-unresolved", reason, before, cwd)
             return {"hookSpecificOutput": {"hookEventName": "PreToolUse",
@@ -693,12 +713,14 @@ def pre_tool_use(d):
     decided = None
     if mark or (team_roles.role_of(st, tabs, users)[1] or {}).get("run_record"):
         bcwd = binding if binding is not None else bound(cwd)
-        dec = dispatch_decision(before, cwd, mark or by_role or bool(bcwd))
+        records = bool(bcwd) and runs_mode(bcwd)[0] == "records"
+        dec = dispatch_decision(before, cwd, mark or by_role or bool(bcwd), records)
         if dec and dec[0] == "refuse":
+            under = (f"the records runs/ folder, {runs_text(bcwd, cwd)}" if records
+                     else "a bound repository's reviews folder")
             reason = (f"bakehouse agent-roles: the stop check reads this agent's record folder from its brief's "
                       f"`Record folder:` line, decided now, at dispatch: {dec[1]}. Write one line, the full path "
-                      "of a folder under a bound repository's reviews folder (`Record folder: ~/<path>/`), and "
-                      "dispatch again.")
+                      f"of a folder under {under} (`Record folder: ~/<path>/`), and dispatch again.")
             log(f"DENY {reason}")
             refusal_event("dispatch:record-folder", reason, before, cwd)
             return {"hookSpecificOutput": {"hookEventName": "PreToolUse",
@@ -729,12 +751,12 @@ def pre_tool_use(d):
             if "{reviews}" in extra:
                 if binding is None:
                     binding = bound(cwd)
-                extra = extra.replace("{reviews}", runs_text(binding, cwd))
+                extra = extra.replace("{reviews}", dispatch_runs_text(binding, cwd))
             ti["prompt"] = (ti.get("prompt") or "") + f"\n\n{MARKER}\n{extra}"
             notes.append("prompt_append added")
 
     if mark and PREDICTION_MARKER not in (ti.get("prompt") or ""):
-        reviews = runs_text(binding, cwd)
+        reviews = dispatch_runs_text(binding, cwd)
         where = f"your record folder {decided[3]}/" if decided else f"the record folder your brief names under {reviews}"
         # the marker is the prompt's own final line: the stop check reads it there and nowhere else
         ti["prompt"] = (ti.get("prompt") or "") + (
@@ -981,8 +1003,12 @@ def prediction_stop(d):
             log(f"PREDICTION ok for {agent}: {', '.join(p.parent.name + '/' + p.name for p in good)}")
             return with_note(None, note)
         what = (f"moves file(s) with no seal in the ops ledger: "
-                f"{', '.join(p.parent.name + '/' + p.name for p, _ in unsealed)}"
-                f". Seal each one as you write it: predict-gate.sh seal {wo or '<work order>'} <round> <file>")
+                f"{', '.join(p.parent.name + '/' + p.name for p, _ in unsealed)}")
+        # the "seal each one" list names only the files the gate would seal now (R0.3 D8)
+        sealable = [f"{p.parent.name}/{p.name}" for p, why in unsealed if not why]
+        if sealable:
+            what += (f". Seal each one as you write it (predict-gate.sh seal {wo or '<work order>'} <round> <file>): "
+                     + ", ".join(sealable))
         refused = [f"{p.parent.name}/{p.name}: {why}" for p, why in unsealed if why]
         if refused:
             what += ". The gate refuses these seals as the files are now: " + "; ".join(refused)

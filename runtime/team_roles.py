@@ -26,6 +26,9 @@ BUILT_IN = {"general-purpose", "Explore", "Plan", "claude-code-guide", "statusli
 REVIEW_ROLES = {"reviewer", "code-review"}
 REVIEW_FALLBACK = "general-purpose"
 RESOLVE_TIMEOUT = 2  # seconds; the hook's whole budget is 10
+# R0.1 renamed two agents (agents/refactor-engineer.md is agents/engineer.md, refactor-reviewer.md is reviewer.md);
+# the roles they fill kept their names. An old name is refused with its new one (renamed_hint).
+RENAMED = {"refactor-engineer": "engineer", "refactor-reviewer": "reviewer"}
 
 
 class SetupProblem(str):
@@ -290,6 +293,17 @@ def resolve(spec, lvls, have):
     else:
         res["fallback"] = "session"
     return res
+
+
+def renamed_hint(name):
+    """For an agent's name from before R0.1 (bare, `bakehouse:`-prefixed, or the role part of a `role:` spec), the
+    sentence that gives its new name; None for any other name."""
+    old = name.split(":")[-1]
+    new = RENAMED.get(old)
+    if not new:
+        return None
+    return (f"`{old}` is the agent's name from before R0.1: it was renamed to `{new}`. Dispatch role:<job>:{new} "
+            f"(for example role:refactor:{new}), or the agent bakehouse:{new}")
 
 
 def known_role(spec, lvls):
