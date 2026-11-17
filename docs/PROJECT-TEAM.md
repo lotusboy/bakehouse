@@ -166,8 +166,8 @@ in the binding, because preflight cannot check it.
 |---|---|---|
 | `owned` | `true` when the owner owns the repo | always |
 | `approver` | who approves work when `owned` is false — a role, never a name | when `owned` is false |
-| `register` | the register's path | always |
-| `signal` | what rewrites the register: a command, a pointer, or rules for the shipped script (see "The signal") | always |
+| `register` | the register's path | for `health` and `refactor` |
+| `signal` | what rewrites the register: a command, a pointer, or rules for the shipped script (see "The signal") | for `health` and `refactor` |
 | `tracker` | `file`: where a job opens or reads its item; `id`: the id form, as a regular expression | when owned |
 | `measure` | `commands`: what the architect runs; `layerRules`: where the layer rules are (optional) | `commands` when owned |
 | `gates.byteIdentical` | the gate list for `refactor` | when owned |
@@ -179,7 +179,7 @@ in the binding, because preflight cannot check it.
 | `reviews` | tree mode: the folder of review records in the code tree; default `axis/runs/`. A binding that names it and no `runs` is in tree mode | no |
 | `reviewName` | one step's record folder name; default `{date}-{id}-step{n}-review` | no |
 | `leaveAlone` | files no step may edit | no |
-| `records` | `since`: the date the record contracts apply from (`YYYY-MM-DD`); `jobs`: artefacts added to a job's record contract (see "Records against the process"). It may add, never remove. `codeRoots`: the folders whose commits are code, for a `signal` that is a command or a pointer (a rules `signal` names its own `codeRoots`) | no |
+| `records` | `since`: the date the record contracts apply from (`YYYY-MM-DD`); `jobs`: artefacts added to a job's record contract (see "Records against the process"). It may add, never remove. `codeRoots`: the folders whose commits are code, in any binding. It is used when `signal` names no `codeRoots`: a binding with no `signal`, or a `signal` that is a command or a pointer. A rules `signal` that names its own `codeRoots` wins | no; `change` needs code roots here or in `signal.codeRoots` |
 | `mutation` | what the mutation runner runs for a mutated file: `command`, `env`, `timeout`, `tests` (a list of `{"files": <glob>, "tests": [<path>, ...]}`), `loads` (a command that prints where the tests' environment loads a file from), and `links` (paths in the copy that get a snapshot of a linked git repository; see "The mutation runner") | no |
 
 Placeholders are `{…}` only, from this closed list: `{root}`, `{register}`, `{id}`, `{n}`, `{date}`,
@@ -504,7 +504,7 @@ An artefact with `"active": false` is listed in the output and never flagged. Sw
 field in the shipped file.
 
 **What a binding may change.** `records.since` sets the start of the window. `records.codeRoots` names the
-code roots when `signal` is a command or a pointer. `records.jobs.<job>.require`
+code roots when `signal` names none (no `signal`, or a command or a pointer). `records.jobs.<job>.require`
 adds artefacts, each `{"id", "glob"}`, checked as present and not empty. A binding never removes or
 replaces a default: any other key, an id a default already has, a `check` or an `active` field, or an
 unknown job is refused. The check exits 2, and preflight check 2 fails.
@@ -561,7 +561,7 @@ read that line:
 
 **The work orders.** A work order is a tracker id (the binding's `tracker.id`) with at least one code
 commit in the window. A commit belongs to the first tracker id in its subject. A code commit touches
-one of the binding's code roots: `signal.codeRoots` for a rules `signal`, else `records.codeRoots`
+one of the binding's code roots: `signal.codeRoots` when `signal` names them, else `records.codeRoots`
 (`--code-roots` replaces either). The window runs from `records.since` to today; with no
 `records.since`, it is the last 30 days. A work order's record folders are the folders directly
 under `reviews` whose name holds its id as a whole token, case ignored. A **step folder** is one
@@ -863,7 +863,10 @@ runs read-only git commands; it writes nothing. One line per failure; exit 1 on 
 
 1. The binding exists.
 2. It parses, has the fields its `owned` value requires, only adds to the record contracts
-   (`records`), and uses only the closed placeholder list.
+   (`records`), and uses only the closed placeholder list. `refactor` and `health` also need `register`
+   and `signal`. `change` and `startup` do not; when the binding has them, checks 2 and 4 check them as
+   for any job. `change` needs code roots: `signal.codeRoots`, else `records.codeRoots`. With neither,
+   preflight fails: "name the code folders in records.codeRoots (or signal.codeRoots)".
 3. Every path field exists in the checkout.
 4. Every pointer finds its key. A gate the repo wrote as prose is listed, not failed.
 5. Every role the job dispatches resolves. A role table (the personal one or the shipped one) that cannot

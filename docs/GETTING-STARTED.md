@@ -137,27 +137,22 @@ The binding is the project's facts for the team. Write `.team/binding.json`:
 {
   "_about": "Repository facts for the project team.",
   "owned": true,
-  "register": "health.json",
-  "signal": {
-    "script": "health-signal",
-    "ref": "HEAD",
-    "codeRoots": ["src/"],
-    "part": "^src/([^/]+)/"
-  },
   "tracker": {"file": "docs/TRACKER.md", "id": "^T[0-9]+$"},
   "measure": {"commands": ["git log --no-merges --numstat -- src/{part}"]},
   "gates": {
     "byteIdentical": ".team/gates.json#gates",
     "predictedMoves": {"gates": ".team/gates.json#gates", "prediction": "moves.prediction.json"}
   },
-  "branches": {"refactor": "refactor/{id}-step{n}-{name}", "change": "fix/{id}-{name}"}
+  "branches": {"refactor": "refactor/{id}-step{n}-{name}", "change": "fix/{id}-{name}"},
+  "records": {"codeRoots": ["src/"]}
 }
 ```
 
 - `.team/gates.json#gates` is a pointer: the list under the key `gates` in that file.
-- `register` and `signal` are required even when you only run `/bakehouse:change`. The rules above use
-  the shipped signal script, which needs nothing else from the repo ([The signal](PROJECT-TEAM.md#the-signal)).
-- `signal.codeRoots` also tells close which commits are code commits.
+- `records.codeRoots` names the code folders. Close uses it to tell code commits apart. Preflight refuses a
+  `change` binding that names no code roots.
+- `/bakehouse:change` needs no `register` and no `signal`. `/bakehouse:health` and `/bakehouse:refactor`
+  need both: add them before you run those jobs ([The signal](PROJECT-TEAM.md#the-signal)).
 - `prediction` is the file the predicted-moves gate reads, `moves.prediction.json`. Preflight refuses a
   name the gate does not read.
 - Every field, and which ones are required: [The binding](PROJECT-TEAM.md#the-binding).

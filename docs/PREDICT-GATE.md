@@ -227,7 +227,7 @@ When close refuses (exit 1). Each reason names the file:
 8. The folder, or any file in it, is a symbolic link.
 9. A prediction or measured file whose sha256 an earlier close of ANOTHER work order recorded. Close
    may run again for the same work order.
-10. The code-order rules, when the binding names `signal.codeRoots`. A code
+10. The code-order rules, when the binding names code roots: `signal.codeRoots`, else `records.codeRoots`. A code
     commit of the work order is a non-merge commit that touches a code root and whose subject's first
     tracker id is the work order. Close refuses one that comes after the latest top-level measured
     file's commit, and one that no round covers: a round covers a code commit that comes after its
@@ -235,7 +235,7 @@ When close refuses (exit 1). Each reason names the file:
     `/bakehouse:change` step 6.1 and every fix round, commits its prediction before its first code edit.
     Rounds moved to `history/` count. The order is commit time, not ancestry: code made on a lane branch
     merges after its record is committed on the run branch.
-11. An uncommitted or untracked change under the binding's `signal.codeRoots` (`git status`, untracked
+11. An uncommitted or untracked change under the binding's code roots (`git status`, untracked
     files included). No record measured it. This applies to every close whose binding names code
     roots, with no cut-off: a dirty tree is wrong for any record.
 12. A predicted move that did not happen and has no reason in the round's missed file (below).
@@ -366,8 +366,8 @@ stream's decision ledger, and cited on the commit that made the exception:
    committed on the run branch.
 3. A round label used again after a supersede (a new `moves.prediction.json` after the old one went
    to `history/`) reads as one round, from its first prediction to its last measurement.
-4. A binding with no `signal.codeRoots` gets no code-order check and no dirty-tree check; close says
-   so in a note.
+4. A binding with no code roots (no `signal.codeRoots` and no `records.codeRoots`) gets no code-order
+   check and no dirty-tree check; close says so in a note. Preflight `change` refuses such a binding.
 
 **Sealing: the evidence close will judge.** Each prediction, baseline and
 measured file is sealed in the project's ops ledger at the moment it is written. A seal is a ledger
