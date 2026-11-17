@@ -48,7 +48,7 @@ folder's whole history); a top-level prediction or measured file removed (delete
 after that commit and absent at HEAD; a named baseline not committed before its prediction. A
 decision asked with an approving option (decision.sh ask --approves) approves only when its answer
 chose that option and its task is this work order; one asked without it keeps the older rule, an
-answer agreed true. With the binding's signal.codeRoots, the code-order rules:
+answer agreed true. With the binding's code roots (signal.codeRoots, else records.codeRoots), the code-order rules:
 each code commit of the work order (the first tracker id in its subject) comes after its round's
 prediction commit and no later than that round's measurement, and none comes after the latest
 measured file's commit. Ordered by commit time; judged only for work orders with a round whose
@@ -1403,25 +1403,27 @@ def run_close(wo: str, repo_arg: str | None, binding_arg: str | None, merged: bo
                              if missed_n in top_names else "")
                           + (f", approved: {', '.join(approved)}" if approved else ""))
 
-    sig = b.get("signal") if isinstance(b.get("signal"), dict) else {}
+    import locator
+    roots = locator.code_roots(b)  # signal.codeRoots, else records.codeRoots
     if folders and not merged:
-        if sig.get("codeRoots"):
+        if roots:
             # code the record cannot have measured, because git does not hold it
             changed = [x.strip() for x in git(repo, "--no-optional-locks", "status", "--porcelain", "--untracked-files=all",
-                                              "--", *sig["codeRoots"]).stdout.split("\n") if x.strip()]
+                                              "--", *roots).stdout.split("\n") if x.strip()]
             if changed:
                 refused.append("uncommitted or untracked change(s) under the code roots, which no record measured: "
                                "commit them in a measured round, or remove them: " + "; ".join(changed[:10])
                                + (f"; and {len(changed) - 10} more" if len(changed) > 10 else ""))
             if not sealed:
-                refused += code_order(repo, sig["codeRoots"], form, wo, [rel(f) for f in folders if not f.is_symlink()],
+                refused += code_order(repo, roots, form, wo, [rel(f) for f in folders if not f.is_symlink()],
                                       rec)
         else:
-            notes.append("the binding names no signal.codeRoots, so the code-order checks were not run")  # nor the dirty-tree one
+            notes.append("the binding names no signal.codeRoots, so the code-order checks were not run; "
+                         "records.codeRoots names none either")  # nor the dirty-tree one
     if sealed:
         notes.append(f"sealed: judged by {len(seal_events)} committed sealed event(s) in the ledger, not by git order")
         refused += seal_refused + sealed_refusals(repo, [rel(f) for f in folders if not f.is_symlink()], seal_events,
-                                                  decided, wo, sig.get("codeRoots"), form, notes, rec)
+                                                  decided, wo, roots, form, notes, rec)
     print(f"\nWork order {wo}: record folder(s) {', '.join(rel(f) for f in folders) or '(none)'}. "
           f"Pairs passed: {len(passed)}. Ledger: {ledger or '(none)'}. Decisions: {decision_ledger or '(none)'}")
     for n in notes:
@@ -1690,7 +1692,8 @@ def run_seal(cmd: str, wo: str, rnd: str, file: str, repo_arg: str | None, repor
     if fkind == "measured":
         fields, rc = measured_fields(path, repo, report, code)
         extra.update(fields)
-        roots = (binding.get("signal") or {}).get("codeRoots") if isinstance(binding.get("signal"), dict) else None
+        import locator
+        roots = locator.code_roots(binding)
         # the code the measurement read, by tree: close compares it when the head commit itself is gone
         extra["headTrees"] = code_trees(code, fields["head"], roots) if fields["head"] and roots else None
 
@@ -1759,9 +1762,11 @@ def run_seal_code(wo: str, rnd: str, repo_arg: str | None, commit_args: list) ->
         raise BadInput(f"{os.getcwd()} is not inside a git repository")
     repo, _, project, binding, _ = seal_target(Path(top.stdout.strip()), repo_arg, wo, folder=True)
     ledger = project.ops_ledger
-    roots = (binding.get("signal") or {}).get("codeRoots") if isinstance(binding.get("signal"), dict) else None
+    import locator
+    roots = locator.code_roots(binding)
     if not roots:
-        raise BadInput(f"{project.binding} names no signal.codeRoots, so no code commit can be told apart")
+        raise BadInput(f"{project.binding} names no signal.codeRoots or records.codeRoots, so no code commit can be "
+                       "told apart")
     if not git(repo, "diff", "--cached", "--name-only", "--", *roots).stdout.strip():
         raise BadInput(f"nothing under the code roots ({', '.join(roots)}) is staged: seal-code commits the round's "
                        "first code")

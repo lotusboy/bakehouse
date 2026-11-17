@@ -19,8 +19,8 @@ artefacts to a job; it can never remove or replace one (exit 2, and preflight ch
 
 THE WORK ORDERS. A work order is a tracker id (the binding's `tracker.id`) with at least one code
 commit in the window. A commit belongs to the FIRST tracker id in its subject; a code commit touches
-one of the code roots (`signal.codeRoots` for a rules signal, else the binding's `records.codeRoots`;
---code-roots replaces either). The window runs from --since, else the
+one of the code roots (`signal.codeRoots` when the signal names them, else the binding's `records.codeRoots`:
+locator.code_roots; --code-roots replaces either). The window runs from --since, else the
 binding's `records.since`, else `windowDays` before --as-of, to the end of --as-of. A work order's
 record folders are the folders directly under the binding's `reviews` whose name holds its id as a
 whole token, case ignored. A step folder is one whose name matches the binding's `reviewName`, with
@@ -950,9 +950,8 @@ def build(binding: dict, ledger: Path | None, repo: Path, a, contracts: dict, pr
         raise BadInput("the binding has no tracker.id: a work order is a tracker id")
     rx = id_search(tracker["id"])
     sig = binding.get("signal") if isinstance(binding.get("signal"), dict) else {}
-    # a command or pointer signal holds no code roots: the binding's records.codeRoots names them
-    roots = a.code_roots or (sig.get("codeRoots") if isinstance(binding.get("signal"), dict)
-                             else (binding.get("records") or {}).get("codeRoots"))
+    # signal.codeRoots, else records.codeRoots (a command or pointer signal, or none, names no code roots)
+    roots = a.code_roots or locator.code_roots(binding)
     if not roots:
         raise BadInput("no code roots: the binding's signal.codeRoots (a rules signal), records.codeRoots "
                        "(a command or pointer signal), or --code-roots")

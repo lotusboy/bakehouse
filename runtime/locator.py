@@ -241,6 +241,17 @@ def runs_location(project, binding: dict, repo=None) -> tuple[Path, str, str]:
     return project.records, RUNS, mode
 
 
+def code_roots(binding: dict):
+    """The folders whose commits are code: the binding's signal.codeRoots when `signal` is an object that names
+    them, else its records.codeRoots, else None. The one answer for close, seal, seal-code, records-check and
+    preflight. Each value is returned as the binding writes it; preflight and records-check judge its form."""
+    sig = binding.get("signal")
+    if isinstance(sig, dict) and sig.get("codeRoots"):
+        return sig["codeRoots"]
+    rec = binding.get("records")
+    return (rec.get("codeRoots") or None) if isinstance(rec, dict) else None
+
+
 def records_owner(folder, env=os.environ) -> Project | None:
     """The project whose records worktree holds folder (a folder not made yet: its nearest parent), or None. git's
     common dir names the main clone, and that clone's `bakehouse.records` pointer must name this checkout."""
