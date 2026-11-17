@@ -25,6 +25,7 @@ Run folders (record folders): runs_location says where a project keeps them, fro
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -241,15 +242,26 @@ def runs_location(project, binding: dict, repo=None) -> tuple[Path, str, str]:
     return project.records, RUNS, mode
 
 
+class BadCodeRoots(ValueError):
+    """The binding's records.codeRoots is not a list of folders; the message names the fix."""
+
+
 def code_roots(binding: dict):
     """The folders whose commits are code: the binding's signal.codeRoots when `signal` is an object that names
     them, else its records.codeRoots, else None. The one answer for close, seal, seal-code, records-check and
-    preflight. Each value is returned as the binding writes it; preflight and records-check judge its form."""
+    preflight. signal.codeRoots is returned as the binding writes it, as before. BadCodeRoots: records.codeRoots
+    is used and is not a list of folder names (preflight check 2 and records-check name the full rule)."""
     sig = binding.get("signal")
     if isinstance(sig, dict) and sig.get("codeRoots"):
         return sig["codeRoots"]
     rec = binding.get("records")
-    return (rec.get("codeRoots") or None) if isinstance(rec, dict) else None
+    roots = rec.get("codeRoots") if isinstance(rec, dict) else None
+    if not roots:
+        return None
+    if not isinstance(roots, list) or not all(isinstance(r, str) and r.strip("/") for r in roots):
+        raise BadCodeRoots(f"the binding's records.codeRoots = {json.dumps(roots)} is not a list of repository "
+                           'folders, for example ["src/"]')
+    return roots
 
 
 def records_owner(folder, env=os.environ) -> Project | None:

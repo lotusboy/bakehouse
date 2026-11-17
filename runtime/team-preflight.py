@@ -22,7 +22,8 @@ contracts (`records`, runtime/records-check.py), has a well-formed `mutation`
 block when it has one (runtime/mutate.py), says where the run folders are with a `runs` the locator reads
 ("records" or "tree", and "records" never beside `reviews`; runtime/locator.py runs_mode; a binding with `reviews`
 and no `runs` is noted), and uses only the closed placeholder list; 3 every path
-field, and every test path the `mutation` block names, exists in the checkout; 4 every pointer
+field (each `records.codeRoots` entry among them, which is never a git pathspec or a glob), and every test
+path the `mutation` block names, exists in the checkout; 4 every pointer
 finds its key (prose gates are listed, not failed), and a generic-script signal is valid (a
 missing script is a note, except for `refactor`, which runs the signal); 5 every
 role the job dispatches resolves; 6 for a job when owned is false, an unconsumed approval of this
@@ -64,7 +65,7 @@ REGEX_FIELDS = {("tracker", "id"), ("signal", "fix"), ("signal", "part"), ("sign
 # signal.parts[].id builds a part id from the match's groups: {1}, {2}, ... are its own placeholders
 # (runtime/health-signal.py). The closed list above is for commands, and does not apply there.
 GROUP_TEMPLATE_FIELDS = {("signal", "parts", "id")}
-PATH_FIELDS = (("tracker", "file"), ("measure", "layerRules"), ("reviews",), ("leaveAlone",))
+PATH_FIELDS = (("tracker", "file"), ("measure", "layerRules"), ("reviews",), ("leaveAlone",), ("records", "codeRoots"))
 POINTER = re.compile(r"^([^\s#]+)#([^\s#]+)$")
 JOB_ROLES = {"refactor": ["architect", "engineer", "reviewer"], "change": ["engineer", "reviewer"]}
 GIT_ENV = dict(os.environ, GIT_OPTIONAL_LOCKS="0")
@@ -123,9 +124,12 @@ def check_fields(b, job):
     else:
         need += [("approver",)]
     fails += [f"check 2: required field '{label(p)}' is missing" for p in need if get(b, p) is None]
-    if job == "change" and locator.code_roots(b) is None:  # close tells code commits apart by them
-        fails.append("check 2: the binding names no code roots: name the code folders in records.codeRoots "
-                     "(or signal.codeRoots)")
+    try:
+        if job == "change" and locator.code_roots(b) is None:  # close tells code commits apart by them
+            fails.append("check 2: the binding names no code roots: name the code folders in records.codeRoots "
+                         "(or signal.codeRoots)")
+    except locator.BadCodeRoots:
+        pass  # records_check.binding_errors, below, names the form
     pred = get(b, ("gates", "predictedMoves", "prediction"))
     if pred is not None and pred not in predict_gate.PREDICTION_NAMES:
         fails.append(f"check 2: 'gates.predictedMoves.prediction' = {json.dumps(pred)} is not a file the "
@@ -165,6 +169,10 @@ def check_paths(b, repo):
         for v in val if isinstance(val, list) else [] if val is None else [val]:
             if not isinstance(v, str) or not v.strip():
                 fails.append(f"check 3: path field '{label(path)}' = {json.dumps(v)} is not a path")
+                continue
+            if path == ("records", "codeRoots") and (v.startswith(":") or any(c in v for c in "*?[")):
+                # git would read it as a pathspec, and close's code checks would then match other files or none
+                fails.append(f"check 3: path field '{label(path)}' = '{v}' is a git pathspec or a glob: name a folder")
                 continue
             target = (repo / v.split("{", 1)[0]).resolve()
             if target != root and root not in target.parents:

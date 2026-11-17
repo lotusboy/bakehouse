@@ -954,7 +954,8 @@ def build(binding: dict, ledger: Path | None, repo: Path, a, contracts: dict, pr
     roots = a.code_roots or locator.code_roots(binding)
     if not roots:
         raise BadInput("no code roots: the binding's signal.codeRoots (a rules signal), records.codeRoots "
-                       "(a command or pointer signal), or --code-roots")
+                       "(a command or pointer signal), or --code-roots; a binding with no signal names them in "
+                       "records.codeRoots")
     ref = a.ref or sig.get("ref") or "HEAD"
     git(repo, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}")
     as_of = a.as_of
@@ -1227,7 +1228,8 @@ def main(argv=None) -> int:
     ap.add_argument("--as-of", type=date.fromisoformat, default=date.today())
     ap.add_argument("--since", type=date.fromisoformat, help="default: records.since, else windowDays before --as-of")
     ap.add_argument("--code-roots", nargs="+",
-                    help="default: the binding's signal.codeRoots (a rules signal), else records.codeRoots")
+                    help="default: the binding's signal.codeRoots when its signal names them, else records.codeRoots "
+                         "(no signal, or a command or pointer signal)")
     ap.add_argument("--ledger", help="default: the project's ops ledger")
     ap.add_argument("--register", help="default registers/records.json in the project's records folder. A "
                                        "relative path is taken in that registers/ folder")

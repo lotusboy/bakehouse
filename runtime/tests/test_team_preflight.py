@@ -171,7 +171,7 @@ class TestOwned(Fixture):
             self.assertIn(why, out)
 
     def test_c2_check_2_reads_records_code_roots(self):
-        self.owned(records={"codeRoots": ["src/"]})
+        self.owned(records={"codeRoots": ["docs/"]})  # item 8 fix 1: check 3 needs the folder in the checkout
         code, out = self.pre("health")
         self.assertNotIn("records", out)
         for roots in ("src/", [], ["../up"]):

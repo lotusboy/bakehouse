@@ -627,6 +627,17 @@ def runs_where(project, b: dict, repo: Path) -> tuple[Path, str, str]:
         raise BadInput(str(e))
 
 
+def code_roots(b: dict) -> list | None:
+    """locator.code_roots: signal.codeRoots, else records.codeRoots, else None. A malformed records.codeRoots is
+    bad input, so nothing is closed or sealed."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import locator
+    try:
+        return locator.code_roots(b)
+    except locator.BadCodeRoots as e:
+        raise BadInput(str(e))
+
+
 def record_folders(repo: Path, b: dict, wo: str, reviews=None) -> tuple[str, list]:
     """(the glob, the matching folders) for the work order: `reviews` + `reviewName`. {date} must be a
     date (YYYY-MM-DD), {n} is 1, {id} is the work order; any other placeholder is one path part. repo and
@@ -1226,6 +1237,7 @@ def run_close(wo: str, repo_arg: str | None, binding_arg: str | None, merged: bo
     repo = Path(top.stdout.strip())
     project = project_of(repo)  # close reads and writes only the ledger of the project the locator finds here
     b = find_binding(repo, binding_arg, project)
+    roots = code_roots(b)  # before anything is read or written: a malformed records.codeRoots closes nothing
     form = (b.get("tracker") or {}).get("id") if isinstance(b.get("tracker"), dict) else None
     if isinstance(form, str) and not re.fullmatch(form, wo):
         raise BadInput(f"{wo!r} does not match the binding's tracker id form {form!r}")
@@ -1403,8 +1415,6 @@ def run_close(wo: str, repo_arg: str | None, binding_arg: str | None, merged: bo
                              if missed_n in top_names else "")
                           + (f", approved: {', '.join(approved)}" if approved else ""))
 
-    import locator
-    roots = locator.code_roots(b)  # signal.codeRoots, else records.codeRoots
     if folders and not merged:
         if roots:
             # code the record cannot have measured, because git does not hold it
@@ -1418,8 +1428,8 @@ def run_close(wo: str, repo_arg: str | None, binding_arg: str | None, merged: bo
                 refused += code_order(repo, roots, form, wo, [rel(f) for f in folders if not f.is_symlink()],
                                       rec)
         else:
-            notes.append("the binding names no signal.codeRoots, so the code-order checks were not run; "
-                         "records.codeRoots names none either")  # nor the dirty-tree one
+            notes.append("the binding names no signal.codeRoots, so the code-order checks were not run, because it "
+                         "names no records.codeRoots either")  # nor the dirty-tree one
     if sealed:
         notes.append(f"sealed: judged by {len(seal_events)} committed sealed event(s) in the ledger, not by git order")
         refused += seal_refused + sealed_refusals(repo, [rel(f) for f in folders if not f.is_symlink()], seal_events,
@@ -1692,8 +1702,7 @@ def run_seal(cmd: str, wo: str, rnd: str, file: str, repo_arg: str | None, repor
     if fkind == "measured":
         fields, rc = measured_fields(path, repo, report, code)
         extra.update(fields)
-        import locator
-        roots = locator.code_roots(binding)
+        roots = code_roots(binding)
         # the code the measurement read, by tree: close compares it when the head commit itself is gone
         extra["headTrees"] = code_trees(code, fields["head"], roots) if fields["head"] and roots else None
 
@@ -1762,8 +1771,7 @@ def run_seal_code(wo: str, rnd: str, repo_arg: str | None, commit_args: list) ->
         raise BadInput(f"{os.getcwd()} is not inside a git repository")
     repo, _, project, binding, _ = seal_target(Path(top.stdout.strip()), repo_arg, wo, folder=True)
     ledger = project.ops_ledger
-    import locator
-    roots = locator.code_roots(binding)
+    roots = code_roots(binding)
     if not roots:
         raise BadInput(f"{project.binding} names no signal.codeRoots or records.codeRoots, so no code commit can be "
                        "told apart")
