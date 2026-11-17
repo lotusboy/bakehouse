@@ -140,11 +140,14 @@ class Ledger(Scratch):
                 self.ask(q=f"Use {name}?", grounding=["--read", str(run / name), "--read-what", "row 1"])
 
     def test_b5_fix1_reader_and_agreement_names_outside_a_blind_readers_run_are_sources(self):
-        # a folder with no reader-*.md and agreement.md pair is not a blind-readers run: as on 435f6cb
+        # a folder with no reader-*.md and agreement.md pair is not a blind-readers run: as on 435f6cb. Each name is
+        # in a folder of its own (agreement.md beside reader-guide.md would be such a pair)
         for name in ("agreement.md", "agreement.txt", "reader-guide.md", "Reader-Notes.txt"):
             with self.subTest(name):
-                (self.work / name).write_text("x")
-                self.ask("correction", q=f"Use {name}?", grounding=["--read", str(self.work / name), "--read-what", "row 1"])
+                d = self.work / f"alone-{name}"
+                d.mkdir()
+                (d / name).write_text("x")
+                self.ask("correction", q=f"Use {name}?", grounding=["--read", str(d / name), "--read-what", "row 1"])
         # a reader-*.md with no agreement.md beside it, and an agreement.md with no reader-*.md beside it
         for folder, names in (("half-a", ("reader-a.md", "reader-b.md")), ("half-b", ("agreement.md", "reader.md"))):
             d = self.work / folder

@@ -175,8 +175,9 @@ def check_prediction(p, path: Path) -> dict:
     if no_moves and moves:
         raise BadInput(f"{path}: 'noMoves' is true and the prediction lists {len(moves)} move(s); give one or the other")
     tol = p.get("tolerance", 0)
-    # true is an int to Python, and Infinity or NaN would hide every numeric move: none of them is a tolerance
-    if not _num(tol) or not math.isfinite(tol) or tol < 0:
+    # true is an int to Python, and Infinity or NaN would hide every numeric move: none of them is a tolerance. An
+    # int is finite however long (math.isfinite cannot take one past a float's range), so only a float is checked
+    if not _num(tol) or (isinstance(tol, float) and not math.isfinite(tol)) or tol < 0:
         raise BadInput(f"{path}: 'tolerance' must be a finite number >= 0 (not true or false)")
     for i, m in enumerate(moves):
         if not isinstance(m, dict) or not isinstance(m.get("what"), str):

@@ -656,11 +656,10 @@ def pre_tool_use(d):
     engineer = False
     before = ti.get("prompt")
     by_role = st.startswith("role:")
-    # an agent's name from before R0.1 that no installed agent has is resolved as a role, so it is refused with its
-    # new name (R0.3 B1); a user's own agent of that name is left alone
-    renamed = team_roles.renamed_hint(st[5:] if by_role else st)
-    if renamed and not by_role and any(team_roles.is_agent(st, a) for a in team_roles.installed_agents(cwd)):
-        renamed = None
+    # an agent's name from before R0.1 in bakehouse's own namespaces (role:, bakehouse:) is refused with its new
+    # name (R0.3 B1); a bare old name, or another plugin's, may be someone's own agent: it is left as it was
+    own_old = st.startswith("bakehouse:") and st[len("bakehouse:"):] in team_roles.RENAMED
+    renamed = team_roles.renamed_hint(st[5:]) if by_role else team_roles.renamed_hint(st) if own_old else None
     if by_role or renamed:
         spec = st[5:] if by_role else st.split(":")[-1]
         binding = bound(cwd)

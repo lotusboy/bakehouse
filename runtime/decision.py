@@ -36,9 +36,11 @@ import locator  # noqa: E402
 EVIDENCE_KINDS = ("measured", "blind-readers-agreed", "source-read", "inference")
 VERDICTS = ("held", "reversed", "refined")
 # A question rests on a source the asker opened, not on an agent's report about it (owner, 2026-10-14).
-# A blind-readers run's reports are reader-<x>.md and its comparison is agreement.md (skills/blind-readers).
 REPORT_NAMES = re.compile(r"(^|[-_.])(report|findings|result|prediction|disposition|contract|pass\d|handback)"
-                          r"([-_.]|$)|^reader-|^agreement$", re.I)
+                          r"([-_.]|$)", re.I)
+# A blind-readers run writes its readers' reports as reader-<x>.md and its comparison as agreement.md
+# (skills/blind-readers), side by side in its run folder. Only there are those names an agent's record.
+READER_REPORT = re.compile(r"reader-.+\.md", re.I)
 # Only a text record can be an agent's report: a contract.pdf or a report.csv is source material.
 REPORT_SUFFIXES = (".md", ".txt", ".json", ".jsonl")
 # Words that mark an inference. A question using one must label it: "guess:" (owner, 2026-10-14).
@@ -267,6 +269,17 @@ def meaningful(value, words=3):
     return len(re.findall(r"[^\W\d_]{2,}", value or "")) >= words
 
 
+def blind_readers_record(path):
+    """True for a reader-<x>.md or an agreement.md in a folder that holds both: a blind-readers run folder."""
+    if not (READER_REPORT.fullmatch(path.name) or path.name.lower() == "agreement.md"):
+        return False
+    try:
+        here = [p.name for p in path.parent.iterdir() if p.is_file()]
+    except OSError:
+        return False
+    return any(READER_REPORT.fullmatch(n) for n in here) and any(n.lower() == "agreement.md" for n in here)
+
+
 def check_grounding(a, cfg):
     """Refuse a question that is not grounded in a source the asker opened (owner, 2026-10-14).
     A category in the config's groundingExempt (a spend, process or scope call, which no source file
@@ -281,8 +294,9 @@ def check_grounding(a, cfg):
             if not path.is_file():
                 fail(f"--read {r}: no such file" if not path.exists() else f"--read {r}: not a file",
                      "decision:read-file")
-            if path.suffix.lower() in REPORT_SUFFIXES and (REPORT_NAMES.search(path.stem)
-                                                           or {"review", "reviews", "runs"} & set(path.parts)):
+            report = path.suffix.lower() in REPORT_SUFFIXES and (REPORT_NAMES.search(path.stem)
+                                                                 or {"review", "reviews", "runs"} & set(path.parts))
+            if report or blind_readers_record(path):
                 fail(f"--read {r}: that is an agent's record, not the source; open what it is about",
                      "decision:read-report")
         if not meaningful(a.read_what, 1):
