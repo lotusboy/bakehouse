@@ -867,7 +867,8 @@ runs read-only git commands; it writes nothing. One line per failure; exit 1 on 
    and `signal`. `change` and `startup` do not; when the binding has them, checks 2 and 4 check them as
    for any job. `change` needs code roots: `signal.codeRoots`, else `records.codeRoots`. With neither,
    preflight fails: "name the code folders in records.codeRoots (or signal.codeRoots)".
-3. Every path field exists in the checkout.
+3. Every path field exists in the checkout. Each `records.codeRoots` entry is one, for every job; an entry
+   that starts with `:` or holds `*`, `?` or `[` is a git pathspec or a glob, and fails.
 4. Every pointer finds its key. A gate the repo wrote as prose is listed, not failed.
 5. Every role the job dispatches resolves. A role table (the personal one or the shipped one) that cannot
    be read, does not parse, is not a JSON object or has a `roles` that is not an object fails, named. So
