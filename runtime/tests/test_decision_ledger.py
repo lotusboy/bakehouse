@@ -125,6 +125,7 @@ class Ledger(Scratch):
         run.mkdir()
         for name in ("reader-a.md", "reader-b.md", "agreement.md"):
             (run / name).write_text("x")
+        for name in ("reader-a.md", "reader-b.md", "agreement.md"):
             with self.subTest(name):
                 p = self.run_("ask", "--category", "correction", "--question", "q", "--option", "a", "--option",
                               "b", "--recommendation", "a", "--confidence", "0.5", "--evidence-kind", "measured",
@@ -137,6 +138,21 @@ class Ledger(Scratch):
             (run / name).write_text("x")
             with self.subTest(name):
                 self.ask(q=f"Use {name}?", grounding=["--read", str(run / name), "--read-what", "row 1"])
+
+    def test_b5_fix1_reader_and_agreement_names_outside_a_blind_readers_run_are_sources(self):
+        # a folder with no reader-*.md and agreement.md pair is not a blind-readers run: as on 435f6cb
+        for name in ("agreement.md", "agreement.txt", "reader-guide.md", "Reader-Notes.txt"):
+            with self.subTest(name):
+                (self.work / name).write_text("x")
+                self.ask("correction", q=f"Use {name}?", grounding=["--read", str(self.work / name), "--read-what", "row 1"])
+        # a reader-*.md with no agreement.md beside it, and an agreement.md with no reader-*.md beside it
+        for folder, names in (("half-a", ("reader-a.md", "reader-b.md")), ("half-b", ("agreement.md", "reader.md"))):
+            d = self.work / folder
+            d.mkdir()
+            for name in names:
+                (d / name).write_text("x")
+                with self.subTest(folder=folder, name=name):
+                    self.ask("correction", q=f"Use {folder} {name}?", grounding=["--read", str(d / name), "--read-what", "row 1"])
 
     def test_a_guess_word_must_be_labelled(self):
         for q in ("It probably holds, approve?", "The rule works it out from the pattern, go?",

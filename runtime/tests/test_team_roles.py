@@ -1928,7 +1928,7 @@ class TestR03RenamedAgents(DecisionFixture):
                 self.assertNotIn("Do the work in this session instead", why)
 
     def test_b1_an_old_plain_name_says_what_it_was_renamed_to(self):
-        for st, new in (("bakehouse:refactor-engineer", "engineer"), ("refactor-reviewer", "reviewer")):
+        for st, new in (("bakehouse:refactor-engineer", "engineer"), ("bakehouse:refactor-reviewer", "reviewer")):
             with self.subTest(st=st):
                 got, why = self.decide(st, "Do it.\n", self.repo)
                 self.assertEqual(got, "DENY")
@@ -1941,6 +1941,43 @@ class TestR03RenamedAgents(DecisionFixture):
         self.assertEqual(self.decide("bakehouse:reviewer", "Review it.\n", self.repo)[0], "ok")
         self.install("refactor-engineer")
         self.assertEqual(self.decide("refactor-engineer", "Do it.\n", self.repo), ("ok", "Do it.\n"))
+
+    # ---- fix round 1: only bakehouse's own namespaces (bakehouse:, role:) are refused; a bare old name or another
+    # plugin's is someone's own agent, and the hook leaves it as on 435f6cb (no output), bound or not ----
+
+    def raw(self, st, cwd):
+        d = {"hook_event_name": "PreToolUse", "tool_name": "Agent", "cwd": str(cwd),
+             "tool_input": {"subagent_type": st, "description": "x", "prompt": "Do it.\n"}}
+        p = subprocess.run(["python3", str(self.hook)], input=json.dumps(d), capture_output=True, text=True,
+                           env=self.env(), check=False)
+        return p.returncode, p.stdout.strip(), p.stderr
+
+    def test_b1_fix1_a_bare_or_other_plugins_old_name_is_left_alone_bound_or_not(self):
+        names = ("refactor-engineer", "refactor-reviewer", "acme:refactor-engineer", "acme:refactor-reviewer")
+        for st in names:
+            for cwd in (self.repo, self.other):
+                with self.subTest(st=st, cwd=cwd.name):
+                    self.assertEqual(self.raw(st, cwd), (0, "", ""))
+
+    def test_b1_fix1_a_users_old_name_agent_in_a_subfolder_is_left_alone(self):
+        # installed_agents reads only the top of the user's agents folder; the agent in team/ is still theirs
+        sub = self.home / ".claude" / "agents" / "team"
+        sub.mkdir(parents=True)
+        for n in ("refactor-engineer", "refactor-reviewer"):
+            (sub / f"{n}.md").write_text(f"---\nname: {n}\n---\n")
+        for st in ("refactor-engineer", "refactor-reviewer"):
+            for cwd in (self.repo, self.other):
+                with self.subTest(st=st, cwd=cwd.name):
+                    self.assertEqual(self.raw(st, cwd), (0, "", ""))
+
+    def test_b1_fix1_bakehouses_own_old_names_are_refused_bound_or_not(self):
+        for st, new in (("bakehouse:refactor-engineer", "engineer"), ("bakehouse:refactor-reviewer", "reviewer"),
+                        ("role:refactor-engineer", "engineer"), ("role:refactor-reviewer", "reviewer")):
+            for cwd in (self.repo, self.other):
+                with self.subTest(st=st, cwd=cwd.name):
+                    got, why = self.decide(st, "Do it.\n", cwd)
+                    self.assertEqual(got, "DENY")
+                    self.assertIn(f"it was renamed to `{new}`", why)
 
     def test_b1_an_unknown_role_keeps_todays_advice(self):
         got, why = self.decide("role:no-such-role", "Do it.\n", self.repo)

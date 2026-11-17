@@ -124,6 +124,20 @@ class Check(unittest.TestCase):
             with self.subTest(tolerance=tol):
                 self.assertEqual(self.run_gate({"moves": [], "tolerance": tol}, BASE).returncode, 0)
 
+    def test_b6_fix1_a_huge_integer_tolerance_is_accepted(self):
+        # an int is finite however long: as on 435f6cb, it is a tolerance, never a crash
+        p = self.run_gate({"moves": [], "tolerance": 10 ** 400}, self.after(premium__clean_risk=1900.0))
+        self.assertEqual(p.returncode, 0, (p.stdout, p.stderr))
+        self.assertNotIn("Traceback", p.stderr)
+
+    def test_b6_fix1_false_and_0_are_different_values(self):
+        base = {**BASE, "flag:on": 0}
+        p = self.run_gate({"moves": []}, {**base, "flag:on": False}, base)
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("flag:on: 0 -> false.", p.stdout)
+        p = self.run_gate({"moves": [{"what": "flag:on", "from": 0, "to": False}]}, {**base, "flag:on": False}, base)
+        self.assertEqual(p.returncode, 0, p.stdout)
+
     def test_b6_true_and_1_are_different_values(self):
         base = {**BASE, "flag:on": 1}
         p = self.run_gate({"moves": []}, {**base, "flag:on": True}, base)

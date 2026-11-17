@@ -809,6 +809,30 @@ class R03ColleagueCommit(Project):
         self.assertIn("Result: REFUSED", out)
         self.assertEqual([e for e in self.events() if e["kind"] == "work-order-closed"], [])
 
+    # fix round 1: the unsealed half. An unsealed close judges only the code commits whose subject names the work
+    # order, so the colleague's commit does not stop it. Sealed and unsealed close disagree: the owner's call.
+    def test_t1_today_an_unsealed_work_order_closes_with_a_colleagues_commit_on_the_same_branch(self):
+        self.unsealed_flow()
+        self.commit("tidy the helper", {"src/helper.py": "h = 1\n"})
+        rc, out = self.gate("close", "W-1")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("Result: CLOSED", out)
+        self.assertEqual(len([e for e in self.events() if e["kind"] == "work-order-closed"]), 1)
+
+    def test_t1_today_an_unsealed_work_order_closes_with_a_colleagues_branch_merged_in(self):
+        self.unsealed_flow()
+        self.git(self.repo, "checkout", "-q", "-b", "colleague", "HEAD~1")
+        self.commit("tidy the helper", {"src/helper.py": "h = 1\n"})
+        self.git(self.repo, "checkout", "-q", "main")
+        w = self.when()
+        self.git(self.repo, "merge", "-q", "--no-ff", "-m", "Merge the colleague's branch", "colleague",
+                 env=dict(self.env, GIT_AUTHOR_DATE=w, GIT_COMMITTER_DATE=w))
+        self.assertEqual(self.git(self.repo, "show", "-s", "--format=%P", "HEAD").count(" "), 1)
+        rc, out = self.gate("close", "W-1")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("Result: CLOSED", out)
+        self.assertEqual(len([e for e in self.events() if e["kind"] == "work-order-closed"]), 1)
+
     def test_t1_with_no_colleague_commit_the_same_work_order_closes(self):
         self.sealed_flow()
         rc, out = self.gate("close", "W-1")
