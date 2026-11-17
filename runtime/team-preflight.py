@@ -124,6 +124,13 @@ def check_fields(b, job):
     else:
         need += [("approver",)]
     fails += [f"check 2: required field '{label(p)}' is missing" for p in need if get(b, p) is None]
+    # a present field of the wrong type: `register` is a path; `signal` is a command or a pointer (a string), or
+    # rules for the shipped script (an object), the forms check_pointers and check_signal_rules read
+    if b.get("register") is not None and not isinstance(b["register"], str):
+        fails.append(f"check 2: field 'register' = {json.dumps(b['register'])} is not a path (the register's file)")
+    if b.get("signal") is not None and not isinstance(b["signal"], (str, dict)):
+        fails.append(f"check 2: field 'signal' = {json.dumps(b['signal'])} is not a command, a pointer or rules "
+                     "for the shipped script (an object)")
     try:
         if job == "change" and locator.code_roots(b) is None:  # close tells code commits apart by them
             fails.append("check 2: the binding names no code roots: name the code folders in records.codeRoots "
@@ -166,6 +173,8 @@ def check_paths(b, repo):
     root = repo.resolve()
     for path in PATH_FIELDS:
         val = get(b, path)
+        if path == ("reviews",) and isinstance(val, list):
+            val = [val]  # one folder: a list is not a path
         for v in val if isinstance(val, list) else [] if val is None else [val]:
             if not isinstance(v, str) or not v.strip():
                 fails.append(f"check 3: path field '{label(path)}' = {json.dumps(v)} is not a path")
@@ -320,10 +329,16 @@ def check_signal_rules(sig, repo, job):
             fails.append(f"check 4: signal.parts[{i}].match is missing or does not compile ({e})")
     if "part" not in sig and not listed:
         fails.append("check 4: signal has no part rule (signal.part or signal.parts)")
+    roots = sig.get("codeRoots") or []
+    if roots and not (isinstance(roots, list) and all(isinstance(r, str) and r for r in roots)):
+        # the shipped script reads a list of folders (health-signal.py): any other form is one line here
+        fails.append(f"check 4: signal.codeRoots = {json.dumps(roots)} is not a list of one or more folders, "
+                     'for example ["src/"]')
+        roots = []
     ref = sig.get("ref")
     if not ref or git(repo, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}").returncode:
         return fails + [f"check 4: signal.ref '{ref}' does not resolve in {repo}"], notes
-    for root in sig.get("codeRoots") or []:
+    for root in roots:
         if git(repo, "cat-file", "-e", f"{ref}:{root.rstrip('/')}").returncode:
             fails.append(f"check 4: signal.codeRoots '{root}' does not exist at {ref}")
     if not sig.get("codeRoots"):
