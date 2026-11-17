@@ -120,6 +120,24 @@ class Ledger(Scratch):
         self.assertEqual(self.rows()[0]["read"], [{"path": str(self.src), "what": "rows 1-2"}])
         self.assertTrue(did)
 
+    def test_b5_a_blind_readers_report_or_agreement_is_not_a_read_source(self):
+        run = self.work / "blind"
+        run.mkdir()
+        for name in ("reader-a.md", "reader-b.md", "agreement.md"):
+            (run / name).write_text("x")
+            with self.subTest(name):
+                p = self.run_("ask", "--category", "correction", "--question", "q", "--option", "a", "--option",
+                              "b", "--recommendation", "a", "--confidence", "0.5", "--evidence-kind", "measured",
+                              "--evidence", "e", "--read", str(run / name), "--read-what", "row 1", ok=False)
+                self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+                self.assertIn("that is an agent's record, not the source", p.stderr)
+        self.assertFalse(self.decisions.exists())
+        # a source file whose name only contains the words is still a source
+        for name in ("card-reader.csv", "agreements.csv", "reader.md"):
+            (run / name).write_text("x")
+            with self.subTest(name):
+                self.ask(q=f"Use {name}?", grounding=["--read", str(run / name), "--read-what", "row 1"])
+
     def test_a_guess_word_must_be_labelled(self):
         for q in ("It probably holds, approve?", "The rule works it out from the pattern, go?",
                   "Rates should stay put, ok?", "It appears to be a label, go?"):

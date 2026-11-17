@@ -154,6 +154,28 @@ class Ratify(unittest.TestCase):
         self.ratify("compare", self.run_dir / "reader-a.md", self.run_dir / "reader-b.md", "--out",
                     self.run_dir, code=2)
 
+    # --- R0.3 B4: a reader's JSON block of the wrong shape is bad input, in one line ---------------------------
+    def test_b4_a_block_of_the_wrong_shape_exits_2_in_one_line(self):
+        self.sample()
+        good = report("B", {"X1": "RIGHT"})
+        (self.run_dir / "reader-b.md").write_text(good)
+        for name, block in (("an item with no id", {"reader": "A", "items": [{"label": "RIGHT"}]}),
+                            ("a block that is not an object", [{"id": "X1", "label": "RIGHT"}]),
+                            ("an item that is not an object", {"reader": "A", "items": ["X1"]}),
+                            ("items that is not a list", {"reader": "A", "items": {"id": "X1"}})):
+            with self.subTest(name):
+                (self.run_dir / "reader-a.md").write_text("# Reader A\n\n```json\n" + json.dumps(block) + "\n```\n")
+                p = self.ratify("compare", self.run_dir / "reader-a.md", self.run_dir / "reader-b.md", "--out",
+                                self.run_dir, code=2)
+                self.assertNotIn("Traceback", p.stderr)
+                self.assertEqual(len(p.stderr.strip().splitlines()), 1, p.stderr)
+                self.assertTrue(p.stderr.startswith(f"ratify: {self.run_dir / 'reader-a.md'}: "), p.stderr)
+
+    def test_b4_a_good_block_still_compares(self):
+        self.sample()
+        self.compare({"X1": "RIGHT"}, {"X1": "RIGHT"})
+        self.assertTrue((self.run_dir / "agreement.json").is_file())
+
     # --- record + check ------------------------------------------------------------------------
     def recorded(self, *owner):
         self.sample()

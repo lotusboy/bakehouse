@@ -442,5 +442,74 @@ class TestSignalRules(Fixture):
         self.assertIn("may only use group numbers such as '{1}', got '{part}'", run(*args, env=env, script=script)[1])
 
 
+# ---------- R0.3 (item 9): a binding field of the wrong form fails in one line ----------
+
+class TestR03FieldForms(Fixture):
+    def fails(self, job, *arg):
+        code, out = self.pre(job, *arg)
+        self.assertEqual(code, 1, out)
+        self.assertNotIn("Traceback", out)
+        return [x for x in out.splitlines() if x.startswith("FAIL ")]
+
+    def test_b3_a_register_or_signal_of_the_wrong_type_fails_check_2(self):
+        for over, field in (({"register": 5}, "register"), ({"signal": 5}, "signal"), ({"signal": ["x"]}, "signal"),
+                            ({"signal": True}, "signal"), ({"register": {"a": 1}}, "register")):
+            for job in ("health", "refactor"):
+                with self.subTest(over=over, job=job):
+                    self.owned(**over)
+                    lines = [x for x in self.fails(job, *(["engine"] if job == "refactor" else []))
+                             if f"'{field}'" in x]
+                    self.assertEqual(len(lines), 1, lines)
+                    self.assertTrue(lines[0].startswith("FAIL check 2: "), lines)
+
+    def test_b3_a_present_field_of_the_wrong_type_fails_check_2_for_change_too(self):
+        self.owned(signal=5, records={"codeRoots": ["docs/"]})
+        lines = self.fails("change", "T1")
+        self.assertEqual([x for x in lines if "'signal'" in x and x.startswith("FAIL check 2: ")], lines)
+        self.assertEqual(len(lines), 1, lines)
+
+    def test_b3_each_good_form_still_passes(self):
+        self.owned()  # signal: a pointer
+        self.assertEqual(self.pre("health")[0], 0)
+        self.owned(signal="true")  # signal: a command
+        code, out = self.pre("health")
+        self.assertEqual(code, 0, out)
+
+    def test_b7_a_reviews_list_is_not_a_path(self):
+        self.owned(reviews=["reviews/"])
+        lines = self.fails("health")
+        self.assertEqual(len([x for x in lines if "'reviews'" in x]), 1, lines)
+
+
+class TestR03SignalCodeRoots(Fixture):
+    def setUp(self):
+        super().setUp()
+        (self.repo / "src").mkdir()
+        (self.repo / "src" / "a.py").write_text("x\n")
+        g = ["git", "-C", str(self.repo), "-c", "user.name=t", "-c", "user.email=t@t"]
+        subprocess.run(g + ["add", "-A"], check=True)
+        subprocess.run(g + ["commit", "-qm", "init"], check=True)
+
+    def sig(self, roots):
+        self.binding.write_text(json.dumps({"owned": False, "approver": "PM", "register": "h.json", "signal": {
+            "script": "health-signal", "ref": "HEAD", "fix": "^fix", "part": "^(src)/", "codeRoots": roots}}))
+
+    def test_b2_code_roots_that_are_not_a_list_of_folders_fail_check_4_in_one_line(self):
+        for bad in (True, 5, "src/", {"a": 1}, [5], ["src/", ""], [None]):
+            with self.subTest(codeRoots=bad):
+                self.sig(bad)
+                code, out = self.pre("health")
+                self.assertEqual(code, 1, out)
+                self.assertNotIn("Traceback", out)
+                lines = [x for x in out.splitlines() if x.startswith("FAIL ")]
+                self.assertEqual(len(lines), 1, out)
+                self.assertTrue(lines[0].startswith("FAIL check 4: signal.codeRoots = "), lines)
+
+    def test_b2_a_list_of_folders_still_passes(self):
+        self.sig(["src/"])
+        code, out = self.pre("health")
+        self.assertEqual(code, 0, out)
+
+
 if __name__ == "__main__":
     unittest.main()

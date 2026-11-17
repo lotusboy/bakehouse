@@ -545,6 +545,32 @@ class TestPredictionRecord(Fixture):
         self.assertIn('"decision": "block"', out)
         self.assertIn("moves.baseline.r4.json", out.split("no seal in the ops ledger:")[1].split(". Seal")[0])
 
+    # ---- R0.3 D8: the "seal each one" list leaves out a file whose seal the gate refuses; that file keeps
+    # its refusal text ----
+
+    def test_d8_a_file_the_gate_refuses_is_not_in_the_seal_each_one_list(self):
+        self.folder.mkdir(parents=True, exist_ok=True)
+        files = {"moves.prediction.json": self.OKP, "moves.baseline.json": '{"tests:passed": 10}',
+                 "moves.measured.json": '{"tests:passed": 11}'}
+        for name, text in files.items():
+            (self.folder / name).write_text(text)
+        self.sealed_lines(("first", "prediction", "moves.prediction.json"))
+        out = json.loads(self.engineer_stop(self.marked(), seal=False))["reason"]
+        seal_list = out.split("Seal each one as you write it")[1].split(". The gate refuses")[0]
+        self.assertIn("moves.baseline.json", seal_list)
+        self.assertNotIn("moves.measured.json", seal_list)
+        refused = out.split(". The gate refuses these seals as the files are now: ")[1]
+        self.assertIn("moves.measured.json", refused)
+        self.assertIn("seal it first: predict-gate.sh seal T7 first 2026-01-02-T7-step1-review/moves.baseline.json",
+                      refused)
+
+    def test_d8_with_no_refused_file_every_file_is_in_the_list(self):
+        self.folder.mkdir(parents=True, exist_ok=True)
+        (self.folder / "moves.prediction.json").write_text(self.OKP)
+        out = json.loads(self.engineer_stop(self.marked(), seal=False))["reason"]
+        self.assertIn("moves.prediction.json", out.split("Seal each one as you write it")[1])
+        self.assertNotIn("The gate refuses", out)
+
     def test_prediction_record_second_stop_is_let_through_and_told(self):
         out = self.engineer_stop(self.marked(), stop_hook_active=True)
         self.assertNotIn("block", out)
@@ -1883,6 +1909,82 @@ class TestResolve(unittest.TestCase):
         self.assertEqual(team_roles.resolve("code-review", [], set())["fallback"], "general-purpose")
         r = team_roles.resolve("refactor:engineer", [], set())
         self.assertEqual((r["agent"], r["fallback"]), (None, "session"))
+
+
+# ---------- R0.3 (item 9): small fixes ----------
+
+class TestR03RenamedAgents(DecisionFixture):
+    """B1: an agent's name from before R0.1 (refactor-engineer, refactor-reviewer) is refused in one line that
+    gives its new name, by role or by plain name; the user's own agent of that name is left alone."""
+
+    def test_b1_an_old_role_name_says_what_it_was_renamed_to(self):
+        for st, new in (("role:refactor-engineer", "engineer"), ("role:refactor-reviewer", "reviewer"),
+                        ("role:change:refactor-engineer", "engineer")):
+            with self.subTest(st=st):
+                got, why = self.decide(st, "Do it.\n", self.repo)
+                self.assertEqual(got, "DENY")
+                self.assertIn(f"it was renamed to `{new}`", why)
+                self.assertIn(f"role:refactor:{new}", why)
+                self.assertNotIn("Do the work in this session instead", why)
+
+    def test_b1_an_old_plain_name_says_what_it_was_renamed_to(self):
+        for st, new in (("bakehouse:refactor-engineer", "engineer"), ("refactor-reviewer", "reviewer")):
+            with self.subTest(st=st):
+                got, why = self.decide(st, "Do it.\n", self.repo)
+                self.assertEqual(got, "DENY")
+                self.assertIn(f"agent '{st}' is unresolved", why)
+                self.assertIn(f"it was renamed to `{new}`", why)
+                self.assertIn(f"bakehouse:{new}", why)
+
+    def test_b1_the_new_names_and_a_users_own_agent_of_the_old_name_still_pass(self):
+        self.assertEqual(self.decide("role:refactor:engineer", "Do it.\n", self.repo)[0], "ok")
+        self.assertEqual(self.decide("bakehouse:reviewer", "Review it.\n", self.repo)[0], "ok")
+        self.install("refactor-engineer")
+        self.assertEqual(self.decide("refactor-engineer", "Do it.\n", self.repo), ("ok", "Do it.\n"))
+
+    def test_b1_an_unknown_role_keeps_todays_advice(self):
+        got, why = self.decide("role:no-such-role", "Do it.\n", self.repo)
+        self.assertEqual(got, "DENY")
+        self.assertIn("Do the work in this session instead", why)
+        self.assertNotIn("renamed", why)
+
+
+class TestR03BadReviewsAtDispatch(DecisionFixture):
+    """B7: a bad `reviews` field is named at dispatch where it is used, never replaced by axis/runs/ without a
+    word: the {reviews} of a prompt_append, and the prediction marker's folder."""
+
+    BAD = (7, ["records/"], "/abs/runs/", "../runs/")
+
+    def bind(self, value):
+        self.bpath.write_text(json.dumps({"owned": True, "reviews": value, "tracker": {"id": "^T[0-9]+$"}}))
+
+    def test_b7_a_prompt_append_with_reviews_names_the_bad_field(self):
+        self.personal({"code-review": {"providers": ["design-author"], "prompt_append": "create {reviews}<date>-x/"}})
+        for value in self.BAD:
+            with self.subTest(value=value):
+                self.bind(value)
+                got, why = self.decide("design-author", "Draw it.\n", self.repo)
+                self.assertEqual(got, "DENY")
+                self.assertIn(f"the binding {self.bpath} has a bad field `reviews`", why)
+                self.assertNotIn("axis/runs/", why)
+
+    def test_b7_the_prediction_marker_names_the_bad_field(self):
+        for value in self.BAD:
+            with self.subTest(value=value):
+                self.bind(value)
+                got, why = self.decide("role:change:engineer", "Work order T7: x\n", self.repo)
+                self.assertEqual(got, "DENY")
+                self.assertIn(f"the binding {self.bpath} has a bad field `reviews`", why)
+
+    def test_b7_a_good_reviews_field_still_fills_both(self):
+        self.personal({"code-review": {"providers": ["design-author"], "prompt_append": "create {reviews}<date>-x/"}})
+        self.bind("records/")
+        got, sent = self.decide("design-author", "Draw it.\n", self.repo)
+        self.assertEqual(got, "ok")
+        self.assertIn("create records/<date>-x/", sent)
+        got, sent = self.decide("role:change:engineer", "Work order T7: x\n", self.repo)
+        self.assertEqual(got, "ok")
+        self.assertIn("the record folder your brief names under records/ must hold the prediction", sent)
 
 
 if __name__ == "__main__":

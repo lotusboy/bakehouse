@@ -114,6 +114,29 @@ class Check(unittest.TestCase):
         self.assertEqual(self.run_gate(pred, self.after(premium__clean_risk=1000.004)).returncode, 0)
         self.assertEqual(self.run_gate(pred, self.after(premium__clean_risk=1000.01)).returncode, 1)
 
+    def test_b6_a_tolerance_of_true_or_infinity_or_nan_is_bad_input(self):
+        for tol in (True, False, float("inf"), float("nan"), -1, "0.1"):
+            with self.subTest(tolerance=tol):
+                p = self.run_gate({"moves": [], "tolerance": tol}, self.after(premium__clean_risk=1900.0))
+                self.assertEqual(p.returncode, 2, (p.stdout, p.stderr))
+                self.assertIn("'tolerance' must be a finite number >= 0", p.stderr)
+        for tol in (0, 0.5, 2):
+            with self.subTest(tolerance=tol):
+                self.assertEqual(self.run_gate({"moves": [], "tolerance": tol}, BASE).returncode, 0)
+
+    def test_b6_true_and_1_are_different_values(self):
+        base = {**BASE, "flag:on": 1}
+        p = self.run_gate({"moves": []}, {**base, "flag:on": True}, base)
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("flag:on: 1 -> true.", p.stdout)
+        p = self.run_gate({"moves": [{"what": "flag:on", "from": 1, "to": True}]}, {**base, "flag:on": True}, base)
+        self.assertEqual(p.returncode, 0, p.stdout)
+        p = self.run_gate({"moves": [{"what": "flag:on", "to": 1}]}, {**base, "flag:on": True}, base)
+        self.assertEqual(p.returncode, 1, p.stdout)
+        # the same value, and 1 against 1.0, still do not move
+        self.assertEqual(self.run_gate({"moves": []}, base, base).returncode, 0)
+        self.assertEqual(self.run_gate({"moves": []}, {**base, "flag:on": 1.0}, base).returncode, 0)
+
     def test_key_appearing_or_disappearing_is_a_move(self):
         gone = {k: v for k, v in BASE.items() if k != "rules:fired"}
         p = self.run_gate({}, {**gone, "rules:new": 1})
@@ -245,6 +268,16 @@ class Ledger(RepoFixture):
         self.write({"moves": [{"what": "gaps:unfaithful-logic"}]}, {**BASE, "gaps:unfaithful-logic": 13},
                    {**BASE, "gaps:unfaithful-logic": 12})
         self.assertNotEqual(self.git("commit", "-m", "z", check=False).returncode, 0)
+
+    def test_d4_the_git_hooks_refusal_still_names_git_commit(self):
+        self.install_hook()
+        self.write({"moves": []}, {**BASE, "gaps:unfaithful-logic": 11})
+        self.git("add", "-A")
+        p = self.git("commit", "-m", "x", check=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn('Owner-approved exception only: PREDICT_GATE_OVERRIDE="<reason>" [PREDICT_GATE_TASK=<id>] '
+                      "git commit ...", p.stdout + p.stderr)
+        self.assertNotIn("bakehouse record commit", p.stdout + p.stderr)
 
     def test_hook_ignores_commits_without_a_measured_file(self):
         self.install_hook()

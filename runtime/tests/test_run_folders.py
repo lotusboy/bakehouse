@@ -608,6 +608,15 @@ class RecordCommit(Project):
 
 
 # ---------- the end-to-end run ----------
+    # R0.3 D4
+    def test_d4_a_refusal_names_the_command_that_ran(self):
+        self.write(self.rec(), {"moves.prediction.json": GOOD_P, "moves.baseline.json": BASE_M,
+                                "moves.measured.json": FAIL_M})
+        rc, out = self.bakehouse("record", "commit", str(self.rec()), "-m", "W-1: measurement")
+        self.assertEqual(rc, 1, out)
+        self.assertIn('Owner-approved exception only: PREDICT_GATE_OVERRIDE="<reason>" [PREDICT_GATE_TASK=<id>] '
+                      "bakehouse record commit <record folder> -m ...", out)
+        self.assertNotIn("git commit", out)
 
 class EndToEnd(Project):
     def test_a_work_order_runs_and_closes_with_its_record_on_the_records_branch(self):
@@ -709,6 +718,23 @@ class RoleHook(roles_tests.Fixture):
         self.personal({"code-review": {"providers": ["design-author"], "prompt_append": "create {reviews}<date>-x/"}})
         self.assertIn(f"create {self.records}/runs/<date>-x/", self.dispatch("design-author")["prompt"])
 
+    # R0.3 D5
+    def reason(self, prompt):
+        d = {"hook_event_name": "PreToolUse", "tool_name": "Agent", "cwd": str(self.repo),
+             "tool_input": {"subagent_type": "role:change:engineer", "description": "x", "prompt": prompt}}
+        p = subprocess.run(["python3", str(self.hook)], input=json.dumps(d), capture_output=True, text=True,
+                           env=self.env())
+        out = json.loads(p.stdout)["hookSpecificOutput"]
+        self.assertEqual(out.get("permissionDecision"), "deny", out)
+        return out["permissionDecisionReason"]
+
+    def test_d5_a_refused_record_folder_names_the_records_runs_folder(self):
+        for path in (self.repo / "axis" / "runs" / "x", self.records / "notes" / "x"):
+            with self.subTest(path=path):
+                why = self.reason(self.brief(path))
+                self.assertIn("which is not under a project's records runs/ folder", why)
+                self.assertIn(f"a folder under the records runs/ folder, {self.records}/runs/", why)
+                self.assertNotIn("reviews folder", why)
 
 # ---------- W2: preflight checks `runs` ----------
 
@@ -750,6 +776,44 @@ class Preflight(preflight_tests.Fixture):
                 code, out = self.pre("health")
                 self.assertEqual(code, 1, out)
                 self.assertIn("FAIL check 2:", out)
+
+
+# ---------- R0.3 (item 9) ----------
+
+class R03ColleagueCommit(Project):
+    """T1: a colleague commits code under the code roots without bakehouse, between the measured seal and close.
+    Close is not changed. Each test asserts what close does today, and its name says so."""
+
+    def test_t1_today_close_refuses_a_colleagues_commit_on_the_same_branch_after_the_measured_seal(self):
+        self.sealed_flow()
+        self.commit("tidy the helper", {"src/helper.py": "h = 1\n"})
+        rc, out = self.gate("close", "W-1")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("is on HEAD's own line, and the code at HEAD differs from the code it measured: code came "
+                      "after the latest measurement; measure it in a new round", out)
+        self.assertIn("Result: REFUSED", out)
+        self.assertEqual([e for e in self.events() if e["kind"] == "work-order-closed"], [])
+
+    def test_t1_today_close_refuses_a_colleagues_branch_merged_in_after_the_measured_seal(self):
+        base = self.sealed_flow()
+        self.git(self.repo, "checkout", "-q", "-b", "colleague", base)
+        self.commit("tidy the helper", {"src/helper.py": "h = 1\n"})
+        self.git(self.repo, "checkout", "-q", "main")
+        w = self.when()
+        self.git(self.repo, "merge", "-q", "--no-ff", "-m", "Merge the colleague's branch", "colleague",
+                 env=dict(self.env, GIT_AUTHOR_DATE=w, GIT_COMMITTER_DATE=w))
+        rc, out = self.gate("close", "W-1")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("is on HEAD's own line, and the code at HEAD differs from the code it measured: code came "
+                      "after the latest measurement; measure it in a new round", out)
+        self.assertIn("Result: REFUSED", out)
+        self.assertEqual([e for e in self.events() if e["kind"] == "work-order-closed"], [])
+
+    def test_t1_with_no_colleague_commit_the_same_work_order_closes(self):
+        self.sealed_flow()
+        rc, out = self.gate("close", "W-1")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("Result: CLOSED", out)
 
 
 if __name__ == "__main__":
