@@ -429,6 +429,10 @@ Gate (predicted moves): every gate in [binding.gates.predictedMoves.gates, resol
   says go. Afterwards read it back exactly; stop on any unpredicted move.
 Both: run BASE against BASE first. Scratch dir: [PM: a folder under the system temp directory,
   outside the repo, named by the tracker id, never by the user's name].
+  Drivers (the scripts you write to measure, compare or check the step): in drivers/, directly
+  inside the record folder above. The driver signal (runtime/driver-signal.py) reads driver scripts
+  only from a drivers* folder directly inside a run's record folder, so it can count the same script
+  written again in run after run.
   Runs that must not run in parallel: [binding.gates.oneAtATime, or "none named"].
   A clone of this repository (a lane clone, or a clone made for a run): before any bakehouse tool in
   it, run `bakehouse setup --pointer [PM: the main clone's full path]`. Without it every team tool
@@ -463,6 +467,10 @@ Prose gates to run and record: [preflight: check 4 ids, read from the binding's 
 Known suspects: [the engineer's report: its pre-mortem and its found-not-fixed list].
 RUN the risky case on real inputs in a scratch dir (a constructed case is fine); say "read, not run"
 where you could not run it.
+Drivers (the scripts you write to run it, measure or attack the change): in drivers/, directly inside
+the record folder below, not in a subfolder of it. The driver signal (runtime/driver-signal.py) reads
+driver scripts only from a drivers* folder directly inside a run's record folder, so it can count the
+same script written again in run after run.
 Record folder: [tree mode: {root}/ + binding.reviews + binding.reviewName; records mode: {records}/runs/ + binding.reviewName; filled: a full path, in ~/ form; this line holds the path only, in backticks if it has a space; notes go on the next line]
 Write contract.md first, then each pass file as you finish it, then findings.md, into
 that record folder. Round: [PM: "the first review: findings.md and

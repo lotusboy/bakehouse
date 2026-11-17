@@ -111,7 +111,7 @@ A role names a job. An agent fills a role. A job dispatches `role:<job>:<role>`,
 | `expert` | an independent reading of one question about what a source means, standing in for a human expert in the project's field; it reads blind and advises, never rules; two of them, on two different models, are the readers of the `blind-readers` skill | `bakehouse:human-expert` |
 | `code-review` | single-pass code review | none shipped; falls back to the built-in `general-purpose` agent |
 
-Before R0.1 the agents `bakehouse:engineer` and `bakehouse:reviewer` were named `refactor-engineer` and `refactor-reviewer`; an older record that names those agents means these two.
+Before R0.1 the agents `bakehouse:engineer` and `bakehouse:reviewer` were named `refactor-engineer` and `refactor-reviewer`; an older record that names those agents means these two. A dispatch by an old name (`role:refactor-engineer`, `bakehouse:refactor-engineer`, and the same for the reviewer) is refused, and the reason gives the new name, unless the user has an agent of that old name.
 
 Resolution checks these levels in order. At each level the key `<job>:<role>` is tried before
 `<role>`. A level that names only agents that are not installed is skipped, and the skip is logged.
@@ -368,7 +368,7 @@ name that is generic is not always incoherent, so the figure is measured, never 
 | `coherent` | the coherence at or over which a family is coherent, 0 to 1 | `0.5` |
 | `maxBytes` | a driver file larger than this is skipped and reported | `1000000` |
 | `nested` | also read `drivers*` folders deeper inside a run | `false` |
-| `register` | the register file; a relative path is taken beside the binding | `drivers.json` |
+| `register` | the register file; a relative path is taken in the records `registers/` folder, beside the health register | `drivers.json` |
 | `owner` | who a raised family goes to: the PM by default, until a role that judges tools exists | `pm` |
 | `families` | names the team knows are one tool: `id` and a list of `names` globs (`*` and `?`, case ignored); the first match wins | none |
 
@@ -866,10 +866,14 @@ runs read-only git commands; it writes nothing. One line per failure; exit 1 on 
    (`records`), and uses only the closed placeholder list. `refactor` and `health` also need `register`
    and `signal`. `change` and `startup` do not; when the binding has them, checks 2 and 4 check them as
    for any job. `change` needs code roots: `signal.codeRoots`, else `records.codeRoots`. With neither,
-   preflight fails: "name the code folders in records.codeRoots (or signal.codeRoots)".
+   preflight fails: "name the code folders in records.codeRoots (or signal.codeRoots)". A field of the
+   wrong type fails, for every job: a `register` that is not a string, or a `signal` that is neither a
+   string (a command or a pointer) nor an object (rules for the shipped script).
 3. Every path field exists in the checkout. Each `records.codeRoots` entry is one, for every job; an entry
-   that starts with `:` or holds `*`, `?` or `[` is a git pathspec or a glob, and fails.
-4. Every pointer finds its key. A gate the repo wrote as prose is listed, not failed.
+   that starts with `:` or holds `*`, `?` or `[` is a git pathspec or a glob, and fails. `reviews` is one
+   folder: a list fails.
+4. Every pointer finds its key. A gate the repo wrote as prose is listed, not failed. A rules `signal`
+   whose `codeRoots` is not a list of one or more folder names fails in one line.
 5. Every role the job dispatches resolves. A role table (the personal one or the shipped one) that cannot
    be read, does not parse, is not a JSON object or has a `roles` that is not an object fails, named. So
    does a binding whose `roles` is not an object.
@@ -990,9 +994,9 @@ refusals can be counted per tool and per check. The event is ops-event.sh's, wit
 | `predict-gate:anchor` | predict-gate.sh seal, revise, retire | the line is written to the ledger, and its commit (the anchor) failed: git's index lock still held after 5 tries, or no git repository. Exit 1; close refuses the work order until a new seal anchors: seal again once the cause is gone |
 | `records-check:binding-records` | records-check.py | the binding's `records` object removes or replaces a contract artefact |
 | `records-check:input` | records-check.py | any other bad input, exit 2 |
-| `dispatch:role-unresolved` | agent-roles.py (PreToolUse) | a `role:` dispatch that no level resolves |
+| `dispatch:role-unresolved` | agent-roles.py (PreToolUse) | a `role:` dispatch that no level resolves; also a dispatch, by role or by plain name, of an agent's name from before R0.1 (`refactor-engineer`, `refactor-reviewer`) that no installed agent has, and its reason gives the new name |
 | `dispatch:role-table` | agent-roles.py (PreToolUse) | a `role:` dispatch while a role table it reads cannot be used: the personal `agent-roles.json` cannot be read, does not parse, is not a JSON object or has a `roles` that is not an object, or the binding's `roles` is not an object. The reason names the file and the error |
-| `dispatch:binding-unreadable` | agent-roles.py (PreToolUse) | a dispatch whose decision needs a binding that cannot be read: binding.json does not parse, is not an object, cannot be read or is a dangling symlink, or its `reviews` field is not a safe path (the reason names that field and the binding file); the project needs setup (the locator's message; a team dispatch only, as in "Roles"); the project locator cannot be run or does not answer in time. The reason names the cause and what to fix. Its event is kept in `logs/agent-roles.log` in the machine folder (`GATE-EVENT ... kept in this log`) with its cause, because the working folder's ledger is found through the input that failed |
+| `dispatch:binding-unreadable` | agent-roles.py (PreToolUse) | a dispatch whose decision needs a binding that cannot be read: binding.json does not parse, is not an object, cannot be read or is a dangling symlink, or its `reviews` field is not a safe path or its `runs` field is bad, when the dispatch's `Record folder:` line or its prompt needs that field (a `{reviews}` in a role's `prompt_append`, or the change engineer's prediction marker; the reason names that field and the binding file); the project needs setup (the locator's message; a team dispatch only, as in "Roles"); the project locator cannot be run or does not answer in time. The reason names the cause and what to fix. Its event is kept in `logs/agent-roles.log` in the machine folder (`GATE-EVENT ... kept in this log`) with its cause, because the working folder's ledger is found through the input that failed |
 | `dispatch:record-folder` | agent-roles.py (PreToolUse) | a `Record folder:` line that cannot be decided |
 | `stop:prediction` | agent-roles.py (SubagentStop) | a change job stops with no machine prediction |
 | `stop:seal` | agent-roles.py (SubagentStop) | a change job stops with a moves file whose bytes no seal in its project's ops ledger names (sent back once) |

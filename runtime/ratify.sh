@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Vocabulary ratification: each entry of a closed vocabulary (pattern -> class) is ratified only when
 # two isolated blind readers, shown real matches from the project's own corpus, both say the class is
-# RIGHT. Pure computation, standard library only, no AI. Interchange format: runtime/README.md.
+# RIGHT. Pure computation, standard library only, no AI.
+# Interchange format (entries, corpus, classes, a reader's report): docs/TOOLS.md, "`ratify.sh`: the files it reads".
 #
 #   ratify.sh sample --entries entries.json --corpus corpus.json --per-entry 8 --seed 1 --out <run>
 #       [--classes classes.json] [--source "<where the raw files are>"] [--readers 2] [--template F]

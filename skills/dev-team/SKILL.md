@@ -85,8 +85,10 @@ finds nothing is a good result**, and the common one. It is not evidence the che
 - **`opus`** — design, debugging, an unfamiliar reader or input, work needing judgement across a large
   surface, or code whose correctness is hard to test.
 - **`haiku`** — bulk mechanical reads where the answer is a list.
-- **The most expensive model** — only when the owner explicitly asks, or a role table pins it: the
-  shipped `expert` role does, by the owner's choice, because its whole job is judgement.
+- **`fable`** — the most expensive model. Use it only when the owner explicitly asks, or a role table
+  pins it: the shipped `expert` role does, by the owner's choice, because its whole job is judgement.
+  The role hook ranks it above `opus` (haiku, sonnet, opus, fable), so a role's `nested_model` ceiling
+  lowers a fable spawn as it lowers an opus one.
 
 **Effort cannot be set per agent**; the Agent tool takes `model` only. Do not promise it.
 

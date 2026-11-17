@@ -60,6 +60,43 @@ and `mutate`. The table names the `.sh`.
 | `bakehouse_record.py` | `bakehouse record commit`: in records mode, checks one run folder under `runs/` in the records worktree with the pre-commit hook's own check (`predict-gate.py run_hook`, in a scratch copy of the index), then stages and commits that folder only, by path, retrying while git's `index.lock` is held. Each `-m` passes to git unchanged. Exit 1 when the gate refuses (nothing is committed); exit 2 in tree mode ("commit them with git") or for a folder outside `runs/`. `PREDICT_GATE_OVERRIDE` works as for the hook. | one commit on the records branch |
 | `bakehouse_status.py` | `bakehouse status`: the team's state for any reader outside the tool ([PROJECT-TEAM.md](./PROJECT-TEAM.md), "Reading team state"). | nothing |
 
+### `ratify.sh`: the files it reads
+
+`ratify.sh sample` reads three JSON files. `compare` reads each reader's report.
+
+**Entries** (`--entries`): a JSON array. Each entry is an object with four non-empty strings:
+
+| Key | Holds |
+|---|---|
+| `id` | the entry's id; no two entries share one |
+| `pattern` | the text the entry matches |
+| `patternKind` | `regex`, `phrase` or `keyword` |
+| `class` | the class the entry assigns to a match |
+
+The three pattern kinds:
+
+- `regex`: a Python regular expression, used as written.
+- `phrase`: the words in order. Case and the spaces between words are ignored. A word at either end
+  matches a whole word only. `…` or `...` inside the phrase matches any text between its parts.
+- `keyword`: every word, in any order, each as a whole word, case ignored.
+
+Any other key (`kind`, `source`, notes) is kept out of what the readers see. `check` compares each
+entry with its latest ledger row: a changed `pattern`, `patternKind` or `class` needs a new round.
+
+**Corpus** (`--corpus`): a JSON array of records. Each record is an object with three strings:
+`docId` (the document it comes from), `pointer` (where in that document, for example a page) and `text`
+(the whole record, shown to the readers in full). The sample takes matches round-robin across
+documents, so one long document cannot fill it.
+
+**Classes** (`--classes`, optional): one JSON object of class name to its meaning, for example
+`{"exclude": "the clause removes cover"}`. The readers see each meaning above the entries.
+
+**A reader's report** (`compare`): a Markdown file whose last ```` ```json ```` block is one object:
+`{"reader": "<name>", "items": [{"id": "<entry id>", "label": "RIGHT", ...}]}`. `reader` is optional (the
+file name stands in). Each item is an object with an `id` and a `label` of `RIGHT`, `WRONG` or `MIXED`
+(case ignored). A block that is not an object, an `items` that is not a list, or an item that is not an
+object or has no `id` is bad input: exit 2, with one line that names the report.
+
 `agents/` holds the nine agents the team's roles are filled by (`bakehouse:<agent>`). `skills/pm/` holds
 the role the main session can take, the skill `bakehouse:pm`. `skills/` also holds four method skills. The
 five skills:

@@ -15,7 +15,8 @@ the sidecar folder); --binding replaces it (for a scratch copy). approvals.json 
 binding's folder.
 
 Checks, in order: 1 binding exists; 2 it parses, has the fields its `owned` value requires (and
-`register` and `signal` for `refactor` and `health`, the jobs that use them), names code roots for `change`
+`register` and `signal` for `refactor` and `health`, the jobs that use them; when present, `register` is a
+string and `signal` a string or an object), names code roots for `change`
 (runtime/locator.py code_roots: signal.codeRoots, else records.codeRoots), names a machine-checked
 prediction file (`gates.predictedMoves.prediction`, one predict-gate reads), only adds to the record
 contracts (`records`, runtime/records-check.py), has a well-formed `mutation`

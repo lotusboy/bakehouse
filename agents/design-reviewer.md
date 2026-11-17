@@ -19,8 +19,10 @@ write it, and you owe it nothing.
 
 1. Read the project's `CLAUDE.md`, the design set's conventions file if the project has one (often
    `docs/**/design/README.md`, *Conventions*), and the adjudications of previous runs that targeted this design — find them with
-   `grep -l <design file name> axis/runs/*/00-contract.md`, then read those runs' `04-adjudication.md`
-   only. A finding already raised and withdrawn there is not re-raised unless the text has changed.
+   `grep -l <design file name> <runs>/*/00-contract.md`, then read those runs' `04-adjudication.md`
+   only. `<runs>` is where the project keeps its run folders: by default the records `runs/` folder
+   (records mode); in tree mode, when the binding names `reviews`, that folder (often `axis/runs/`).
+   A finding already raised and withdrawn there is not re-raised unless the text has changed.
 2. Read the scoped sections in full, and the rest of the design enough to follow them. For other
    designs, read only the sections the scoped text names — not whole files.
 3. Write down, before reading closely: the mechanisms in scope, the weight of each (High, Medium,

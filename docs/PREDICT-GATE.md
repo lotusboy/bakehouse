@@ -47,7 +47,9 @@ Rules for the prediction:
 3. A key a move names is judged by that move, even when a `mustNotMove` glob also matches it. So
    `"mustNotMove": ["premium:*"]` beside one predicted premium move means "no other premium moves".
 4. `scope` is a label for the reader. It does not change matching.
-5. `tolerance` is an absolute numeric tolerance. The default is 0.
+5. `tolerance` is an absolute numeric tolerance. The default is 0. It is a finite number, 0 or more;
+   `true`, `false`, `Infinity` and `NaN` are bad input (exit 2). It applies between two numbers only:
+   `true` and `1` are different values, so a key that goes from 1 to `true` has moved.
 6. `baseline` (optional) names the file the prediction is measured against, as a plain file name
    beside it. A chained fix round uses it: `"baseline": "moves.measured.built-v5.json"`.
 7. `noMoves` (optional, `true` or `false`) declares a round that moves nothing:
@@ -630,7 +632,9 @@ launcher in the machine folder.
    prediction beside it names it as its `baseline`. A measurement with no baseline is refused. A
    measurement that is not part of the record goes in `history/`.
 4. The owner's exception: `PREDICT_GATE_OVERRIDE="<reason>" PREDICT_GATE_TASK=<id> git commit ...`.
-   The override is recorded as above.
+   The override is recorded as above. In records mode `bakehouse record commit` runs this check, and its
+   refusal names that command: `PREDICT_GATE_OVERRIDE="<reason>" [PREDICT_GATE_TASK=<id>] bakehouse record
+   commit <record folder> -m ...`.
 5. The installer leaves a pre-commit hook it did not write alone. It also skips a repository that
    sets `core.hooksPath`. In both cases it prints the one line to add to the existing hook.
 6. To remove the gate, delete `.git/hooks/pre-commit`.
