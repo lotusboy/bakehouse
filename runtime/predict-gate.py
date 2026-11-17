@@ -75,6 +75,7 @@ import datetime
 import glob
 import hashlib
 import json
+import math
 import os
 import re
 import subprocess
@@ -174,8 +175,9 @@ def check_prediction(p, path: Path) -> dict:
     if no_moves and moves:
         raise BadInput(f"{path}: 'noMoves' is true and the prediction lists {len(moves)} move(s); give one or the other")
     tol = p.get("tolerance", 0)
-    if not isinstance(tol, (int, float)) or tol < 0:
-        raise BadInput(f"{path}: 'tolerance' must be a number >= 0")
+    # true is an int to Python, and Infinity or NaN would hide every numeric move: none of them is a tolerance
+    if not _num(tol) or not math.isfinite(tol) or tol < 0:
+        raise BadInput(f"{path}: 'tolerance' must be a finite number >= 0 (not true or false)")
     for i, m in enumerate(moves):
         if not isinstance(m, dict) or not isinstance(m.get("what"), str):
             raise BadInput(f"{path}: move {i + 1} needs a 'what' key")
@@ -277,6 +279,8 @@ def _num(v) -> bool:
 def same(a, b, tol) -> bool:
     if _num(a) and _num(b):
         return abs(a - b) <= tol
+    if isinstance(a, bool) != isinstance(b, bool):
+        return False  # true == 1 to Python; a measured true and a 1 are different values
     return a == b
 
 
@@ -562,8 +566,10 @@ def run_hook(repo=None, env=None, paths=(), team=None) -> int:
             refused.append(f"{folder}/{measured} (bad input)")
         worst = max(worst, rc)
     if worst:
+        # paths: `bakehouse record commit` ran this check, so its exception is that command again (R0.3 D4)
+        again = "bakehouse record commit <record folder> -m ..." if paths else "git commit ..."
         print("\nCommit stopped by the predicted-moves gate. Owner-approved exception only: "
-              'PREDICT_GATE_OVERRIDE="<reason>" [PREDICT_GATE_TASK=<id>] git commit ...')
+              f'PREDICT_GATE_OVERRIDE="<reason>" [PREDICT_GATE_TASK=<id>] {again}')
     if refused:
         refusal_event("predict-gate:hook", "predicted-moves commit refused",
                       f"predicted-moves gate stopped a commit: {len(refused)} refused; " + "; ".join(refused[:3]),

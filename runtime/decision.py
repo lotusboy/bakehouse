@@ -36,8 +36,9 @@ import locator  # noqa: E402
 EVIDENCE_KINDS = ("measured", "blind-readers-agreed", "source-read", "inference")
 VERDICTS = ("held", "reversed", "refined")
 # A question rests on a source the asker opened, not on an agent's report about it (owner, 2026-10-14).
+# A blind-readers run's reports are reader-<x>.md and its comparison is agreement.md (skills/blind-readers).
 REPORT_NAMES = re.compile(r"(^|[-_.])(report|findings|result|prediction|disposition|contract|pass\d|handback)"
-                          r"([-_.]|$)", re.I)
+                          r"([-_.]|$)|^reader-|^agreement$", re.I)
 # Only a text record can be an agent's report: a contract.pdf or a report.csv is source material.
 REPORT_SUFFIXES = (".md", ".txt", ".json", ".jsonl")
 # Words that mark an inference. A question using one must label it: "guess:" (owner, 2026-10-14).

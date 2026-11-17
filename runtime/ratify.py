@@ -192,8 +192,17 @@ def last_json(path):
         data = json.loads(blocks[-1])
     except json.JSONDecodeError as e:
         fail(f"{path}: last ```json block does not parse: {e}")
+    # the block's shape, as blind-compare checks it: one line and exit 2, never a traceback
+    if not isinstance(data, dict):
+        fail(f"{path}: last ```json block is not an object")
+    if not isinstance(data.get("items", []), list):
+        fail(f"{path}: last ```json block's \"items\" is not a list")
     items = {}
-    for i in data.get("items", []):
+    for n, i in enumerate(data.get("items", [])):
+        if not isinstance(i, dict):
+            fail(f"{path}: item {n} is not an object")
+        if i.get("id") is None or not str(i["id"]).strip():
+            fail(f"{path}: item {n} has no id")
         label = str(i.get("label", "")).strip().upper()
         if label not in LABELS:
             fail(f"{path}: item {i.get('id')} label '{i.get('label')}' is not one of {', '.join(LABELS)}")
