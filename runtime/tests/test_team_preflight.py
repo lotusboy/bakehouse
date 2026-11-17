@@ -98,7 +98,7 @@ class TestOwned(Fixture):
         self.assertIn("role refactor:engineer -> general-purpose (from binding roles", out)
 
     def test_uninstalled_override_is_skipped_and_logged(self):
-        self.owned(roles={"engineer": "no-such-agent"})
+        self.owned(roles={"engineer": "no-such-agent"}, records={"codeRoots": ["docs/"]})  # item 8: change needs code roots
         code, out = self.pre("change", "T1")
         self.assertEqual(code, 0, out)
         self.assertIn("names ['no-such-agent'], not installed; skipped", out)
@@ -358,6 +358,8 @@ class TestApproval(Fixture):
         self.approvals([self.rec({"part": "engine"})])
         self.assertEqual(self.pre("refactor", "engine")[0], 0)
         self.approvals([self.rec({"workOrder": "T-1"})])
+        # item 8: change needs code roots
+        self.binding.write_text(json.dumps(dict(json.loads(self.binding.read_text()), records={"codeRoots": ["docs/"]})))
         self.assertEqual(self.pre("change", "T-1")[0], 0)
 
     def test_superset_scope_does_not_match(self):

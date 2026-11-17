@@ -14,9 +14,11 @@ Usage:
 the sidecar folder); --binding replaces it (for a scratch copy). approvals.json is read from the
 binding's folder.
 
-Checks, in order: 1 binding exists; 2 it parses, has the fields its `owned` value requires, names a
-machine-checked prediction file (`gates.predictedMoves.prediction`, one predict-gate reads), only
-adds to the record contracts (`records`, runtime/records-check.py), has a well-formed `mutation`
+Checks, in order: 1 binding exists; 2 it parses, has the fields its `owned` value requires (and
+`register` and `signal` for `refactor` and `health`, the jobs that use them), names code roots for `change`
+(runtime/locator.py code_roots: signal.codeRoots, else records.codeRoots), names a machine-checked
+prediction file (`gates.predictedMoves.prediction`, one predict-gate reads), only adds to the record
+contracts (`records`, runtime/records-check.py), has a well-formed `mutation`
 block when it has one (runtime/mutate.py), says where the run folders are with a `runs` the locator reads
 ("records" or "tree", and "records" never beside `reviews`; runtime/locator.py runs_mode; a binding with `reviews`
 and no `runs` is noted), and uses only the closed placeholder list; 3 every path
@@ -107,11 +109,12 @@ def find_binding(repo):
     return project.binding, f"{project.binding} cannot be read as a file: the team does not apply to this repository"
 
 
-def check_fields(b):
+def check_fields(b, job):
     fails = []
     if not isinstance(b.get("owned"), bool):
         return ["check 2: field 'owned' is missing or not true/false"]
-    need = [("register",), ("signal",)]
+    # only refactor and health read the register and run the signal; change and startup check them when present
+    need = [("register",), ("signal",)] if job in ("refactor", "health") else []
     if b["owned"]:
         need += [("tracker", "file"), ("tracker", "id"), ("measure", "commands"),
                  ("gates", "byteIdentical"), ("gates", "predictedMoves", "gates"),
@@ -120,6 +123,9 @@ def check_fields(b):
     else:
         need += [("approver",)]
     fails += [f"check 2: required field '{label(p)}' is missing" for p in need if get(b, p) is None]
+    if job == "change" and locator.code_roots(b) is None:  # close tells code commits apart by them
+        fails.append("check 2: the binding names no code roots: name the code folders in records.codeRoots "
+                     "(or signal.codeRoots)")
     pred = get(b, ("gates", "predictedMoves", "prediction"))
     if pred is not None and pred not in predict_gate.PREDICTION_NAMES:
         fails.append(f"check 2: 'gates.predictedMoves.prediction' = {json.dumps(pred)} is not a file the "
@@ -398,7 +404,7 @@ def main(argv):
         print(f"FAIL check 2: {bpath} is not a JSON object")
         return 1
 
-    fails = check_fields(b)
+    fails = check_fields(b, job)
     notes = []
     if isinstance(b.get("owned"), bool):
         fails += check_paths(b, repo)
