@@ -7,6 +7,7 @@ python3 -m unittest runtime/tests/test_lighter_setup.py
 """
 
 import json
+import re
 import subprocess
 import sys
 import unittest
@@ -119,6 +120,48 @@ class Preflight(preflight_tests.Fixture):
         self.assertEqual(code, 1, out)
         self.assertIn("required field 'signal' is missing", out)
 
+    # ---- fix 1: preflight checks each records.codeRoots entry, for every job ----
+
+    def test_a_code_root_that_names_no_real_folder_is_refused_for_every_job(self):
+        self.owned(runs="tree", records={"codeRoots": ["docs/", "docz/"]})  # with register and signal
+        for job in (("change", "T1"), ("refactor", "engine"), ("health",), ("startup",)):
+            with self.subTest(job=job):
+                code, out = self.pre(*job)
+                self.assertEqual(code, 1, out)
+                self.assertIn("FAIL check 3: path field 'records.codeRoots' = 'docz/' does not exist", out)
+                self.assertNotIn("'records.codeRoots' = 'docs/'", out)
+
+    def test_a_pathspec_or_glob_code_root_is_refused(self):
+        for root in (":!docs", "*.nothing", "doc?/", "[d]ocs/"):
+            with self.subTest(root=root):
+                self.light(records={"codeRoots": [root]})
+                code, out = self.pre("change", "T1")
+                self.assertEqual(code, 1, out)
+                self.assertIn(f"FAIL check 3: path field 'records.codeRoots' = '{root}' is a git pathspec or a "
+                              "glob: name a folder", out)
+
+    def test_the_guides_sample_binding_needs_its_src_folder(self):
+        doc = (RUNTIME.parent / "docs" / "GETTING-STARTED.md").read_text()
+        sample = json.loads(re.search(r"## 5\. Write the binding.*?```json\n(.*?)```", doc, re.S).group(1))
+        (self.binding.parent / "gates.json").write_text(json.dumps({"gates": [{"id": "unit", "command": "true"}]}))
+        self.binding.write_text(json.dumps(sample))
+        code, out = self.pre("change", "T1")
+        self.assertEqual(code, 1, out)
+        self.assertIn("FAIL check 3: path field 'records.codeRoots' = 'src/' does not exist", out)
+        (self.repo / "src").mkdir()
+        code, out = self.pre("change", "T1")
+        self.assertEqual(code, 0, out)
+
+    # ---- fix 3 ----
+
+    def test_an_unowned_binding_with_no_code_roots_is_refused(self):
+        self.binding.write_text(json.dumps({"owned": False, "approver": "the repository's PM"}))
+        (self.binding.parent / "approvals.json").write_text(json.dumps([{"scope": {"workOrder": "T-1"},
+                                                                         "consumed": ""}]))
+        code, out = self.pre("change", "T-1")
+        self.assertEqual(code, 1, out)
+        self.assertIn(f"FAIL check 2: the binding names no code roots: {NO_ROOTS}", out)
+
 
 # ---------- close, seal, records-check, status and the signal on a change-only binding ----------
 
@@ -198,6 +241,68 @@ class Light(folders.Project):
         self.assertEqual(p.stderr, "")
         self.assertEqual(p.stdout.strip().split("\n"), ["bakehouse: this project has a team. Be its PM: load the "
                                                         "`bakehouse:pm` skill now and follow it for the whole session."])
+
+    def test_a_sealed_close_refuses_code_after_the_measurement(self):
+        # fix 2: the sealed rules read the code roots from records.codeRoots too
+        self.sealed_flow()
+        self.commit("W-1: late code", {"src/app.py": "v = 9\n"})
+        rc, out = self.gate("close", "W-1")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("differs from the code it measured", out)
+
+    def test_code_roots_flag_replaces_the_bindings(self):
+        # fix 4
+        self.unsealed_flow()
+        rc, out = self.records_check("--code-roots", "lib/", "--register", str(self.t / "records.json"))
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(json.loads((self.t / "records.json").read_text())["computed"]["codeRoots"], ["lib/"])
+
+
+class BadCodeRoots(folders.Project):
+    """Fix 5: a malformed records.codeRoots is bad input for close, seal-code and the measured seal: one line, exit 2."""
+    binding = LIGHT
+    BAD = ("src/", True, [5])
+
+    def bad(self, roots):
+        self.bind(dict(LIGHT, records={"codeRoots": roots}))
+
+    def refused(self, rc, out):
+        self.assertEqual(rc, 2, out)
+        self.assertNotIn("Traceback", out)
+        self.assertIn("records.codeRoots", out)
+
+    def test_close_refuses_and_closes_nothing(self):
+        self.unsealed_flow()
+        for roots in self.BAD:
+            with self.subTest(roots=roots):
+                self.bad(roots)
+                self.refused(*self.gate("close", "W-1"))
+                self.assertFalse([e for e in self.events() if e["kind"] == "work-order-closed"])
+
+    def test_seal_code_refuses_and_commits_nothing(self):
+        before = self.git(self.repo, "rev-parse", "HEAD")
+        for roots in self.BAD:
+            with self.subTest(roots=roots):
+                self.bad(roots)
+                self.refused(*self.seal_code("W-1: the change", {"src/app.py": "v = 2\n"}))
+                self.assertEqual(self.git(self.repo, "rev-parse", "HEAD"), before)
+
+    def test_the_measured_seal_refuses(self):
+        self.write(self.rec(), {"moves.prediction.json": folders.GOOD_P, "moves.baseline.json": folders.BASE_M})
+        self.commit_named("W-1: prediction", ("moves.prediction.json", "moves.baseline.json"))
+        for n in ("moves.prediction.json", "moves.baseline.json"):
+            self.assertEqual(self.seal("first", n)[0], 0)
+        base = self.git(self.repo, "rev-parse", "HEAD")
+        self.assertEqual(self.seal_code("W-1: the change", {"src/app.py": "v = 2\n"})[0], 0)
+        head = self.git(self.repo, "rev-parse", "HEAD")
+        self.write(self.rec(), {"moves.measured.json": folders.PASS_M,
+                                "measure-report.json": {"base": {"sha": base}, "head": {"sha": head}}})
+        seals = len(self.events())
+        for roots in self.BAD:
+            with self.subTest(roots=roots):
+                self.bad(roots)
+                self.refused(*self.seal("first", "moves.measured.json"))
+                self.assertEqual(len(self.events()), seals)
 
 
 class NoCodeRoots(folders.Project):
