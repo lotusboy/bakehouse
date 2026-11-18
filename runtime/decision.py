@@ -321,11 +321,7 @@ def check_grounding(a, cfg):
                  "decision:recheck")
         if not asked:
             fail(f"--recheck: {a.task} has no fix round in the ledger to review", "decision:recheck")
-    proposes_fix = bool(FIX_WORDS.search(text))
-    if proposes_fix and not a.recheck and not meaningful(a.upstream):
-        fail("the question proposes a fix: give --upstream, what feeds the failing step and what you saw"
-             " when you looked at it (Seesaw: check what it was given before fixing it)", "decision:upstream")
-    if a.task and a.fix_round is None and not a.recheck and (proposes_fix or re.search(r"\bfix round\b", text)):
+    if a.task and a.fix_round is None and not a.recheck and re.search(r"\bfix round\b", text):
         fail(f"the question proposes a fix on {a.task}: give --fix-round N (rounds asked so far: "
              f"{sorted(asked) or 'none'})", "decision:fix-round")
     if re.search(r"\bfix round\b", text) and a.fix_round is None and not a.recheck:
@@ -335,6 +331,10 @@ def check_grounding(a, cfg):
             fail("--fix-round needs --task (the work order id)", "decision:fix-round")
         if a.fix_round < 1:
             fail("--fix-round counts from 1", "decision:fix-round-number")
+        # a fix is what the asker declares with --fix-round, not a word in the question (item 13)
+        if not meaningful(a.upstream):
+            fail("the question proposes a fix: give --upstream, what feeds the failing step and what you saw"
+                 " when you looked at it (Seesaw: check what it was given before fixing it)", "decision:upstream")
         # the round is counted from the ledger, not taken on trust: an earlier number cannot be reused
         if asked and a.fix_round <= max(asked):
             fail(f"{a.task} already has fix round(s) {sorted(asked)}; this one is round {max(asked) + 1}",
@@ -347,6 +347,9 @@ def check_grounding(a, cfg):
                  " give --stepped-back, the step-back you did first — what you re-checked at the source across"
                  " the whole problem, and why another round beats re-designing (owner, 2026-10-15)",
                  "decision:stepped-back")
+    if FIX_WORDS.search(text) and a.fix_round is None and not a.recheck:
+        print("decision: note: the question mentions a fix; if it proposes one, give --task, --fix-round"
+              " and --upstream", file=sys.stderr)
 
 
 def norm(s):
