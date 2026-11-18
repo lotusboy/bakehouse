@@ -157,11 +157,11 @@
    "id": "pm-17",
    "file": "skills/pm/SKILL.md",
    "sentences": [
-    "The tool refuses a question that is not grounded (owner, 2026-10-14, after a rushed heuristic was put to the owner as fact): `--read <file>` names a source the PM opened itself — raw document, product data or code, never an agent's report — with `--read-what` saying which rows or lines; a guess word (probably, should, infer, pattern, works it out…) must be labelled `guess:` in the question; a fix round gives `--task` and `--fix-round N`, and round 2 or later needs `--rechecked`, what the PM re-checked at the source first, because a second round means the design may be wrong; and a question that proposes a fix gives `--upstream`, what feeds the failing step and what the PM saw when it looked there (Seesaw, written into the tool after the PM patched a symptom twice)."
+    "The tool refuses a question that is not grounded (owner, 2026-10-14, after a rushed heuristic was put to the owner as fact): `--read <file>` names a source the PM opened itself — raw document, product data or code, never an agent's report — with `--read-what` saying which rows or lines; a guess word (probably, should, infer, pattern, works it out…) must be labelled `guess:` in the question; a fix round gives `--task` and `--fix-round N`, and round 2 or later needs `--rechecked`, what the PM re-checked at the source first, because a second round means the design may be wrong; and a fix round gives `--upstream`, what feeds the failing step and what the PM saw when it looked there (Seesaw, written into the tool after the PM patched a symptom twice)."
    ],
    "enforcer": "code",
    "proof": "test_decision_ledger.Ledger.test_a_question_must_rest_on_a_source_the_asker_opened",
-   "note": "the other refusals in this sentence: test_a_guess_word_must_be_labelled, test_a_second_fix_round_needs_a_source_recheck, test_a_fix_names_what_feeds_the_failing_step"
+   "note": "the other refusals in this sentence: test_a_guess_word_must_be_labelled, test_a_second_fix_round_needs_a_source_recheck, test_a_fix_names_what_feeds_the_failing_step, test_a_fix_round_without_the_word_still_needs_upstream"
   },
   {
    "id": "pm-18",
