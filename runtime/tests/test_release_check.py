@@ -158,16 +158,20 @@ class ChangeJob(run_folders.Project):
 
     # ---------- the engineer's stop ----------
 
-    def stop(self, ti, step):
-        """The engineer's SubagentStop, its transcript's first line the rewritten prompt. It must pass: no block,
-        no message, and the hook asks for no seal."""
+    def raw_stop(self, ti):
+        """The engineer's SubagentStop, its transcript's first line the rewritten prompt: (hook output, the hook
+        log written by this stop)."""
         self.stops += 1
         t = self.transcripts / f"agent-{self.stops}.jsonl"
         t.write_text(json.dumps({"type": "user", "message": {"role": "user", "content": ti["prompt"]}}) + "\n")
         before = len(self.log())
         out = self.hook({"hook_event_name": "SubagentStop", "agent_type": ti["subagent_type"],
                          "agent_transcript_path": str(t), "cwd": str(self.repo)})
-        log = self.log()[before:]
+        return out, self.log()[before:]
+
+    def stop(self, ti, step):
+        """The engineer's stop. It must pass: no block, no message, and the hook asks for no seal."""
+        out, log = self.raw_stop(ti)
         self.assertEqual(out, "", f"{step}: the engineer's stop is held: {out}")
         self.assertIn("PREDICTION ok for bakehouse:engineer", log, f"{step}: the stop check ran: {log}")
         for no in ("SEAL missing", "cannot be sealed", "PREDICTION missing"):
@@ -212,7 +216,8 @@ class ChangeJob(run_folders.Project):
 
     # ---------- the whole job ----------
 
-    def run_job(self):
+    def up_to_the_fix_round(self):
+        """change.md steps 5 to 8, up to the fix round's dispatch: returns that dispatch's tool input."""
         # change.md step 5 (PM): the branch from BASE, and the job lines in the item
         self.base = self.head()
         self.git(self.repo, "checkout", "-q", "-b", BRANCH)
@@ -229,8 +234,32 @@ class ChangeJob(run_folders.Project):
         self.write(self.rec(), {"findings.md": "F1 (P1): x is missing from src/app.py.\n"})
 
         # step 3: the fix round, fix1, by a fresh engineer given the findings and the same brief (change.md step 8)
-        ti = self.dispatch(self.brief("Findings: F1 (P1): x is missing from src/app.py. Round: fix1.\n"),
-                           "step 3 (fix-round dispatch)")
+        return self.dispatch(self.brief("Findings: F1 (P1): x is missing from src/app.py. Round: fix1.\n"),
+                             "step 3 (fix-round dispatch)")
+
+    def fix_round_file_left_unsealed(self, leave):
+        """Step 3b: the fix round's prediction and baseline are committed, and one of them, leave, is not sealed.
+        The engineer's stop must block and name that file, with the seal command."""
+        step = f"step 3b ({leave} left unsealed)"
+        ti = self.up_to_the_fix_round()
+        self.write(self.rec(), {"moves.prediction.fix1.json": P2, "moves.baseline.fix1.json": B2})
+        self.record_commit("W-1: fix1 prediction and baseline", ["moves.prediction.fix1.json",
+                                                                 "moves.baseline.fix1.json"])
+        for name in ("moves.prediction.fix1.json", "moves.baseline.fix1.json"):
+            if name != leave:
+                self.seal_ok(step, "fix1", name)
+        out, log = self.raw_stop(ti)
+        self.assertTrue(out.strip(), f"{step}: the engineer's stop passed with {leave} unsealed")
+        got = json.loads(out)
+        self.assertEqual(got.get("decision"), "block", f"{step}: the stop does not block: {out}")
+        listed = got["reason"].split("no seal in the ops ledger:")[1].split(". Seal")[0]
+        self.assertEqual(listed.strip(), f"{REC}/{leave}", f"{step}: the stop names exactly the unsealed file: {out}")
+        self.assertIn(f"predict-gate.sh seal W-1 <round> <file>): {REC}/{leave}", got["reason"],
+                      f"{step}: the stop asks for the seal: {out}")
+        self.assertIn("SEAL missing for bakehouse:engineer", log, f"{step}: the hook log: {log}")
+
+    def run_job(self):
+        ti = self.up_to_the_fix_round()
         self.round("step 3 (fix round fix1)", ti, "fix1", P2, B2, {"src/app.py": "v = 2\nx = 1\n"}, M2)
         self.write(self.rec(), {"disposition.md": "F1: fixed in round fix1.\n"})
         self.record_commit("W-1: review record and disposition", ["findings.md", "disposition.md"])
@@ -297,6 +326,12 @@ class TreeMode(ChangeJob):
         self.assertFalse([n for n in self.tree_names(self.records) if n.startswith("runs/")],
                          "step 5: no record on the records branch")
 
+    def test_step3b_a_fix_round_baseline_left_unsealed_is_asked_for_at_the_engineers_stop(self):
+        self.fix_round_file_left_unsealed("moves.baseline.fix1.json")
+
+    def test_step3b_a_fix_round_prediction_left_unsealed_is_asked_for_at_the_engineers_stop(self):
+        self.fix_round_file_left_unsealed("moves.prediction.fix1.json")
+
 
 class RecordsMode(ChangeJob):
     """A binding with no `reviews` and no `runs`: run folders under runs/ on the records branch, each record file
@@ -327,6 +362,12 @@ class RecordsMode(ChangeJob):
                 f"step 5: no record in the code tree on {ref}: {names}")
         self.assertEqual(self.git(self.records, "status", "--porcelain", "--", "runs/"), "",
                          "step 5: nothing in runs/ is left uncommitted")
+
+    def test_step3b_a_fix_round_baseline_left_unsealed_is_asked_for_at_the_engineers_stop(self):
+        self.fix_round_file_left_unsealed("moves.baseline.fix1.json")
+
+    def test_step3b_a_fix_round_prediction_left_unsealed_is_asked_for_at_the_engineers_stop(self):
+        self.fix_round_file_left_unsealed("moves.prediction.fix1.json")
 
 
 if __name__ == "__main__":
