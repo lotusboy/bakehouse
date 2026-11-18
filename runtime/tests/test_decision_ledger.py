@@ -191,11 +191,68 @@ class Ledger(Scratch):
     def test_a_fix_names_what_feeds_the_failing_step(self):
         base = ["ask", "--category", "process", "--option", "a", "--option", "b", "--recommendation", "a",
                 "--confidence", "0.5", "--evidence-kind", "measured", "--evidence", "e", *self.grounded]
+        # item 13: a fix is what the asker declares with --fix-round; the bare word only prints a note
         for q in ("Fix the count?", "Is fixing the scoreboard worth it?", "Ship the workaround?"):
-            p = self.run_(*base, "--question", q, ok=False)
-            self.assertNotEqual(p.returncode, 0, q)
-            self.assertIn("--upstream", p.stderr)
-        self.run_(*base, "--question", "Fix the count?", "--upstream", "the upstream writer drops the column order")
+            p = self.run_(*base, "--question", q)
+            self.assertIn("the question mentions a fix", p.stderr, q)
+            self.assertEqual(self.rows()[-1]["question"], q)
+        p = self.run_(*base, "--question", "Fix the count?", "--task", "A1", "--fix-round", "1", ok=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("--upstream", p.stderr)
+        self.run_(*base, "--question", "Fix the count?", "--task", "A1", "--fix-round", "1",
+                  "--upstream", "the upstream writer drops the column order")
+        self.assertEqual(self.rows()[-1]["upstream"], "the upstream writer drops the column order")
+
+    def test_the_words_fix_round_still_ask_for_the_flag(self):
+        base = ["ask", "--category", "process", "--option", "a", "--option", "b", "--recommendation", "a",
+                "--confidence", "0.5", "--evidence-kind", "measured", "--evidence", "e", *self.grounded,
+                "--upstream", "the upstream writer drops the column order"]
+        p = self.run_(*base, "--question", "Go on the A1 fix round?", ok=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("the question is about a fix round: give --task and --fix-round N", p.stderr)
+        p = self.run_(*base, "--question", "Go on the A1 fix round?", "--task", "A1", ok=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("the question proposes a fix on A1: give --fix-round N", p.stderr)
+        self.assertFalse(self.decisions.exists())
+
+    def test_a_bare_fix_word_prints_a_note_and_writes_the_row(self):
+        base = ["ask", "--category", "process", "--option", "a", "--option", "b", "--recommendation", "a",
+                "--confidence", "0.5", "--evidence-kind", "measured", "--evidence", "e", *self.grounded]
+        note = ("decision: note: the question mentions a fix; if it proposes one, give --task, --fix-round"
+                " and --upstream\n")
+        for i, (q, extra) in enumerate((("Fix the count?", []), ("Ship the workaround?", ["--task", "A1"]),
+                                        ("Is fixing the scoreboard worth it?", ["--task", "A1", "--upstream",
+                                         "the upstream writer drops the column order"]))):
+            p = self.run_(*base, "--question", q, *extra)
+            self.assertEqual(p.returncode, 0, q)
+            self.assertEqual(p.stderr.count("the question mentions a fix"), 1, q)
+            self.assertIn(note, p.stderr, q)
+            self.assertEqual(len(self.rows()), i + 1)
+            self.assertEqual(self.rows()[-1]["question"], q)
+            self.assertIsNone(self.rows()[-1]["fixRound"])
+        # no note where no fix word is used, or where the asker declared the fix round or the recheck
+        p = self.run_(*base, "--question", "Run the audit now?")
+        self.assertNotIn("mentions a fix", p.stderr)
+        p = self.run_(*base, "--question", "Fix the count?", "--task", "A2", "--fix-round", "1",
+                      "--upstream", "the upstream writer drops the column order")
+        self.assertNotIn("mentions a fix", p.stderr)
+        p = self.run_(*base, "--question", "Re-check the A2 fix?", "--task", "A2", "--recheck")
+        self.assertNotIn("mentions a fix", p.stderr)
+        self.assertTrue(self.rows()[-1]["recheck"])
+
+    def test_a_fix_round_without_the_word_still_needs_upstream(self):
+        base = ["ask", "--category", "process", "--option", "a", "--option", "b", "--recommendation", "a",
+                "--confidence", "0.5", "--evidence-kind", "measured", "--evidence", "e", *self.grounded,
+                "--task", "A1", "--fix-round", "1"]
+        for up in ([], ["--upstream", "."]):
+            p = self.run_(*base, "--question", "Change the reader to keep the column order?", *up, ok=False)
+            self.assertNotEqual(p.returncode, 0, up)
+            self.assertIn("the question proposes a fix: give --upstream", p.stderr)
+            self.assertNotIn("mentions a fix", p.stderr)
+        self.assertFalse(self.decisions.exists())
+        self.run_(*base, "--question", "Change the reader to keep the column order?",
+                  "--upstream", "the upstream writer drops the column order")
+        self.assertEqual(self.rows()[-1]["fixRound"], 1)
         self.assertEqual(self.rows()[-1]["upstream"], "the upstream writer drops the column order")
 
     def test_a_third_fix_round_needs_a_recorded_step_back(self):
