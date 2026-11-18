@@ -191,7 +191,7 @@ the project asks for one decision at a time.
 `decision.sh ask` checks the question as sent. A guess word in it must be labelled `guess:`; the
 words are `GUESS_WORDS` in `${CLAUDE_PLUGIN_ROOT}/runtime/decision.py`. In a correction question the
 one most likely to bite is "should": "the stored value should be 10" is refused, while a sentence
-that opens with "Should" is not counted. A question that proposes a fix needs `--upstream`. State
+that opens with "Should" is not counted. A fix round gives `--upstream`. State
 what the readers quoted instead of guessing.
 
 ## Step 7 — Log it in the decision ledger

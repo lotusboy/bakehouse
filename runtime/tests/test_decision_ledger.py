@@ -292,10 +292,16 @@ class Ledger(Scratch):
         self.assertNotEqual(ask("process", "Fix the count?", *self.grounded, "--upstream",
                                 "the extract step hands over merged cells", "--task", "B2",
                                 "--fix-round", "-4").returncode, 0)
-        # a fix on a task must say which round it opens
+        # item 13: the bare word on a task only prints the note; a fix round on a task must say which round it opens
         p = ask("process", "Apply the fix again?", *self.grounded, "--upstream",
                 "the extract step hands over merged cells", "--task", "B3")
-        self.assertIn("--fix-round", p.stderr)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn("the question mentions a fix", p.stderr)
+        p = ask("process", "Go on the B3 fix round?", *self.grounded, "--upstream",
+                "the extract step hands over merged cells", "--task", "B3")
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("the question proposes a fix on B3: give --fix-round N", p.stderr)
+        self.assertEqual(self.refusals()[-1]["gate"], "decision:fix-round")
         # ordinary questions are not refused
         for q in ("Should we ship the pricing change?", "Which naming pattern do we keep?",
                   "Is the fixed fee applied per policy?", "Bump the patch version?"):
