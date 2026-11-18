@@ -964,7 +964,7 @@ refusals can be counted per tool and per check. The event is ops-event.sh's, wit
 | `decision:read-what` | decision.sh | no `--read-what` |
 | `decision:inference` | decision.sh | the question uses an inference word without `guess:` |
 | `decision:recheck` | decision.sh | `--recheck` misused, or no fix round to review |
-| `decision:upstream` | decision.sh | a fix with no `--upstream` |
+| `decision:upstream` | decision.sh | a fix round with no `--upstream` |
 | `decision:fix-round` | decision.sh | a fix or fix round with no `--fix-round` or no `--task` |
 | `decision:fix-round-number` | decision.sh | a round below 1, or a round number already used |
 | `decision:rechecked` | decision.sh | fix round 2 or later with no `--rechecked` |

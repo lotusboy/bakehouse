@@ -237,8 +237,8 @@ them, and each tool's header comment is its full reference.
   agent's report — with `--read-what` saying which rows or lines; a guess word (probably, should,
   infer, pattern, works it out…) must be labelled `guess:` in the question; a fix round gives `--task`
   and `--fix-round N`, and round 2 or later needs `--rechecked`, what the PM re-checked at the source
-  first, because a second round means the design may be wrong; and a question that proposes a fix
-  gives `--upstream`, what feeds the failing step and what the PM saw when it looked there (Seesaw,
+  first, because a second round means the design may be wrong; and a fix round gives `--upstream`,
+  what feeds the failing step and what the PM saw when it looked there (Seesaw,
   written into the tool after the PM patched a symptom twice). From fix round 3 of a task — or a
   second fix round asked after two earlier ones — the tool refuses without `--stepped-back`, a
   one-line summary of the step-back done first (the `step-back` skill's helicopter view); `spend.sh record --kind architect` refuses a second architect run for the same
