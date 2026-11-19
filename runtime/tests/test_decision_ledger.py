@@ -551,6 +551,15 @@ class Ledger(Scratch):
         self.settings(enabled=True)
         self.assume(did, 1000)
 
+    def test_r1_fix_an_assumed_answer_is_refused_once_the_owner_has_answered(self):
+        self.away()
+        did = self.ask(q="Ship the cache?", conf=0.9)
+        self.assume(did, 1000)
+        self.assume(did, 2000)  # an earlier assumed answer is not the owner's: a second one is taken
+        self.run_("answer", did, "--choice", "no", "--agreed", "no")
+        self.refused("decision:assumed-answered", "answer", did, "--assumed", "--est-tokens", "1000")
+        self.assertNotIn("assumed", self.rows()[-1])
+
     def test_r1_the_confidence_line_rises_with_the_steps_cost(self):
         self.away()
         for conf, est, gate in ((0.75, 100000, "decision:assumed-confidence"), (0.76, 100000, None),
