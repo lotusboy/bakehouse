@@ -237,11 +237,11 @@
    "id": "pm-25",
    "file": "skills/pm/SKILL.md",
    "sentences": [
-    "The tool refuses it not above the confidence line for the step's cost, above the top cost band, for a category on the project's never-list, for a blind ask, and for an approval of a gate exception."
+    "The tool refuses it not above the confidence line for the step's cost, above the top cost band, for a category on the project's never-list or not in the project's categories (`categories` in `.team/decision-config.json`, else the defaults), for a blind ask, and for an approval of a gate exception."
    ],
    "enforcer": "code",
    "proof": "test_decision_ledger.Ledger.test_r1_each_refusal_of_an_assumed_answer_has_its_own_gate",
-   "note": "R1: the bands' edges: test_decision_ledger.Ledger.test_r1_the_confidence_line_rises_with_the_steps_cost"
+   "note": "R1: the bands' edges: test_decision_ledger.Ledger.test_r1_the_confidence_line_rises_with_the_steps_cost; 0.7.2: a category not in the project's categories: test_decision_ledger.Ledger.test_an_assumed_answer_needs_a_category_from_the_projects_list"
   },
   {
    "id": "pm-26",

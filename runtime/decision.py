@@ -483,6 +483,11 @@ def answer_assumed(project, a, d):
     if norm(ask.get("category")) in {norm(c) for c in cfg["neverCategories"]}:
         fail(f"category {ask.get('category')} is on the project's never-list: it waits for the owner",
              "decision:assumed-never")
+    cats = config(project)["categories"]
+    if norm(ask.get("category")) not in {norm(c) for c in cats}:
+        fail(f"category {ask.get('category')} is not in the project's categories ({', '.join(cats)}): an"
+             " assumed answer needs one of them, so this waits for the owner. A project lists its own categories"
+             " in .team/decision-config.json, and that list replaces the default one", "decision:assumed-category")
     bands = sorted(cfg["bands"], key=lambda b: b["maxTokens"])
     band = next((b for b in bands if a.est_tokens <= b["maxTokens"]), None)
     if band is None:

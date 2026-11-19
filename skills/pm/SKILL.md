@@ -307,7 +307,8 @@ confirm on return.
 - **Assume only what the tool accepts.** Record each assumed yes with `decision.sh answer <id> --assumed
   --est-tokens <n>`, where n is the step's estimated tokens (0 for a step with no AI). The tool refuses it
   not above the confidence line for the step's cost, above the top cost band, for a category on the
-  project's never-list, for a blind ask, and for an approval of a gate exception. A refused yes is not taken.
+  project's never-list or not in the project's categories (`categories` in `.team/decision-config.json`,
+  else the defaults), for a blind ask, and for an approval of a gate exception. A refused yes is not taken.
 - **Dig below the line, then park.** When the confidence is not above the line, read and measure more
   first. If it is still not above the line, park the question with its reason and move to other work.
 - **Check headroom before each dispatch.** While the mode is on, run

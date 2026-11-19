@@ -1579,7 +1579,7 @@ class TestGateIds(unittest.TestCase):
                         bare.append(f"{name}:{call.lineno}")
             with self.subTest(file=name):
                 self.assertEqual(bare, [])
-                self.assertEqual(found, {"decision.py": 49, "spend.py": 20}[name])
+                self.assertEqual(found, {"decision.py": 50, "spend.py": 20}[name])
 
     def test_each_refusal_site_carries_its_own_gate_id(self):
         """Each site, found by its function and message, names the gate it is documented with. A site that
