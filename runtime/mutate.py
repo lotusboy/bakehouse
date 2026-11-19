@@ -54,7 +54,9 @@ What it does, in order. Steps 1-4 refuse with nothing written (exit 2):
      committed one may point outside the copy) or resolve outside it: the runner replaces that path in
      every copy, and must never delete or follow anything outside its copy.
   3. The control: for each distinct (command, tests) the batch uses, a fresh copy, unmutated. A
-     failure or a timeout refuses the whole batch: a mutant cannot be judged by tests that fail.
+     failure or a timeout refuses the whole batch: a mutant cannot be judged by tests that fail. The
+     copy is a `git archive` of the commit, with no .git and no uncommitted files, so a test that
+     needs either (one that runs `git ls-files`, say) fails the control.
   4. Per mutated file, the probe always runs: the file is emptied in a copy, and the batch is
      refused when the named tests still pass. When the block's `loads` glob matches the file, the
      load check runs first as an extra check: `loads.command` + the file runs in an unmutated copy
@@ -612,7 +614,9 @@ def batch(a) -> int:
             remove(d)
             if code != 0:
                 print(
-                    f"mutate: refused: the control (unmutated {p['sha'][:12]}) fails: {' '.join(argv_)}: {tail}",
+                    f"mutate: refused: the control (unmutated {p['sha'][:12]}) fails: {' '.join(argv_)}: {tail} "
+                    "(the copy is a `git archive` of the commit, with no .git and no uncommitted files, so a test "
+                    "that needs either fails here)",
                     file=sys.stderr,
                 )
                 return 2
