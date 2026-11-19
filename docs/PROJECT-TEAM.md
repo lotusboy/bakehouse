@@ -107,6 +107,24 @@ merges are the project PM's judgement. No tool decides them. Two work orders tha
 should not share a time slot. The ledger has an event to record that judgement (`footprint-judged`).
 The binding can name runs that must never run in parallel: `gates.oneAtATime` ([The binding](#the-binding)).
 
+**How many lanes.** As many as the owner asks for, within two limits:
+
+- **Safe.** Lanes side by side change different files.
+- **Efficient.** Each extra lane must make the whole faster. When the machine is the bottleneck, open
+  no further lane, and say why. The lane ledger shows it: heavy jobs waiting longer (`resource-waited`)
+  or running longer (`resource-started` to `resource-ended`) than before the lane opened.
+
+**The lane habits.** They are the PM's, and a project's own instructions win over them:
+
+- Whichever lane merges second re-measures before it closes (`remeasure`).
+- A lane that cannot run yet does preparation that changes no code.
+- Refresh a lane from the default branch before its first prediction is sealed.
+- Check each lane against something live (its branch, its last commit, its session) before reporting
+  on it.
+- Say at once when a lane is not moving the owner's outputs.
+- At close, audit the lane's folder: nothing unmerged and nothing untracked. Check that nothing is using
+  it (no session, no running job). Then delete it.
+
 **What bakehouse gives a lane:**
 
 1. **One set of records.** A lane's clone writes to the main clone's records, so there is one history.
@@ -1181,6 +1199,18 @@ object), or holds a line whose shape status cannot use; stderr names it. 1 also:
 `"unattended"` settings have a shape the tools cannot use; stderr names `.team/decision-config.json`,
 not a ledger. 2: bad usage, or a `--repo`
 that is not a folder inside a git repository.
+
+## How bakehouse's tools are designed
+
+For whoever adds a tool or changes one.
+
+- **Catch honest mistakes, not deliberate cheats.** The team's agents are trying to do the work right.
+  A tool catches the mistakes they make honestly (a missing flag, a stale file, a move nobody
+  predicted) and fails safe when it does. A guard against a cheat nobody has seen is written down as a
+  named limit in "Known limits", not built.
+- **Fail fast, at the first measured breach.** A limit trips the moment a measurement crosses it, and
+  stops the next step. A rule that is only written down fails silently, so a rule that matters becomes a
+  check. A tool never meets a limit by skipping a check.
 
 ## Known limits in this release
 

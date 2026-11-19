@@ -39,6 +39,8 @@ what the old one let through". Test both halves.
   equivalent? Quote both sides.
 - Sample at least 10 moved units and confirm they are verbatim.
 - Removed code: was it really dead? Show the proof.
+- Moved items (rows, entries, records): check that what each one holds arrived in full, not only
+  its headline.
 
 ## 3. Pass 2 — do the new checks bite?
 
@@ -66,6 +68,10 @@ what the old one let through". Test both halves.
 | P1 | A check is weaker than claimed; today's output is right but a future edit would pass silently |
 | P2 | A declaration or test is incomplete; safe today |
 | P3 | Readability, a stale comment, a guard that cannot fail |
+
+Judge a finding in a new feature by its reach once the feature is live, not by its reach today, when
+nothing uses it yet. A defect the engineer declares as a known issue is still a finding: grade it as if
+it were not declared.
 
 ## 5. Report
 

@@ -1,7 +1,8 @@
 """Role and agent prompts that must agree with the rules beside them. Standard library only.
 
 Review B3: the PM's reply shape asked every update for a decision id and a spend line, against the
-one-line run-start notice, the short session-start hand-back, and §8 ("none is required"). Review B4:
+one-line run-start notice, the short session-start hand-back, and §8 ("none is required"). Since R6 the
+shape is a three-point core; the exceptions and the ledger-only decision id still hold. Review B4:
 the refactor reviewer was told both "at least 5" mutations and "`[]` when you performed none"."""
 
 import os
@@ -28,14 +29,14 @@ def bullet(text, head):
 class TestPmReplyShape(unittest.TestCase):
     def setUp(self):
         self.pm = (RUNTIME.parent / "skills" / "pm" / "SKILL.md").read_text()
-        self.shape = bullet(self.pm, "One reply shape.")
+        self.shape = bullet(self.pm, "A short core in every update.")
         self.assertTrue(self.shape)
 
     def test_b3_the_shape_covers_results_and_questions_and_names_its_two_exceptions(
         self,
     ):
         self.assertIn(
-            "Every update that reports a result, and every question to the owner, takes this shape",
+            "Every update that reports a result, and every question to the owner, carries three things",
             self.shape,
         )
         self.assertIn(
@@ -52,20 +53,10 @@ class TestPmReplyShape(unittest.TestCase):
         self,
     ):
         self.assertIn(
-            "**Question (<decision id>, where the owner keeps a decision ledger).**",
-            self.shape,
-        )
-        self.assertIn(
-            "**Spend:** <the open wave: spent of ceiling>, where a spend wave is open.",
-            self.shape,
-        )
-        self.assertIn(
             "Where the owner keeps a decision ledger (§8), log the question before sending it",
             self.shape,
         )
-        self.assertIn(
-            "Where no spend wave is open, the Spend line is left out.", self.shape
-        )
+        self.assertNotIn("**Spend:**", self.pm)
         self.assertIn("none is required", self.pm)
 
 
