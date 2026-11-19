@@ -1581,9 +1581,22 @@ class TestB2UnreadableInput(DecisionFixture):
         self.assertEqual(got, "DENY")
         self.assertIn(f"the binding {self.bpath} is a symlink to {self.bpath.parent / 'gone.json'}, which does not exist", why)
 
+    def widen(self, resolve, run):
+        """This test's copy of the runtime with a longer locator limit and run deadline, so that a margin does not
+        depend on how fast the machine runs one locator call."""
+        for name, old, new in (("team_roles.py", "RESOLVE_TIMEOUT = 2 ", f"RESOLVE_TIMEOUT = {resolve} "),
+                               ("agent-roles.py", "RUN_BUDGET_S = 6 ", f"RUN_BUDGET_S = {run} ")):
+            f = self.rt / name
+            text = f.read_text()
+            self.assertEqual(text.count(old), 1, f"{name}: {old!r}")
+            f.write_text(text.replace(old, new))
+
     def test_f5_a_deadline_used_up_by_earlier_calls_is_named(self):
-        self.slow_git("sleep 0.5")
-        lines = "".join(f"Record folder: {self.repo}/records/2026-01-0{i}-T7-x/\n" for i in range(1, 5))
+        # 6 s of the run are usable (8, less the 2 kept for the event); 20 calls of at least 0.3 s use them up,
+        # and a call is cut short only when it takes over 4 s, so a slow machine still reaches the deadline first
+        self.widen(resolve=4, run=8)
+        self.slow_git("sleep 0.3")
+        lines = "".join(f"Record folder: {self.repo}/records/2026-01-{i:02d}-T7-x/\n" for i in range(1, 21))
         got, why = self.decide("role:reviewer", f"Review T7.\n{lines}", self.repo)
         self.assertEqual(got, "DENY")
         self.assertIn("run deadline ran out: earlier calls in this run", why)
