@@ -939,6 +939,12 @@ class TestRecordEdges(Fixture):
         self.assertEqual(self.reg()["workOrders"]["T1"]["close"], "closed")
         self.assertEqual(self.reg()["computed"]["reviews"], "reviews/")
 
+    def test_the_register_names_the_ledger_with_no_machine_path(self):
+        # as computed.reviews: the ops ledger is named in the records worktree, never by its full path
+        self.closed_record()
+        self.run_check()
+        self.assertEqual(self.reg()["computed"]["ledger"], "ops/events.jsonl")
+
 
 class TestStreamCurrency(Fixture):
     """The ops ledger keeps up with the repo."""

@@ -307,6 +307,28 @@ class BadCodeRoots(folders.Project):
                 self.assertEqual(len(self.events()), seals)
 
 
+class BadSignalCodeRoots(BadCodeRoots):
+    """0.7.3: a signal.codeRoots that is not a list of folders is bad input for close, seal-code, the measured seal
+    and records-check, as a malformed records.codeRoots is: one line naming the field, never a traceback."""
+    binding = folders.BINDING
+    BAD = (True, "src/", [5])
+
+    def bad(self, roots):
+        self.bind(dict(folders.BINDING, signal={"codeRoots": roots}))
+
+    def refused(self, rc, out):
+        self.assertEqual(rc, 2, out)
+        self.assertNotIn("Traceback", out)
+        self.assertIn("signal.codeRoots", out)
+
+    def test_records_check_refuses(self):
+        for roots in self.BAD:
+            with self.subTest(roots=roots):
+                self.bad(roots)
+                self.refused(*self.run_tool(["python3", str(RUNTIME / "records-check.py"), "--repo", str(self.repo),
+                                             "--no-write"]))
+
+
 class NoCodeRoots(folders.Project):
     binding = {k: v for k, v in LIGHT.items() if k != "records"}
 

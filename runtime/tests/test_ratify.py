@@ -171,6 +171,53 @@ class Ratify(unittest.TestCase):
                 self.assertEqual(len(p.stderr.strip().splitlines()), 1, p.stderr)
                 self.assertTrue(p.stderr.startswith(f"ratify: {self.run_dir / 'reader-a.md'}: "), p.stderr)
 
+    # --- 0.7.3 B4: every other input of the wrong shape is bad input too, in one line ------------------------
+    def one_line(self, p):
+        self.assertNotIn("Traceback", p.stderr)
+        self.assertEqual(len(p.stderr.strip().splitlines()), 1, p.stderr)
+        self.assertTrue(p.stderr.startswith("ratify: "), p.stderr)
+
+    def test_b4_a_reader_that_is_not_text_exits_2_in_one_line(self):
+        self.sample()
+        (self.run_dir / "reader-b.md").write_text(report("B", {"X1": "RIGHT"}))
+        for reader in (5, ["A"], {"a": 1}):
+            with self.subTest(reader=reader):
+                block = {"reader": reader, "items": [{"id": "X1", "label": "RIGHT"}]}
+                (self.run_dir / "reader-a.md").write_text("# Reader A\n\n```json\n" + json.dumps(block) + "\n```\n")
+                self.one_line(self.ratify("compare", self.run_dir / "reader-a.md", self.run_dir / "reader-b.md",
+                                          "--out", self.run_dir, code=2))
+
+    def test_b4_a_report_that_does_not_exist_exits_2_in_one_line(self):
+        self.sample()
+        (self.run_dir / "reader-b.md").write_text(report("B", {"X1": "RIGHT"}))
+        p = self.ratify("compare", self.run_dir / "no-such-report.md", self.run_dir / "reader-b.md", "--out",
+                        self.run_dir, code=2)
+        self.one_line(p)
+        self.assertIn("no-such-report.md", p.stderr)
+
+    def test_b4_entries_of_the_wrong_shape_exit_2_in_one_line(self):
+        for entries in (["X1"], [5], [None]):
+            with self.subTest(entries=entries):
+                self.entries.write_text(json.dumps(entries))
+                self.one_line(self.ratify("sample", "--entries", self.entries, "--corpus", self.corpus, "--seed", 1,
+                                          "--out", self.run_dir, code=2))
+                self.one_line(self.ratify("check", "--entries", self.entries, "--repo", self.proj, code=2))
+
+    def test_b4_a_corpus_record_of_the_wrong_shape_exits_2_in_one_line(self):
+        for rows in (["text"], [5], [None]):
+            with self.subTest(rows=rows):
+                self.corpus.write_text(json.dumps(rows))
+                self.one_line(self.ratify("sample", "--entries", self.entries, "--corpus", self.corpus, "--seed", 1,
+                                          "--out", self.run_dir, code=2))
+
+    def test_b4_classes_of_the_wrong_shape_exit_2_in_one_line(self):
+        classes = self.t / "classes.json"
+        for value in (["exclude"], "exclude", 5):
+            with self.subTest(classes=value):
+                classes.write_text(json.dumps(value))
+                self.one_line(self.ratify("sample", "--entries", self.entries, "--corpus", self.corpus, "--seed", 1,
+                                          "--out", self.run_dir, "--classes", classes, code=2))
+
     def test_b4_a_good_block_still_compares(self):
         self.sample()
         self.compare({"X1": "RIGHT"}, {"X1": "RIGHT"})

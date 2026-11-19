@@ -2064,5 +2064,70 @@ class TestR03BadReviewsAtDispatch(DecisionFixture):
         self.assertIn("the record folder your brief names under records/ must hold the prediction", sent)
 
 
+class TestR073RunFolderFields(DecisionFixture):
+    """0.7.3 B7: a bad `runs` is refused at dispatch; each `reviews` shape preflight refuses is refused at dispatch
+    too, by the same rule, and a full path inside the repository is not called outside it. Item 6: a stop that
+    cannot place a line because `runs` is bad names `runs`, not a reviews folder."""
+
+    def bind(self, **fields):
+        self.bpath.write_text(json.dumps({"owned": True, "tracker": {"id": "^T[0-9]+$"}, **fields}))
+
+    def briefs(self):
+        return (("role:change:engineer", "Work order T7: x\n", self.repo),
+                ("role:reviewer", f"Review T7.\nRecord folder: {self.rf}/\n", self.ws))
+
+    def test_b7_a_bad_runs_is_refused_at_dispatch_naming_the_field(self):
+        for fields in ({"runs": "elsewhere"}, {"runs": "records", "reviews": "records/"}):
+            for st, brief, cwd in self.briefs():
+                with self.subTest(fields=fields, st=st):
+                    self.bind(**fields)
+                    got, why = self.decide(st, brief, cwd)
+                    self.assertEqual(got, "DENY")
+                    self.assertIn(f"the binding {self.bpath} has a bad field `runs`", why)
+
+    def test_b7_each_bad_reviews_shape_is_refused_at_dispatch(self):
+        inside = f"{self.repo}/records/"
+        for value, says in ((None, "is not a path"), (inside, "is a full path inside the repository"),
+                            ("a/../records/", "has a '..' part")):
+            for st, brief, cwd in self.briefs():
+                with self.subTest(value=value, st=st):
+                    self.bind(reviews=value)
+                    got, why = self.decide(st, brief, cwd)
+                    self.assertEqual(got, "DENY")
+                    self.assertIn(f"the binding {self.bpath} has a bad field `reviews`", why)
+                    self.assertIn(says, why)
+                    self.assertNotIn("outside the repository", why)
+
+    def test_b7_a_full_path_outside_the_repository_is_still_called_outside(self):
+        self.bind(reviews=f"{self.ws}/records/")
+        got, why = self.decide("role:change:engineer", "Work order T7: x\n", self.repo)
+        self.assertEqual(got, "DENY")
+        self.assertIn("is outside the repository", why)
+
+    def test_item6_a_line_the_stop_cannot_place_for_a_bad_runs_names_runs(self):
+        self.bind(runs="elsewhere")
+        out = json.loads(self.stop_in("Review T7.\nRecord folder: design/w1/\n", {}, cwd=self.repo))
+        self.assertIn("`runs`", out["systemMessage"])
+        self.assertNotIn("reviews folder", out["systemMessage"])
+        self.assertNotIn("axis/runs/", out["systemMessage"])
+
+
+class TestR073RenamedHint(unittest.TestCase):
+    """0.7.3 B1: renamed_hint itself gives a hint only for an old name in bakehouse's own namespaces (role:,
+    bakehouse:), whatever its caller checks first."""
+
+    def test_an_old_name_in_bakehouses_namespaces_gets_its_new_name(self):
+        for st, new in (("bakehouse:refactor-engineer", "engineer"), ("role:refactor-reviewer", "reviewer"),
+                        ("role:refactor:refactor-engineer", "engineer"), ("role:change:refactor-reviewer", "reviewer")):
+            with self.subTest(st=st):
+                self.assertIn(f"it was renamed to `{new}`", team_roles.renamed_hint(st))
+
+    def test_any_other_name_gets_none(self):
+        for st in ("refactor-engineer", "other-plugin:refactor-engineer", "role:engineer", "bakehouse:engineer",
+                   "other:role:refactor-engineer", "", "role:"):
+            with self.subTest(st=st):
+                self.assertIsNone(team_roles.renamed_hint(st))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -511,5 +511,56 @@ class TestR03SignalCodeRoots(Fixture):
         self.assertEqual(code, 0, out)
 
 
+class TestR073FieldShapes(Fixture):
+    """0.7.3: `reviews` is checked at preflight by the role hook's own rule (B7); an empty `register` or `signal`
+    is absent, as a missing key is (B3)."""
+
+    def fails(self, job, *arg):
+        code, out = self.pre(job, *arg)
+        self.assertEqual(code, 1, out)
+        self.assertNotIn("Traceback", out)
+        return [x for x in out.splitlines() if x.startswith("FAIL ")]
+
+    def test_b7_each_bad_reviews_shape_fails_check_3(self):
+        inside = f"{self.repo.resolve()}/reviews/"
+        for value, says in ((None, "= null is not a path"),
+                            (inside, f"= '{inside}' is a full path inside the repository"),
+                            ("a/../reviews/", "= 'a/../reviews/' has a '..' part")):
+            with self.subTest(value=value):
+                self.owned(reviews=value)
+                lines = [x for x in self.fails("health") if "'reviews'" in x]
+                self.assertEqual(len(lines), 1, lines)
+                self.assertTrue(lines[0].startswith("FAIL check 3: path field 'reviews' "), lines)
+                self.assertIn(says, lines[0])
+                self.assertNotIn("outside", lines[0])
+
+    def test_b7_a_good_reviews_still_passes(self):
+        self.owned(reviews="reviews/")
+        code, out = self.pre("health")
+        self.assertEqual(code, 0, out)
+
+    def test_b3_an_empty_register_or_signal_is_missing(self):
+        for field in ("register", "signal"):
+            for job in (("health",), ("refactor", "engine")):
+                with self.subTest(field=field, job=job):
+                    self.owned(**{field: ""})
+                    self.assertIn(f"FAIL check 2: required field '{field}' is missing", self.fails(*job))
+
+    def test_b3_an_empty_register_or_signal_passes_change_and_startup_as_a_missing_one(self):
+        for field in ("register", "signal"):
+            for job in (("change", "T1"), ("startup",)):
+                with self.subTest(field=field, job=job):
+                    self.owned(**{field: ""}, records={"codeRoots": ["docs/"]})
+                    code, out = self.pre(*job)
+                    self.assertEqual(code, 0, out)
+
+    def test_b3_a_register_of_the_wrong_type_fails_change_and_startup(self):
+        for job in (("change", "T1"), ("startup",)):
+            with self.subTest(job=job):
+                self.owned(register=5, records={"codeRoots": ["docs/"]})
+                lines = self.fails(*job)
+                self.assertEqual(lines, ["FAIL check 2: field 'register' = 5 is not a path (the register's file)"])
+
+
 if __name__ == "__main__":
     unittest.main()

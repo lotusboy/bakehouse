@@ -137,7 +137,26 @@ class Ledger(Scratch):
         for name in ("card-reader.csv", "agreements.csv", "reader.md"):
             (run / name).write_text("x")
             with self.subTest(name):
-                self.ask(q=f"Use {name}?", grounding=["--read", str(run / name), "--read-what", "row 1"])
+                self.ask("correction", q=f"Use {name}?", grounding=["--read", str(run / name), "--read-what", "row 1"])
+
+    def test_b5_an_agreement_json_beside_its_reports_is_not_a_read_source(self):
+        # ratify.sh compare writes agreement.json beside agreement.md in a blind-readers run folder
+        run = self.work / "blind-json"
+        run.mkdir()
+        for name in ("reader-a.md", "reader-b.md", "agreement.md", "agreement.json"):
+            (run / name).write_text("x")
+        p = self.run_("ask", "--category", "correction", "--question", "q", "--option", "a", "--option", "b",
+                      "--recommendation", "a", "--confidence", "0.5", "--evidence-kind", "measured", "--evidence", "e",
+                      "--read", str(run / "agreement.json"), "--read-what", "row 1", ok=False)
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn("that is an agent's record, not the source", p.stderr)
+        self.assertFalse(self.decisions.exists())
+        # an agreement.json with no blind-readers run beside it is still a source
+        alone = self.work / "alone-json"
+        alone.mkdir()
+        (alone / "agreement.json").write_text("x")
+        self.ask("correction", q="Use agreement.json?", grounding=["--read", str(alone / "agreement.json"),
+                                                                  "--read-what", "row 1"])
 
     def test_b5_fix1_reader_and_agreement_names_outside_a_blind_readers_run_are_sources(self):
         # a folder with no reader-*.md and agreement.md pair is not a blind-readers run: as on 435f6cb. Each name is
@@ -254,6 +273,17 @@ class Ledger(Scratch):
                   "--upstream", "the upstream writer drops the column order")
         self.assertEqual(self.rows()[-1]["fixRound"], 1)
         self.assertEqual(self.rows()[-1]["upstream"], "the upstream writer drops the column order")
+
+    def test_upstream_needs_three_words(self):
+        base = ["ask", "--category", "process", "--option", "a", "--option", "b", "--recommendation", "a",
+                "--confidence", "0.5", "--evidence-kind", "measured", "--evidence", "e", *self.grounded,
+                "--task", "A1", "--fix-round", "1", "--question", "Change the reader to keep the column order?"]
+        p = self.run_(*base, "--upstream", "writer drops", ok=False)
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn("the question proposes a fix: give --upstream", p.stderr)
+        self.assertFalse(self.decisions.exists())
+        self.run_(*base, "--upstream", "writer drops columns")
+        self.assertEqual(self.rows()[-1]["upstream"], "writer drops columns")
 
     def test_a_third_fix_round_needs_a_recorded_step_back(self):
         def go(n, *extra):
