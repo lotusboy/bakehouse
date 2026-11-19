@@ -11,6 +11,17 @@ delegates it to agents, and checks each result before it lands. The team brings:
 Status: early. Release R0 is the first move of these tools out of the notes tool where they grew. It
 works on one project at a time, on one machine.
 
+## Docs
+
+- [Getting started](docs/GETTING-STARTED.md): one project, from install to its first `/bakehouse:change` job.
+- [Example project](examples/notes-app/README.md): a made-up app with every team file written, to try
+  bakehouse on before your own work.
+- [The project team](docs/PROJECT-TEAM.md): where the files live, the roles, the binding, lanes, the
+  records and the ledgers.
+- [The predicted-moves gate](docs/PREDICT-GATE.md): the prediction, baseline and measured files, sealing
+  and close.
+- [Tools](docs/TOOLS.md): every script, what it does and what it writes.
+
 ## One person per repo
 
 Run bakehouse in a repo where you are the only person running it, on one machine. Two people running
@@ -25,7 +36,8 @@ bakehouse in one repo is not supported yet.
 
 ## Install
 
-New here? `docs/GETTING-STARTED.md` takes one project from install to its first `/bakehouse:change` job.
+New here? [`docs/GETTING-STARTED.md`](docs/GETTING-STARTED.md) takes one project from install to its first
+`/bakehouse:change` job. To try it first on a made-up project, use [`examples/notes-app`](examples/notes-app/README.md).
 
 The plugin is switched on per project, never for every repo on the machine.
 
@@ -47,7 +59,8 @@ The plugin is switched on per project, never for every repo on the machine.
      "enabledPlugins": { "bakehouse@bakehouse": true }
    }
    ```
-3. Describe the project for the team in `.team/binding.json` (see `docs/PROJECT-TEAM.md`).
+3. Describe the project for the team in `.team/binding.json` (see
+   [The binding](docs/PROJECT-TEAM.md#the-binding)).
 4. In the main clone, run `bakehouse setup` from a Claude Code session (the plugin's `bin/` is on the
    Bash tool's PATH). It makes the records worktree beside the clone, on the branch
    `bakehouse-records`, and installs the post-commit drift report. Add `--pre-commit` to install the
@@ -66,8 +79,7 @@ machine, write `none` into `~/.local/state/bakehouse/role`.
 - `bakehouse setup`, `bakehouse status [--json]`, `bakehouse run <script>` (from the Bash tool).
 - `/bakehouse:change`, `/bakehouse:refactor`, `/bakehouse:health` (in a session).
 
-The docs: `docs/PROJECT-TEAM.md` (the team), `docs/PREDICT-GATE.md` (the gates), `docs/TOOLS.md`
-(every script).
+More on each: [Docs](#docs).
 
 ## Requirements
 
@@ -75,4 +87,4 @@ Python: the tools need Python 3.10 or later. The plugin's hooks run the first `p
 PATH and still load under Python 3.9 (macOS's `/usr/bin/python3`), so the dispatch gate and the session
 start keep working there. Git 2.42 or later (`git worktree add --orphan`).
 
-Licence: GNU GPL v3. See `LICENSE`.
+Licence: GNU GPL v3. See [`LICENSE`](LICENSE).

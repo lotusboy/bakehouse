@@ -8,6 +8,9 @@ The example project is made up. It is `notes-app`, a small web app. Its API rout
 `POST /api/summarise` sends a note's text to an AI model and returns the model's summary. Its code is in
 `src/`, its tests run with `npm test`, and it lives in git with a remote `origin`.
 
+To try bakehouse before you write any of these files, copy the finished project:
+[`examples/notes-app`](../examples/notes-app/README.md) holds every file this guide writes.
+
 ## What you need
 
 - Claude Code.
@@ -276,5 +279,6 @@ Every step in full: [`commands/change.md`](../commands/change.md), "The steps".
 ## Read next
 
 - [`docs/PROJECT-TEAM.md`](PROJECT-TEAM.md): the team, the binding, the roles, the records.
+- [Lanes](PROJECT-TEAM.md#lanes): running two or three work orders at once, each in its own clone.
 - [`docs/PREDICT-GATE.md`](PREDICT-GATE.md): the gates, the files, sealing and close.
 - [`docs/TOOLS.md`](TOOLS.md): every script.

@@ -96,6 +96,49 @@ role hook.
 6. Nothing moves an existing record. The records of work orders closed in tree mode stay in the code
    tree.
 
+## Lanes
+
+A lane is one line of work running beside others in the same project, on the same machine: usually its
+own clone, its own branch and its own session. Lanes let one person run two or three work orders at once.
+They are not a way for two people to share a repo ([README, "One person per repo"](../README.md#one-person-per-repo)).
+
+**The PM decides the lanes.** How many lanes run, which work orders may run side by side, and when a lane
+merges are the project PM's judgement. No tool decides them. Two work orders that change the same files
+should not share a time slot. The ledger has an event to record that judgement (`footprint-judged`).
+The binding can name runs that must never run in parallel: `gates.oneAtATime` ([The binding](#the-binding)).
+
+**What bakehouse gives a lane:**
+
+1. **One set of records.** A lane's clone writes to the main clone's records, so there is one history.
+   Before any team tool in a lane clone, run `bakehouse setup --pointer <main clone>`. Without it, every
+   team tool there refuses. Plain `bakehouse setup` in a clone that looks like a lane refuses too, and
+   names `--pointer`.
+2. **Its labels.** Each lane's commands carry `BAKEHOUSE_LANE=<lane>` and `BAKEHOUSE_WO=<work order id>`.
+   The change and refactor briefs say so, with the PM filling in the lane.
+3. **A lock per lane.** `runtime/heavy-run.sh <resource> <command>` runs one heavy job, such as the full
+   test suite, under the lock `<resource>.lane<BAKEHOUSE_LANE>` in the machine folder's `locks/`
+   (`main` when the variable is unset). Heavy jobs in one lane take turns. A lane never waits for
+   another lane.
+4. **A lane ledger.** `runtime/lane-event.sh <kind> [key=value ...]` appends one event to
+   `ops/lanes.jsonl` in the records: `lane-opened`, `lane-closed`, `footprint-judged`,
+   `resource-waited`, `resource-started`, `resource-ended`, `merge`, `remeasure`, `question-asked`,
+   `question-answered`. `heavy-run.sh` writes its resource events itself. No tool reads the ledger yet; it is
+   kept so waits and holds can become statistics later.
+5. **Close across lanes.** Close orders a lane's code against its records by commit time, not ancestry,
+   and judges code a merge brought in by that merge's lane parent. Close does not fetch: a measured
+   seal whose commit is still only in a lane clone needs `git fetch <lane clone> <branch>`, or the
+   merge, before the work order closes ([`PREDICT-GATE.md`](PREDICT-GATE.md), "Closing a work order").
+
+**A lane, start to end:**
+
+1. The PM judges the footprint: which files the work order changes, and whether another open lane
+   changes them too.
+2. Make the lane's clone, and in it run `bakehouse setup --pointer <main clone>`.
+3. Run the job there, with `BAKEHOUSE_LANE` and `BAKEHOUSE_WO` on its commands, and heavy jobs through
+   `heavy-run.sh`.
+4. Close it as the job says: `predict-gate.sh close <id>` before the pull request, then, after the merge
+   into the default branch, `predict-gate.sh close <id> --merged` (`/bakehouse:change` steps 9 and 10).
+
 ## Roles
 
 A role names a job. An agent fills a role. A job dispatches `role:<job>:<role>`, for example
