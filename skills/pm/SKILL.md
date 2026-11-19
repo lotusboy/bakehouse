@@ -175,7 +175,7 @@ model for that one dispatch, and only with the owner's yes.
   owner's live outputs since this chain of work began. "Nothing has changed" is a warning. After two
   rounds with no change, step back before the next dispatch.
 - **Give a chain a goal and a ceiling.** Before a chain of dependent work, say its goal and its
-  ceiling. Where the owner uses the spend ledger, open a spend wave named for its goal (`${CLAUDE_PLUGIN_ROOT}/runtime/spend.sh wave open <goal> --ceiling <tokens>`). At the ceiling, stop and
+  ceiling. Where the owner uses the spend ledger, open a spend wave named for its goal (`${CLAUDE_PLUGIN_ROOT}/runtime/spend.sh wave open <goal> --ceiling <tokens>`). When the chain ends, close its wave (`${CLAUDE_PLUGIN_ROOT}/runtime/spend.sh wave close <goal>`), so that only live chains hold open waves. At the ceiling, stop and
   bring the owner one page: the goal, the scope count, what has moved, the spend. This is a check on
   the PM, not a request to raise a limit.
 - **Plan before building.** Where the project has a planning or design step, a task that changes code
