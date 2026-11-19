@@ -211,11 +211,14 @@ def cmd_headroom(a):
     ev = read_events(project)
     if a.wave not in waves(ev):
         fail(f"no wave {a.wave} in {name_of(project)}", "spend:wave-unknown")
+    closed = waves(ev)[a.wave]["closed"]
+    if closed:
+        fail(f"wave {a.wave} was closed at {closed}; no agent spends from it", "spend:wave-closed")
     s = wave_summary(ev, a.wave)
     total = s["spent"] + a.est
     if total > s["ceiling"]:
         fail(f"wave {a.wave}: {s['spent']:,} spent + {a.est:,} estimated is over the ceiling of {s['ceiling']:,}"
-             f" by {total - s['ceiling']:,}; {s['ceiling'] - s['spent']:,} left", "spend:headroom")
+             f" by {total - s['ceiling']:,}; {max(0, s['ceiling'] - s['spent']):,} left", "spend:headroom")
     print(f"wave {a.wave}: {s['spent']:,} spent + {a.est:,} estimated fits the ceiling of {s['ceiling']:,};"
           f" {s['ceiling'] - total:,} left after it")
 

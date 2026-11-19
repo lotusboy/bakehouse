@@ -21,8 +21,8 @@ A work-order-closed event is written by `predict-gate.sh close` only when the cl
 the owner's override is recorded first; such a close's note starts OVERRIDDEN.
 
 Exit 0; 3 no team here (JSON: {"format": 1, "team": false}); 4 setup needed (the locator's message on
-stderr); 1 a broken ledger, or a line status cannot read (named on stderr); 2 bad usage, a --repo that is
-not a folder inside a git repository included.
+stderr); 1 a broken ledger, a line status cannot read, or an "unattended" settings block of a shape the tools
+cannot use (named on stderr); 2 bad usage, a --repo that is not a folder inside a git repository included.
 """
 
 from __future__ import annotations
@@ -108,6 +108,8 @@ def state(project, since) -> dict:
         assumed = [{"id": d["ask"]["id"], "question": d["ask"].get("question"),
                     "confidence": d["ask"].get("confidence"), "estTokens": d["answers"][-1].get("estTokens")}
                    for d in decided.values() if d["answers"] and d["answers"][-1].get("assumed")]
+    except decision.SettingsError:
+        raise  # the project's settings, not the ledger: main names the file
     except Exception as e:  # noqa: BLE001
         raise Unreadable(project.decisions_ledger, e) from e
     return {"format": 1, "team": True, "project": str(project.root), "records": str(project.records),
@@ -176,6 +178,9 @@ def main(argv, root) -> int:
     except Unreadable as e:
         print(f"bakehouse status: the ledger {e.args[0]} cannot be read: a line has a shape status cannot use "
               f"({e.args[1]!r})", file=sys.stderr)
+        return 1
+    except decision.SettingsError as e:
+        print(f"bakehouse status: {e}", file=sys.stderr)
         return 1
     print(json.dumps(s, ensure_ascii=False, indent=2) if as_json else plain(s, since_arg))
     return 0

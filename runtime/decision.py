@@ -395,18 +395,46 @@ def cmd_answer(a):
     append(project, ev)
 
 
+class SettingsError(ValueError):
+    """The project's "unattended" block has a shape the tools cannot use (review F9)."""
+
+
+def unattended_settings(project):
+    """The "unattended" settings, merged over the defaults and checked once: an object; "bands" a list of
+    {"maxTokens": <whole number>, "above": <number>}; "neverCategories" a list of text. Raises SettingsError."""
+    cfg = config(project).get("unattended")
+
+    def num(v, whole=False):
+        return not isinstance(v, bool) and isinstance(v, int if whole else (int, float))
+
+    if not isinstance(cfg, dict):
+        why = "is not an object"
+    elif not isinstance(cfg.get("bands"), list) or not all(
+            isinstance(b, dict) and num(b.get("maxTokens"), whole=True) and num(b.get("above")) for b in cfg["bands"]):
+        why = 'has "bands" that is not a list of {"maxTokens": <whole number>, "above": <number>}'
+    elif not isinstance(cfg.get("neverCategories"), list) or not all(isinstance(c, str)
+                                                                      for c in cfg["neverCategories"]):
+        why = 'has "neverCategories" that is not a list of text'
+    else:
+        return cfg
+    raise SettingsError(f'the "unattended" block in {project.decision_config} {why}: fix it there')
+
+
 def unattended(project, events=None):
-    """Unattended mode: on when the project turns it on and its latest switch event is a start."""
+    """Unattended mode: on when the project turns it on (the JSON value true) and its latest switch event is a
+    start."""
+    enabled = unattended_settings(project).get("enabled") is True
     events = read_events(project) if events is None else events
     last = next((e for e in reversed(events) if e.get("kind") == "unattended"), None)
-    on = bool(config(project).get("unattended", {}).get("enabled")) and bool(last) and last.get("action") == "start"
+    on = enabled and bool(last) and last.get("action") == "start"
     return {"on": on, "since": last.get("ts") if on else None, "why": last.get("why") if on else None,
             "wave": last.get("wave") if on else None}
 
 
 def cmd_unattended(a):
+    """Start and stop are refused unless the project turns the mode on; start also while the mode is on."""
     project = resolve_project(a.repo)
-    if not config(project).get("unattended", {}).get("enabled"):
+    if unattended_settings(project).get("enabled") is not True:
         fail('unattended mode is off for this project; the project turns it on with "unattended": {"enabled": true}'
              f" in {project.decision_config}", "decision:unattended-disabled")
     ev = {"kind": "unattended", "action": a.action, "ts": stamp(), "stream": name_of(project)}
@@ -414,6 +442,10 @@ def cmd_unattended(a):
         if not a.why.strip():
             fail('--why is empty: say why, for example "owner said unattended" or "no answer to <id> for 30 minutes"',
                  "decision:unattended-why")
+        now_on = unattended(project)
+        if now_on["on"]:
+            fail(f"unattended mode is already on, since {now_on['since']} ({now_on['why']}); stop it before a new"
+                 " start", "decision:unattended-on")
         ev.update(why=a.why, wave=a.wave or None)
     append(project, ev)
 
@@ -422,13 +454,16 @@ def answer_assumed(project, a, d):
     """An assumed yes while the owner is away: the recommendation, recorded as the PM's and never as the owner's.
     The confidence must be above the line of the band the step's estimated tokens fall in."""
     ask = d["ask"]
-    cfg = config(project).get("unattended", {})
+    cfg = unattended_settings(project)
     if not unattended(project)["on"]:
         fail("unattended mode is not on, so nothing is assumed: `decision.sh unattended start --why ...`",
              "decision:assumed-off")
     if not a.assumed or a.est_tokens is None:
         fail("an assumed answer gives both --assumed and --est-tokens <n>, the step's estimated tokens"
              " (0: a step with no AI)", "decision:assumed-estimate")
+    if a.agreed is not None:
+        fail("--agreed is not given with --assumed: an assumed answer is the recommendation, and only the owner"
+             " agrees or not", "decision:assumed-agreed")
     if any(not an.get("assumed") for an in d["answers"]):
         fail(f"{a.id} already has the owner's answer; an assumed one never replaces it",
              "decision:assumed-answered")
@@ -441,10 +476,13 @@ def answer_assumed(project, a, d):
     if ask.get("approves") is not None:
         fail(f"{a.id} names --approves: an approval of a gate exception is always the owner's",
              "decision:assumed-approves")
-    if ask.get("category") in cfg.get("neverCategories", []):
+    if ask.get("blind"):
+        fail(f"{a.id} was asked blind: a blind ask measures the owner's own answer, so it waits for the owner",
+             "decision:assumed-blind")
+    if norm(ask.get("category")) in {norm(c) for c in cfg["neverCategories"]}:
         fail(f"category {ask.get('category')} is on the project's never-list: it waits for the owner",
              "decision:assumed-never")
-    bands = sorted(cfg.get("bands", []), key=lambda b: b["maxTokens"])
+    bands = sorted(cfg["bands"], key=lambda b: b["maxTokens"])
     band = next((b for b in bands if a.est_tokens <= b["maxTokens"]), None)
     if band is None:
         fail(f"the estimate {a.est_tokens:,} tokens is above the top band"
@@ -791,7 +829,10 @@ def main():
         answer.error("the following arguments are required: --choice")
     global _TASK
     _TASK = getattr(a, "task", None)
-    a.fn(a)
+    try:
+        a.fn(a)
+    except SettingsError as e:
+        fail(str(e), "decision:unattended-config")
 
 
 if __name__ == "__main__":

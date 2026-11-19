@@ -732,7 +732,7 @@ def decision_refusal(decided: dict, i: str, wo: str, at, before: str = "the comm
     d = decided.get(i)
     if not d:
         return f"decision {i} is not in the decision ledger"
-    prior = sorted((t, a) for a in d["answers"] if (t := when(a.get("ts"))) and t < at)
+    prior = sorted(((t, a) for a in d["answers"] if (t := when(a.get("ts"))) and t < at), key=lambda p: p[0])
     if not prior:
         return f"decision {i} has no answer recorded before {before}"
     ask, last = d["ask"], prior[-1][1]
