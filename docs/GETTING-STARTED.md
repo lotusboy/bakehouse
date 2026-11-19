@@ -147,7 +147,9 @@ The binding is the project's facts for the team. Write `.team/binding.json`:
     "predictedMoves": {"gates": ".team/gates.json#gates", "prediction": "moves.prediction.json"}
   },
   "branches": {"refactor": "refactor/{id}-step{n}-{name}", "change": "fix/{id}-{name}"},
-  "records": {"codeRoots": ["src/"]}
+  "records": {"codeRoots": ["src/"]},
+  "mutation": {"command": ["node", "--test"],
+               "tests": [{"files": "src/*", "tests": ["test/summarise.test.js"]}]}
 }
 ```
 
@@ -158,6 +160,10 @@ The binding is the project's facts for the team. Write `.team/binding.json`:
   need both: add them before you run those jobs ([The signal](PROJECT-TEAM.md#the-signal)).
 - `prediction` is the file the predicted-moves gate reads, `moves.prediction.json`. Preflight refuses a
   name the gate does not read.
+- `mutation` tells the mutation runner how to test a mutated file: the test command, and which tests
+  to run for which files. The reviewer uses it to check that the tests catch a deliberate break
+  ([The binding](PROJECT-TEAM.md#the-binding), field `mutation`). Preflight checks that the test files
+  exist: name your own.
 - Every field, and which ones are required: [The binding](PROJECT-TEAM.md#the-binding).
 
 ## 6. Write the tracker item

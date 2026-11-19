@@ -59,6 +59,9 @@ bakehouse status
 - Preflight prints `ok` on its last line.
 - Status shows 0 open work orders.
 
+Before the real job, you can see the gates by hand: [WALKTHROUGH.md](WALKTHROUGH.md) shows a prediction
+checked, a change stopped, and a mutation that finds a missing test. About 15 minutes, no AI.
+
 ## 4. Run the first change
 
 In the same session:

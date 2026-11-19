@@ -8,5 +8,7 @@
     "predictedMoves": {"gates": ".team/gates.json#gates", "prediction": "moves.prediction.json"}
   },
   "branches": {"refactor": "refactor/{id}-step{n}-{name}", "change": "fix/{id}-{name}"},
-  "records": {"codeRoots": ["src/"]}
+  "records": {"codeRoots": ["src/"]},
+  "mutation": {"command": ["node", "--test"],
+               "tests": [{"files": "src/*", "tests": ["test/summarise.test.js"]}]}
 }

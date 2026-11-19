@@ -149,6 +149,8 @@ class Preflight(preflight_tests.Fixture):
         self.assertEqual(code, 1, out)
         self.assertIn("FAIL check 3: path field 'records.codeRoots' = 'src/' does not exist", out)
         (self.repo / "src").mkdir()
+        (self.repo / "test").mkdir()
+        (self.repo / "test" / "summarise.test.js").write_text("")  # the sample's mutation block names it
         code, out = self.pre("change", "T1")
         self.assertEqual(code, 0, out)
 

@@ -8,7 +8,8 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-PAGES = ("README.md", "docs/GETTING-STARTED.md", "examples/notes-app/README.md")
+PAGES = ("README.md", "docs/GETTING-STARTED.md", "examples/notes-app/README.md",
+         "examples/notes-app/WALKTHROUGH.md")
 LINK = re.compile(r"\]\(([^)\s]+)\)")
 
 
