@@ -846,23 +846,31 @@ def merged_check(repo: Path, ledger: Path | None, wo: str) -> tuple[list, list, 
 
 # ---------- close of a SEALED work order ----------
 
-def ledger_refusals(ledger: Path | None, wo: str) -> list:
+def ledger_refusals(ledger: Path | None, wo: str, project=None) -> list:
     """Run on EVERY close, before close decides whether the work order is sealed: the ledger
     must read whole, and the ledger file must still begin with the ledger its last commit holds. A
-    ledger file that is gone reads as empty, so its committed lines refuse."""
+    ledger file that is gone reads as empty, so its committed lines refuse. The refusals name the ledger by its
+    path in the project's records worktree, as records-check does, so a refusal's id does not change with the
+    spelling of the ledger's path (a symbolic link)."""
     if ledger is None:
         return []
     ol = ledger_module()
     out = []
+    name = str(ledger)
+    if project is not None:
+        try:
+            name = ledger.resolve().relative_to(Path(project.records).resolve()).as_posix()
+        except ValueError:
+            pass
     whole, text = ol.verify(ledger) if ledger.is_file() else (True, "")
     if not whole:
-        out.append(f"the ops ledger {ledger} is BROKEN, and close did not write it: "
+        out.append(f"the ops ledger {name} is BROKEN, and close did not write it: "
                    + " ".join(x.removeprefix("Chain: ") for x in text.split("\n"))
                    + f" The owner decides its repair, through a decision (decision.sh ask --task {wo} "
                    "--approves <option>); close judges nothing on it until verify-chain is whole")
     blob = ol.committed(ledger)
     if blob is not None and not (ledger.read_bytes() if ledger.is_file() else b"").startswith(blob):
-        out.append(f"the ledger {ledger} differs from its last commit in lines that commit holds: a committed "
+        out.append(f"the ledger {name} differs from its last commit in lines that commit holds: a committed "
                    "line was edited, moved or removed")
     return out
 
@@ -1309,7 +1317,7 @@ def run_close(wo: str, repo_arg: str | None, binding_arg: str | None, merged: bo
         pattern = f"{rec}/{pattern}"
     refused, passed, notes = [], [], []
     if not merged:  # every close, sealed or not: the ledger reads whole and matches its commit
-        refused += ledger_refusals(ledger, wo)
+        refused += ledger_refusals(ledger, wo, project)
 
     def rel(p: Path) -> str:
         return p.relative_to(rec).as_posix()

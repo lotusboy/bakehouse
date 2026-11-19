@@ -974,6 +974,25 @@ class Sealed(unittest.TestCase):
         self.assertEqual(rc, 1, out)
         self.assertNotIn("sealed: judged by", out)
 
+    def test_270_a_symlinked_spelling_of_the_ledger_keeps_its_refusal_ids(self):
+        # 270: the 2 ledger refusals named the ledger by its absolute path, so its id followed the spelling
+        self.flow()
+        self.ledger.write_bytes(b'{"kind": "no\n')
+
+        def ledger_ids():
+            rc, out = self.close()
+            self.assertEqual(rc, 1, out)
+            rows = [x for x in out.split("\n") if x.startswith("  - R-") and "ledger" in x.split(":", 1)[1][:40]]
+            self.assertEqual(len(rows), 2, out)
+            self.assertNotIn(str(self.records), "".join(rows), "the ledger is named by its path in the records worktree")
+            return sorted(x.split(":")[0].strip(" -") for x in rows)
+
+        real = ledger_ids()
+        link = Path(self.tmp.name) / "records-link"
+        link.symlink_to(self.records)
+        self.git("config", "bakehouse.records", str(link))
+        self.assertEqual(ledger_ids(), real)
+
     def test_h4_records_check_and_close_read_one_sealed_state(self):
         self.flow()
         self.strip_w1(commit=False)
