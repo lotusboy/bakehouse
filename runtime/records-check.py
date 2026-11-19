@@ -826,8 +826,9 @@ def close_state(events, read: Reader, own: list, need: set, last: datetime | Non
     latest close counts. events: every event of this work order, in ledger order. own: its step
     folders, as paths in the repository. need: the files `predict-gate.sh close` hashes in them.
     measured_at: the latest measured file's commit time, for a record the code-order rules judge.
-    sealed: (whether the work order has sealed events, why its code is stale or None), from
-    predict-gate's sealed_stale: a sealed work order is stale by commits and trees, never by times."""
+    sealed: (whether the work order has sealed events, why its code is stale or None[, why a measured seal's
+    baseline is not the one at the ref, or None]), from predict-gate's sealed_stale and baseline_refusals: a
+    sealed work order is stale by commits and trees, never by times."""
     at = [i for i, e in enumerate(events or []) if e.get("kind") == CLOSED_KIND]
     if not at:
         return "not-closed", None
@@ -863,6 +864,8 @@ def close_state(events, read: Reader, own: list, need: set, last: datetime | Non
     if failed:
         return "not-its-record", ("predict-gate's own check refuses a pair the latest work-order-closed event "
                                   f"carries: {'; '.join(failed)}")
+    if sealed[0] and len(sealed) > 2 and sealed[2]:
+        return "hash-mismatch", sealed[2]
     if sealed[0]:
         return ("stale", sealed[1]) if sealed[1] else (("overridden" if overridden else "closed"), None)
     try:
@@ -1094,7 +1097,8 @@ def build(binding: dict, ledger: Path | None, repo: Path, a, contracts: dict, pr
             if owned and seal_scan is None:  # once per run, not once per work order
                 seal_scan = pg.sealed_scan(ledger)
             sealed_wo, sealed_evs, _ = pg.sealed_state(ledger, wo, seal_scan) if owned else (False, [], [])
-            sealed_close = ((True, pg.sealed_stale(repo, ref, sealed_evs, roots, wo, tracker["id"])[1]) if sealed_wo
+            sealed_close = ((True, pg.sealed_stale(repo, ref, sealed_evs, roots, wo, tracker["id"])[1],
+                             "; ".join(pg.baseline_refusals(rec, rec_ref, sealed_evs)) or None) if sealed_wo
                             else (False, None))
             state, why = close_state(closed.get(wo), read, [f"{reviews}/{f}" for f in sorted(steps)], need,
                                      last.get(wo), measured_at, sealed_close)

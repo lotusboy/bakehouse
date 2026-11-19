@@ -1407,6 +1407,42 @@ class Sealed(unittest.TestCase):
         self.commit("W-1: measurement")
         self.assertCloses()
 
+    def snapshot_changed_after_its_measurement(self):
+        """A prediction naming a plain file as its baseline, sealed and measured; then that file committed
+        again with other bytes the check still passes (the same keys, written another way)."""
+        self.test_seal_fix2_a_non_moves_baseline_keeps_the_old_rule_at_seal_and_close()
+        self.commit("W-1: snapshot rewritten", {self.r("snapshot.json"): json.dumps(BASE_M, indent=2)})
+
+    def test_273_a_baseline_changed_after_its_measured_seal_refuses(self):
+        # 273: the measured seal's check.baselineSha256 was written and never read
+        self.snapshot_changed_after_its_measurement()
+        self.assertRefuses(f"{self.r('snapshot.json')} at HEAD hashes sha256:",
+                           "the baseline changed after its measurement was sealed")
+
+    def test_273_a_seal_written_before_baseline_sha256_existed_is_not_judged(self):
+        self.snapshot_changed_after_its_measurement()
+        evs = [json.loads(x) for x in self.ledger.read_text().split("\n") if x.strip()]
+        self.assertEqual(len(pg.baseline_refusals(self.repo, "HEAD", evs)), 1)
+        for e in evs:
+            (e.get("check") or {}).pop("baselineSha256", None)
+        self.assertEqual(pg.baseline_refusals(self.repo, "HEAD", evs), [], "no field: nothing to compare")
+
+    def test_273_records_check_judges_the_measured_seals_baseline(self):
+        self.snapshot_changed_after_its_measurement()
+        rc, out = self.close()
+        ids = [x.split(":")[0].strip(" -") for x in out.split("\n") if x.startswith("  - R-")]
+        self.assertEqual(rc, 1, out)
+        p = subprocess.run(["python3", str(self.rt / "predict-gate.py"), "close", "W-1"], cwd=self.repo,
+                           capture_output=True, text=True, check=False,
+                           env=dict(self.env, PREDICT_GATE_CLOSE_OVERRIDE="owner accepts | covers: " + ",".join(ids)))
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        reg = Path(self.tmp.name) / "register.json"
+        p = subprocess.run(["python3", str(self.rt / "records-check.py"), "--binding", str(self.binding),
+                            "--repo", str(self.repo), "--as-of", "2026-11-11", "--register", str(reg),
+                            "--ledger", str(self.ledger)], capture_output=True, text=True, env=self.env, check=False)
+        self.assertTrue(reg.is_file(), p.stdout + p.stderr)
+        self.assertEqual(json.loads(reg.read_text())["workOrders"]["W-1"]["close"], "hash-mismatch")
+
     def test_seal_fix2_an_unsealed_measured_file_named_as_a_baseline_still_needs_its_seal(self):
         # probe p2: fix1's measured file holds the first round's sealed bytes and is never sealed; fix2 names it
         self.flow()

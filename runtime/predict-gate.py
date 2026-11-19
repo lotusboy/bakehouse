@@ -1055,6 +1055,42 @@ def round_baselines(repo: Path, at_head: dict, folder: Path) -> set:
     return out
 
 
+def baseline_refusals(rec: Path, ref: str, evs: list) -> list:
+    """For each measured file's latest live seal: the baseline close pairs with that file at ref (the round's
+    prediction's "baseline" field, else baseline_name) holds the bytes the seal's check read
+    (check.baselineSha256). One rule for close and records-check. A seal written before baselineSha256 existed
+    is not judged; a round whose prediction or baseline is not at ref is left to close's own check."""
+    latest = {}
+    for e in evs:
+        if e.get("kind") in ("sealed", "revised") and e.get("fileKind") == "measured" \
+                and isinstance(e.get("path"), str) and not retire_of(e, evs):
+            latest[e["path"]] = e
+    out = []
+    for path, e in sorted(latest.items()):
+        want, m = (e.get("check") or {}).get("baselineSha256"), MEASURED_RE.match(Path(path).name)
+        if not want or not m:
+            continue
+        folder = Path(path).parent
+
+        def at(n):
+            return blob_sha(rec, f"{ref}:{(folder / n).as_posix()}")
+
+        pred = next((n for n in prediction_names(m.group(1)) if at(n)), None)
+        if pred is None:
+            continue
+        try:
+            named = named_baseline(folder / pred, git(rec, "cat-file", "blob", f"{ref}:{(folder / pred).as_posix()}").stdout)
+        except BadInput:
+            continue  # close's check reports it
+        base = (folder / (named or baseline_name(m.group(1), lambda n: at(n) is not None))).as_posix()
+        got = blob_sha(rec, f"{ref}:{base}")
+        if got is not None and got != want:
+            out.append(f"{base} at {ref} hashes sha256:{got[:12]}, and the latest measured seal of {path} checked "
+                       f"it as sha256:{want[:12]}: the baseline changed after its measurement was sealed; a new "
+                       "baseline is a new round")
+    return out
+
+
 def sealed_refusals(repo: Path, folders: list, evs: list, decided: dict, wo: str, roots: list | None,
                     form=None, notes: list | None = None, rec: Path | None = None) -> list:
     """The sealed rules: the first seal of a file is its prediction or measurement, a later different
@@ -1136,7 +1172,8 @@ def sealed_refusals(repo: Path, folders: list, evs: list, decided: dict, wo: str
                 and not retire_of(e, evs):
             out.append(f"{e['path']}: its sealed check REFUSED (sha256:{str(e.get('sha256'))[:12]}), and it is not "
                        "retired: a refused measurement leaves the record only through predict-gate.sh retire")
-    measured = [e for e in seals if e.get("fileKind") == "measured" and not retire_of(e, evs)]
+    out += baseline_refusals(rec, "HEAD", evs)
+    measured =[e for e in seals if e.get("fileKind") == "measured" and not retire_of(e, evs)]
     if not roots:
         return out
     for e in seals:  # a round's prediction is sealed before its code
