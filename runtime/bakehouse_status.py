@@ -12,6 +12,9 @@ The JSON object (docs/PROJECT-TEAM.md, "Reading team state"):
                     {workOrder, events, latestRound, latestKind, latestAt}
   waitingDecisions  each decision asked, not decided autonomously and not answered:
                     {id, category, question, askedAt}
+  unattended        whether unattended mode is on: {on, since, why, wave} (null since, why, wave when off)
+  assumedToConfirm  each decision whose latest answer is an assumed one, for the owner to confirm or reverse:
+                    {id, question, confidence, estTokens}
   closedSince       each work-order-closed event at or after --since (all of them without it):
                     {workOrder, closedAt, commit, overridden}
 A work-order-closed event is written by `predict-gate.sh close` only when the close passes, or fails and
@@ -101,10 +104,15 @@ def state(project, since) -> dict:
         waiting = [{"id": d["ask"]["id"], "category": d["ask"].get("category"), "question": d["ask"].get("question"),
                     "askedAt": d["ask"].get("ts")}
                    for d in decided.values() if not d["ask"].get("autonomous") and not d["answers"]]
+        away = decision.unattended(project)
+        assumed = [{"id": d["ask"]["id"], "question": d["ask"].get("question"),
+                    "confidence": d["ask"].get("confidence"), "estTokens": d["answers"][-1].get("estTokens")}
+                   for d in decided.values() if d["answers"] and d["answers"][-1].get("assumed")]
     except Exception as e:  # noqa: BLE001
         raise Unreadable(project.decisions_ledger, e) from e
     return {"format": 1, "team": True, "project": str(project.root), "records": str(project.records),
-            "workOrders": open_wos, "waitingDecisions": waiting, "closedSince": closed}
+            "workOrders": open_wos, "waitingDecisions": waiting, "closedSince": closed,
+            "unattended": away, "assumedToConfirm": assumed}
 
 
 def plain(s: dict, since_arg) -> str:
@@ -113,6 +121,13 @@ def plain(s: dict, since_arg) -> str:
             + (f", round {w['latestRound']}" if w["latestRound"] else "") for w in s["workOrders"]]
     out.append(f"waiting decisions: {len(s['waitingDecisions'])}")
     out += [f"  {d['id']} [{d['category']}] asked {d['askedAt']}: {d['question']}" for d in s["waitingDecisions"]]
+    u = s["unattended"]
+    out.append(f"unattended mode: on since {u['since']} ({u['why']})" + (f", wave {u['wave']}" if u["wave"] else "")
+               if u["on"] else "unattended mode: off")
+    out.append(f"assumed, to confirm: {len(s['assumedToConfirm'])}")
+    out += [f"  {d['id']} confidence {d['confidence']}, estimate "
+            + (f"{d['estTokens']:,}" if isinstance(d["estTokens"], int) else "-") + f" tokens: {d['question']}"
+            for d in s["assumedToConfirm"]]
     out.append(f"closed since {since_arg}: {len(s['closedSince'])}" if since_arg else
                f"closed: {len(s['closedSince'])}")
     out += [f"  {c['workOrder']}: at {c['closedAt']}, commit {c['commit']}"

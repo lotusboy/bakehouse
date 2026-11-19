@@ -10,5 +10,11 @@
     "maxBrier": 0.10,
     "reversalWindow": 10,
     "maxReversalsInWindow": 0
+  },
+  "unattended": {
+    "enabled": false,
+    "afterMinutes": 30,
+    "bands": [{"maxTokens": 100000, "above": 0.75}, {"maxTokens": 500000, "above": 0.85}],
+    "neverCategories": []
   }
 }

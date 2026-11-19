@@ -6,10 +6,15 @@ when a category has earned autonomy. Pure computation; no AI. Called through run
 Ledger: <records>/decisions/ledger.jsonl, append-only; the source of truth for scoring. Three event
 kinds share one decision id:
   ask      the question, options, recommendation, confidence, evidence, blind, autonomous
-  answer   the owner's choice and whether it agreed with the recommendation
+  answer   the owner's choice and whether it agreed with the recommendation. An assumed answer
+           (`answer --assumed`, unattended mode) is the recommendation, recorded by the PM with
+           "assumed": true and its estTokens; it is left out of the scores and approves no gate
+           until the owner answers.
 An ask may name its approving option (--approves): the one choice that approves an exception to
 `predict-gate.sh close`. Agreeing with the recommendation is not approval.
   outcome  later evidence that the decision held, was reversed, or was refined
+One more event kind carries no decision id: `unattended` (action start, with why and wave; or stop),
+the switch for unattended mode. The project turns the mode on in its config ("unattended").
 Config: runtime/decision-config.json, overridden per project by .team/decision-config.json.
 Human view: <records>/DECISIONS.md, regenerated from the ledger after every write (never edited by
 hand). The project is found by runtime/locator.py.
@@ -352,6 +357,13 @@ def check_grounding(a, cfg):
               " and --upstream", file=sys.stderr)
 
 
+def est_arg(v):
+    s = v.replace(",", "").replace("_", "")
+    if not s.isdigit():
+        raise argparse.ArgumentTypeError(f"'{v}' is not a whole number of tokens, 0 or more")
+    return int(s)
+
+
 def norm(s):
     return " ".join((s or "").lower().split())
 
@@ -365,6 +377,9 @@ def cmd_answer(a):
     if ask["autonomous"]:
         fail(f"{a.id} was decided autonomously; record what later showed with `outcome`, not `answer`",
              "decision:autonomous-answer")
+    if a.assumed or a.est_tokens is not None:
+        answer_assumed(project, a, ask)
+        return
     if not a.choice.strip():
         fail("--choice is empty", "decision:choice")
     agreed = {"yes": True, "no": False, None: None}[a.agreed]
@@ -378,6 +393,64 @@ def cmd_answer(a):
     if backfill():
         ev["backfilled"] = True
     append(project, ev)
+
+
+def unattended(project, events=None):
+    """Unattended mode: on when the project turns it on and its latest switch event is a start."""
+    events = read_events(project) if events is None else events
+    last = next((e for e in reversed(events) if e.get("kind") == "unattended"), None)
+    on = bool(config(project).get("unattended", {}).get("enabled")) and bool(last) and last.get("action") == "start"
+    return {"on": on, "since": last.get("ts") if on else None, "why": last.get("why") if on else None,
+            "wave": last.get("wave") if on else None}
+
+
+def cmd_unattended(a):
+    project = resolve_project(a.repo)
+    if not config(project).get("unattended", {}).get("enabled"):
+        fail('unattended mode is off for this project; the project turns it on with "unattended": {"enabled": true}'
+             f" in {project.decision_config}", "decision:unattended-disabled")
+    ev = {"kind": "unattended", "action": a.action, "ts": stamp(), "stream": name_of(project)}
+    if a.action == "start":
+        if not a.why.strip():
+            fail('--why is empty: say why, for example "owner said unattended" or "no answer to <id> for 30 minutes"',
+                 "decision:unattended-why")
+        ev.update(why=a.why, wave=a.wave or None)
+    append(project, ev)
+
+
+def answer_assumed(project, a, ask):
+    """An assumed yes while the owner is away: the recommendation, recorded as the PM's and never as the owner's.
+    The confidence must be above the line of the band the step's estimated tokens fall in."""
+    cfg = config(project).get("unattended", {})
+    if not unattended(project)["on"]:
+        fail("unattended mode is not on, so nothing is assumed: `decision.sh unattended start --why ...`",
+             "decision:assumed-off")
+    if not a.assumed or a.est_tokens is None:
+        fail("an assumed answer gives both --assumed and --est-tokens <n>, the step's estimated tokens"
+             " (0: a step with no AI)", "decision:assumed-estimate")
+    rec, conf = ask.get("recommendation"), ask.get("confidence")
+    if not rec or conf is None:
+        fail(f"{a.id} has no recommendation or no confidence, so there is nothing to assume",
+             "decision:assumed-recommendation")
+    if a.choice is not None and norm(a.choice) != norm(rec):
+        fail(f"an assumed answer is the recommendation itself ({rec!r}), not {a.choice!r}", "decision:assumed-choice")
+    if ask.get("approves") is not None:
+        fail(f"{a.id} names --approves: an approval of a gate exception is always the owner's",
+             "decision:assumed-approves")
+    if ask.get("category") in cfg.get("neverCategories", []):
+        fail(f"category {ask.get('category')} is on the project's never-list: it waits for the owner",
+             "decision:assumed-never")
+    bands = sorted(cfg.get("bands", []), key=lambda b: b["maxTokens"])
+    band = next((b for b in bands if a.est_tokens <= b["maxTokens"]), None)
+    if band is None:
+        fail(f"the estimate {a.est_tokens:,} tokens is above the top band"
+             f" ({bands[-1]['maxTokens'] if bands else 0:,}): never assumed; it waits for the owner",
+             "decision:assumed-cost")
+    if not conf > band["above"]:
+        fail(f"confidence {conf} is not above {band['above']} for a step of up to {band['maxTokens']:,} tokens:"
+             " dig further, or park it for the owner", "decision:assumed-confidence")
+    append(project, {"kind": "answer", "id": a.id, "ts": stamp(), "choice": rec, "agreed": True,
+                     "notes": a.notes or None, "assumed": True, "estTokens": a.est_tokens})
 
 
 def cmd_outcome(a):
@@ -400,8 +473,9 @@ def reversed_(d):
 
 
 def effective(d):
-    """The owner's agreement, with a later reversal counting against it. None when not comparable."""
-    if d["ask"]["autonomous"] or not d["answers"]:
+    """The owner's agreement, with a later reversal counting against it. None when not comparable, and while
+    the latest answer is an assumed one (not the owner's)."""
+    if d["ask"]["autonomous"] or not d["answers"] or d["answers"][-1].get("assumed"):
         return None
     agreed = d["answers"][-1]["agreed"]
     if agreed is None:
@@ -418,7 +492,7 @@ def age_days(ts, at):
 
 def stats(decisions, cfg, at):
     asked = [d for d in decisions if not d["ask"]["autonomous"]]
-    answered = [d for d in asked if d["answers"]]
+    answered = [d for d in asked if d["answers"] and not d["answers"][-1].get("assumed")]
     scored = [d for d in answered if effective(d) is not None]
     ys = [1.0 if effective(d) else 0.0 for d in scored]
     hl = cfg["halfLifeDays"]
@@ -572,7 +646,8 @@ def render(project):
             out.append("- **Decided by the agent without asking.**")
         for an in d["answers"]:
             agreed = {True: "yes", False: "no", None: "not yet compared"}[an["agreed"]]
-            out.append(f"- **Owner's choice ({an['ts'][:16].replace('T', ' ')}):** {an['choice']}. "
+            who = "Assumed by the PM, to confirm" if an.get("assumed") else "Owner's choice"
+            out.append(f"- **{who} ({an['ts'][:16].replace('T', ' ')}):** {an['choice']}. "
                        f"**Agreed with the recommendation:** {agreed}."
                        + (f" Notes: {an['notes']}" if an.get("notes") else ""))
         if not q["autonomous"] and not d["answers"]:
@@ -608,7 +683,9 @@ def cmd_review(a):
                      q["question"], " / ".join(q.get("options") or []), q.get("recommendation") or "",
                      fmt(q.get("confidence")),
                      f"{ev.get('kind') or ''}: {ev.get('pointer') or ''}".strip(": "),
-                     "(decided by agent)" if q["autonomous"] else (ans["choice"] if ans else "(no answer yet)"),
+                     "(decided by agent)" if q["autonomous"] else (
+                         (ans["choice"] + (" (assumed, to confirm)" if ans.get("assumed") else "")) if ans
+                         else "(no answer yet)"),
                      {True: "yes", False: "no", None: "-"}[ans["agreed"]] if ans else "-",
                      "; ".join(f"{o['verdict']}: {o['by']}" for o in d["outcomes"]),
                      ", ".join(flags), (ans or {}).get("notes") or "",
@@ -654,10 +731,25 @@ def main():
     s = sub.add_parser("answer", help="record the owner's reply")
     repo_arg(s)
     s.add_argument("id")
-    s.add_argument("--choice", required=True, help="verbatim")
+    s.add_argument("--choice", help="verbatim; required unless --assumed")
     s.add_argument("--agreed", choices=["yes", "no"])
     s.add_argument("--notes")
+    s.add_argument("--assumed", action="store_true",
+                   help="unattended mode: record the recommendation as an assumed yes, for the owner to confirm")
+    s.add_argument("--est-tokens", type=est_arg, help="with --assumed: the step's estimated tokens (0: no AI)")
     s.set_defaults(fn=cmd_answer)
+    answer = s
+
+    s = sub.add_parser("unattended", help="turn unattended mode on (start) or off (stop)")
+    switch = s.add_subparsers(dest="action", required=True)
+    s = switch.add_parser("start", help="start unattended mode")
+    repo_arg(s)
+    s.add_argument("--why", required=True, help='"owner said unattended", or "no answer to <id> for 30 minutes"')
+    s.add_argument("--wave", help="the spend wave the unattended run spends from")
+    s.set_defaults(fn=cmd_unattended)
+    s = switch.add_parser("stop", help="stop unattended mode")
+    repo_arg(s)
+    s.set_defaults(fn=cmd_unattended)
 
     s = sub.add_parser("outcome", help="record what later showed about a decision")
     repo_arg(s)
@@ -691,6 +783,8 @@ def main():
     s.set_defaults(fn=cmd_render)
 
     a = p.parse_args()
+    if a.fn is cmd_answer and a.choice is None and not a.assumed:
+        answer.error("the following arguments are required: --choice")
     global _TASK
     _TASK = getattr(a, "task", None)
     a.fn(a)

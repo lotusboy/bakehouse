@@ -205,6 +205,21 @@ def cmd_wave(a):
           f"({s['fraction'] * 100:.0f}%) across {len(s['agents'])} agents")
 
 
+def cmd_headroom(a):
+    """Before a dispatch: does the wave's spend plus the agent's estimate fit its ceiling? Writes nothing."""
+    project = resolve_project(a.repo)
+    ev = read_events(project)
+    if a.wave not in waves(ev):
+        fail(f"no wave {a.wave} in {name_of(project)}", "spend:wave-unknown")
+    s = wave_summary(ev, a.wave)
+    total = s["spent"] + a.est
+    if total > s["ceiling"]:
+        fail(f"wave {a.wave}: {s['spent']:,} spent + {a.est:,} estimated is over the ceiling of {s['ceiling']:,}"
+             f" by {total - s['ceiling']:,}; {s['ceiling'] - s['spent']:,} left", "spend:headroom")
+    print(f"wave {a.wave}: {s['spent']:,} spent + {a.est:,} estimated fits the ceiling of {s['ceiling']:,};"
+          f" {s['ceiling'] - total:,} left after it")
+
+
 def mirror_to_ops(project, a):
     """One write for the PM: an agent-run row in the repo ops ledger, when this project keeps one."""
     try:
@@ -408,6 +423,12 @@ def main():
     s.add_argument("--json", action="store_true")
     s.add_argument("--repo", help="the project's repository folder; default: the current folder")
     s.set_defaults(fn=cmd_status)
+
+    h = sub.add_parser("headroom", help="exit 0 when the wave's spend plus an agent's estimate fits its ceiling")
+    h.add_argument("wave")
+    h.add_argument("--est", required=True, type=tokens_arg, help="the next agent's estimated tokens")
+    h.add_argument("--repo", help="the project's repository folder; default: the current folder")
+    h.set_defaults(fn=cmd_headroom)
 
     t = sub.add_parser("report", help="totals by day, wave, kind and source")
     t.add_argument("--since", help="YYYY-MM-DD, inclusive")

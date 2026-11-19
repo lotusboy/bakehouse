@@ -727,7 +727,8 @@ def approval(repo: Path, commit: str, decided: dict, wo: str) -> tuple[list, str
 def decision_refusal(decided: dict, i: str, wo: str, at, before: str = "the commit") -> str | None:
     """Why decision i does not approve an exception for work order wo at time at; None when it does
     (D1: answered before at, with its approving option and asked for wo; an ask with no approving option:
-    answered agreed true). Shared by close's trailers and by revise and retire."""
+    answered agreed true; never an assumed answer, which is the PM's, not the owner's). Shared by close's
+    trailers and by revise and retire."""
     d = decided.get(i)
     if not d:
         return f"decision {i} is not in the decision ledger"
@@ -735,6 +736,8 @@ def decision_refusal(decided: dict, i: str, wo: str, at, before: str = "the comm
     if not prior:
         return f"decision {i} has no answer recorded before {before}"
     ask, last = d["ask"], prior[-1][1]
+    if last.get("assumed"):
+        return f"decision {i}: an assumed yes, not the owner's"
     if ask.get("approves") is None:
         if last.get("agreed") is not True:
             return f"decision {i}: the latest answer before {before} is not agreed true"
