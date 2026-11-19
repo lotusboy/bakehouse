@@ -551,6 +551,16 @@
    "note": "row 53 ('Without it, close refuses.') is the same rule; the trailer in the subject: test_predict_gate.CloseLedger.test_a_trailer_in_the_subject_is_not_a_trailer"
   },
   {
+   "id": "bakehouse-change-70",
+   "file": "commands/change.md",
+   "sentences": [
+    "An assumed yes, recorded by the PM while the owner is away, never approves: close refuses a decision whose latest answer is one."
+   ],
+   "enforcer": "code",
+   "proof": "test_predict_gate.CloseLedger.test_r1_a_trailer_citing_an_assumed_yes_refuses_until_the_owner_answers",
+   "note": "R1: the same rule as pm-26; revise and retire refuse it through the same check (predict-gate.py decision_refusal)"
+  },
+  {
    "id": "bakehouse-change-32",
    "file": "commands/change.md",
    "sentences": [

@@ -303,7 +303,8 @@ branch), `BASE` and the record folder. Commit by path, with the trailer. Fill th
    Ask it with `--task <id>` and `--approves <option>`, the one option that approves. Close accepts
    the decision only when its answer, recorded before the commit, chose that option and its task is
    this work order. A decision asked without `--approves` is read as before: answered `agreed: true`.
-   Without it, close refuses. The same trailer approves a commit into `history/` after the first
+   An assumed yes, recorded by the PM while the owner is away, never approves: close refuses a decision
+   whose latest answer is one. Without it, close refuses. The same trailer approves a commit into `history/` after the first
    measurement, a top-level prediction or measured file removed after it, and a named baseline
    committed with or after its prediction.
 
