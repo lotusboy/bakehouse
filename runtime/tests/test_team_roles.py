@@ -1298,6 +1298,24 @@ class TestDispatchDecision(DecisionFixture):
             self.assertEqual(self.stop_in(sent, {r / "contract.md": "c", r / "findings.md": "F1",
                                                  r / "mutations.json": [REVIEW_ROW]}, cwd=cwd), "")
 
+    def test_b_n1_a_tilde_line_is_allowed_when_home_is_a_symlink_to_the_real_home_folder(self):
+        # HOME itself is a symbolic link to the real home folder, and the repository sits under that folder: the
+        # `~/` form the shipped briefs use is the repo record, from the repo (either spelling) and from elsewhere
+        proj = self.home / "work" / "proj"
+        project(proj, {"owned": True, "reviews": "records/", "tracker": {"id": "^T[0-9]+$"}})
+        link = Path(self.tmp.name).resolve() / "home-link"
+        link.symlink_to(self.home)
+        self.home = link  # env() sets HOME to the link
+        line = "~/work/proj/records/2026-01-03-T7-x/"
+        for cwd in (proj, link / "work" / "proj", self.ws):
+            with self.subTest(cwd=cwd):
+                n = len(self.logged())
+                got, sent = self.decide("role:reviewer", f"Review T7.\nRecord folder: {line}\n", cwd)
+                self.assertEqual(got, "ok", sent)
+                recs = [e["record"] for e in self.logged()[n:] if "record" in e]
+                self.assertEqual(len(recs), 1, self.logged()[n:])
+                self.assertEqual((recs[0]["kind"], recs[0]["folder"]), ("repo", "records/2026-01-03-T7-x"))
+
     def test_two_lines_naming_different_folders_are_refused(self):
         a, b = "~/repo/records/2026-01-03-T7-x/", "~/repo/records/2026-01-04-T7-y/"
         for brief in (f"Record folder: {a}\nRecord folder: {b}\n",
