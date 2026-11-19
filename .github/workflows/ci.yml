@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Tests
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run runtime/tests with the standard library's own runner
+        shell: bash
+        env:
+          # Every sentence the rule register quotes must still match its source word for word.
+          BAKEHOUSE_RULES_REGISTER: '1'
+        run: |
+          set -e
+          # Several tests commit in scratch repos; a fresh runner has no git identity.
+          git config --global user.email "ci@example.invalid"
+          git config --global user.name "CI"
+          git config --global init.defaultBranch main
+          python3 -m unittest discover -s runtime/tests -p 'test_*.py'
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax-check every shell script
+        run: |
+          set -e
+          git ls-files -z '*.sh' | xargs -0 -n1 bash -n
+      - name: ShellCheck
+        run: |
+          git ls-files -z '*.sh' | xargs -0 shellcheck --severity=warning
+      - name: Compile-check every Python file
+        run: |
+          set -e
+          git ls-files -z '*.py' | xargs -0 -n1 python3 -m py_compile
+      - name: Every JSON file parses
+        run: |
+          set -e
+          git ls-files -z '*.json' | xargs -0 -n1 python3 -m json.tool --no-ensure-ascii > /dev/null
+
+  redaction-scan:
+    name: Redaction Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan for personal content
+        run: |
+          set -uo pipefail
+          FAIL=0
+          # Email addresses, except placeholders (example.com/org, any .invalid domain) and bot addresses.
+          if git ls-files -z | xargs -0 grep -nIE '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}' \
+              | grep -vE '@example\.(com|org)|@[a-zA-Z0-9.-]*\.invalid\b|@example\.invalid|users\.noreply\.github\.com|noreply@anthropic\.com'; then
+            echo "Found an email address outside the allow-list"; FAIL=1
+          fi
+          # A machine's home folder: a committed record or doc must not carry one.
+          if git ls-files -z | xargs -0 grep -nIE '/Users/[a-z][a-z0-9._-]*/|/home/[a-z][a-z0-9._-]*/' \
+              | grep -vE '/home/runner/'; then
+            echo "Found a home-folder path"; FAIL=1
+          fi
+          # Common secret shapes.
+          if git ls-files -z | xargs -0 grep -nIE '(AKIA[0-9A-Z]{16}|sk-[a-zA-Z0-9_-]{20,}|ghp_[a-zA-Z0-9]{36}|github_pat_[a-zA-Z0-9_]{20,}|xox[bp]-[a-zA-Z0-9-]{10,})'; then
+            echo "Found a string shaped like a secret"; FAIL=1
+          fi
+          [ "$FAIL" -eq 0 ] && echo "Redaction scan passed"
+          exit $FAIL
