@@ -378,7 +378,7 @@ def cmd_answer(a):
         fail(f"{a.id} was decided autonomously; record what later showed with `outcome`, not `answer`",
              "decision:autonomous-answer")
     if a.assumed or a.est_tokens is not None:
-        answer_assumed(project, a, ask)
+        answer_assumed(project, a, d)
         return
     if not a.choice.strip():
         fail("--choice is empty", "decision:choice")
@@ -418,9 +418,10 @@ def cmd_unattended(a):
     append(project, ev)
 
 
-def answer_assumed(project, a, ask):
+def answer_assumed(project, a, d):
     """An assumed yes while the owner is away: the recommendation, recorded as the PM's and never as the owner's.
     The confidence must be above the line of the band the step's estimated tokens fall in."""
+    ask = d["ask"]
     cfg = config(project).get("unattended", {})
     if not unattended(project)["on"]:
         fail("unattended mode is not on, so nothing is assumed: `decision.sh unattended start --why ...`",
@@ -428,6 +429,9 @@ def answer_assumed(project, a, ask):
     if not a.assumed or a.est_tokens is None:
         fail("an assumed answer gives both --assumed and --est-tokens <n>, the step's estimated tokens"
              " (0: a step with no AI)", "decision:assumed-estimate")
+    if any(not an.get("assumed") for an in d["answers"]):
+        fail(f"{a.id} already has the owner's answer; an assumed one never replaces it",
+             "decision:assumed-answered")
     rec, conf = ask.get("recommendation"), ask.get("confidence")
     if not rec or conf is None:
         fail(f"{a.id} has no recommendation or no confidence, so there is nothing to assume",

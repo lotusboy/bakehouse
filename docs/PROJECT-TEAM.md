@@ -987,7 +987,7 @@ the project turns it on and the latest switch event is a start.
 **An assumed yes.** `decision.sh answer <id> --assumed --est-tokens <n> [--notes ...]` records the
 ask's recommendation as an answer with `"agreed": true`, `"assumed": true` and `"estTokens": <n>`.
 `--choice` may be left out; given, it must be the recommendation. It is refused, each with its own gate
-id (table below), when the mode is not on, the ask has no recommendation or no confidence, the ask
+id (table below), when the mode is not on, the owner has already answered it, the ask has no recommendation or no confidence, the ask
 names `--approves`, its category is on the never-list, the estimate is above the top band, or the
 confidence is not above its band's line. The owner confirms or reverses it on return with the normal
 `decision.sh answer`; the latest answer counts, as always.
@@ -1079,6 +1079,7 @@ refusals can be counted per tool and per check. The event is ops-event.sh's, wit
 | `decision:unattended-why` | decision.sh | `unattended start` with an empty `--why` |
 | `decision:assumed-off` | decision.sh | `answer --assumed` while unattended mode is not on |
 | `decision:assumed-estimate` | decision.sh | `--assumed` without `--est-tokens`, or `--est-tokens` without `--assumed` |
+| `decision:assumed-answered` | decision.sh | `answer --assumed` on a decision that already has an answer from the owner |
 | `decision:assumed-recommendation` | decision.sh | `answer --assumed` on an ask with no recommendation or no confidence |
 | `decision:assumed-choice` | decision.sh | `answer --assumed` with a `--choice` that is not the recommendation |
 | `decision:assumed-approves` | decision.sh | `answer --assumed` on an ask that names `--approves` (an approval is always the owner's) |
