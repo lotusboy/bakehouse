@@ -925,6 +925,31 @@ class TestReviewerStop(Fixture):
         self.personal({"architect": {"providers": ["architect"], "run_record": True}})
         self.assertEqual(self.review(agent="architect"), "")
 
+    def test_076_a_personal_role_stopping_in_a_repo_with_no_binding_is_checked(self):
+        # a personal-table rule applies everywhere: with no binding, its run folders are the default reviews folder
+        subprocess.run(["git", "init", "-q", str(self.other)], check=True)
+        self.personal({"architect": {"providers": ["architect"], "run_record": True}})
+        t = self.other / "agent.jsonl"
+        t.write_text(json.dumps({"type": "user", "message": {"role": "user", "content": "Design T7."}}) + "\n")
+        d = {"hook_event_name": "SubagentStop", "agent_type": "architect", "agent_transcript_path": str(t),
+             "cwd": str(self.other)}
+
+        def stop():
+            return subprocess.run(["python3", str(self.hook)], input=json.dumps(d), capture_output=True, text=True,
+                                  check=False, env=self.env()).stdout
+
+        out = stop()
+        self.assertIn('"decision": "block"', out)
+        self.assertIn("requires a run record", out)
+        self.assertNotIn("ERROR", self.log())
+        self.assertNotIn("check skipped", self.log())
+        f = self.other / "axis" / "runs" / "2026-01-03-T7-design" / "notes.md"
+        f.parent.mkdir(parents=True)
+        f.write_text("n")
+        self.assertEqual(stop(), "")
+        self.assertIn("RUN-RECORD ok for architect", self.log())
+        self.assertNotIn("ERROR", self.log())
+
     def test_b4_a_contract_beside_the_findings_or_above_it_in_the_record_counts(self):
         rows = {f"{self.STEP}/pass1.md": "p", f"{self.STEP}/review/findings.md": "F1",
                 f"{self.STEP}/review/mutations.json": [REVIEW_ROW]}
