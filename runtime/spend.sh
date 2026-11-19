@@ -19,6 +19,7 @@
 #   --task, and a second architect run on one task needs --stepped-back.
 #   spend.sh status [--wave W] [--all] [--json]
 #   spend.sh report [--since 2026-10-10] [--json]
+#   spend.sh headroom wave-1 --est 120000   # exit 0: spent + estimate fits the ceiling; exit 1: it does not
 #   spend.sh wave close [wave-1]
 #
 # `record` run from inside an owned repo also writes that repo's ops ledger agent-run row (through

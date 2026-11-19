@@ -934,7 +934,7 @@ reference.
 | Ledger | Written by | What it is for |
 |---|---|---|
 | `ops/events.jsonl` | `ops-event.sh` | how the work was run: agent runs, fan-outs, loops, gates refused, decisions asked. `ops-gap.sh` reports how many commits it has fallen behind. |
-| `decisions/ledger.jsonl` | `decision.sh` | every question put to the owner, the recommendation, the answer, and later the outcome. `DECISIONS.md`, at the top of the records folder, is the generated view. Scores agreement per category. |
+| `decisions/ledger.jsonl` | `decision.sh` | every question put to the owner, the recommendation, the answer, and later the outcome. `DECISIONS.md`, at the top of the records folder, is the generated view. Scores agreement per category. Also the switch for unattended mode, and the PM's assumed answers ("Unattended mode", below). |
 | `spend/ledger.jsonl` | `spend.sh` | measured tokens per agent, grouped into waves with a ceiling. |
 | `ratifications/ledger.jsonl` | `ratify.sh` | which entries of a closed vocabulary two blind readers agreed are right. |
 
@@ -950,6 +950,64 @@ its brief gave it and its agent type's `maxTurns` (`agents/<name>.md`). ops-even
 `turnsBriefed` and `turnCap`, and refuses a turn-cap event without them. A cap hit means the brief asked
 for more work than fits the agent type, so before each dispatch the PM states a turn estimate against
 the cap beside the token estimate, and splits or cuts a brief that does not fit.
+
+### Unattended mode
+
+When the owner is away, a question can wait for hours on a decision the PM could make well.
+Unattended mode lets the PM record its own recommendation as an assumed yes, marked as one, for the
+owner to confirm or reverse on return.
+
+**The project turns it on.** It is off by default, because it changes who decides. The project's
+`.team/decision-config.json` turns it on; its keys merge over the defaults in
+`runtime/decision-config.json`:
+
+```json
+"unattended": {
+  "enabled": true,
+  "afterMinutes": 30,
+  "bands": [{"maxTokens": 100000, "above": 0.75}, {"maxTokens": 500000, "above": 0.85}],
+  "neverCategories": []
+}
+```
+
+- `bands`: the confidence an assumed yes needs rises with the step's estimated tokens. A step up to
+  100,000 tokens needs a confidence strictly above 0.75. A step up to 500,000 needs one strictly above
+  0.85. A step above the top band is never assumed; it waits for the owner. An estimate of 0 is a step
+  with no AI. A project's `bands` replaces the default list whole.
+- `neverCategories`: the categories that always wait for the owner.
+- `afterMinutes`: how long a question waits with no answer before the PM may start the mode. The PM
+  reads it; no tool does, because a session acts only when it is woken.
+
+**The switch.** `decision.sh unattended start --why "<text>" [--wave <spend wave>]` and
+`decision.sh unattended stop` each append one event to the decision ledger:
+`{"kind": "unattended", "action": "start" | "stop", "ts", "stream", "why", "wave"}` (`why` and `wave`
+on a start only). Both are refused while the project has not turned the mode on. The mode is on when
+the project turns it on and the latest switch event is a start.
+
+**An assumed yes.** `decision.sh answer <id> --assumed --est-tokens <n> [--notes ...]` records the
+ask's recommendation as an answer with `"agreed": true`, `"assumed": true` and `"estTokens": <n>`.
+`--choice` may be left out; given, it must be the recommendation. It is refused, each with its own gate
+id (table below), when the mode is not on, the ask has no recommendation or no confidence, the ask
+names `--approves`, its category is on the never-list, the estimate is above the top band, or the
+confidence is not above its band's line. The owner confirms or reverses it on return with the normal
+`decision.sh answer`; the latest answer counts, as always.
+
+**An assumed yes is never the owner's voice.**
+- The scores leave out a decision whose latest answer is assumed: it counts in neither agreement,
+  calibration nor autonomy until the owner answers it.
+- `predict-gate.sh close` refuses a cited decision whose latest answer before the commit is assumed,
+  with the reason "an assumed yes, not the owner's" (gate `predict-gate:close`); `revise` and `retire`
+  refuse one the same way (gate `predict-gate:input`).
+- `bakehouse status` shows whether the mode is on, and lists each assumed answer to confirm
+  ("Reading team state").
+- `DECISIONS.md` and `decision.sh review` label an assumed answer as the PM's, to confirm.
+
+A ledger with no switch events and no `assumed` field reads and scores exactly as before.
+
+**Spend headroom.** `spend.sh headroom <wave> --est <tokens>` exits 0 when the wave's spend plus the
+estimate fits its ceiling, and prints what is left after it. Otherwise it exits 1 with gate
+`spend:headroom` and prints what is left now. It writes nothing. The PM runs it before every dispatch
+while the mode is on, so a run stops before its ceiling, not after it.
 
 ### Gate refusals
 
@@ -1017,6 +1075,16 @@ refusals can be counted per tool and per check. The event is ops-event.sh's, wit
 | `decision:choice` | decision.sh | `--choice` is empty |
 | `decision:agreed` | decision.sh | the choice differs from the recommendation and `--agreed` is not given |
 | `decision:by` | decision.sh | `--by` is empty |
+| `decision:unattended-disabled` | decision.sh | `unattended start` or `stop` while the project has not turned unattended mode on |
+| `decision:unattended-why` | decision.sh | `unattended start` with an empty `--why` |
+| `decision:assumed-off` | decision.sh | `answer --assumed` while unattended mode is not on |
+| `decision:assumed-estimate` | decision.sh | `--assumed` without `--est-tokens`, or `--est-tokens` without `--assumed` |
+| `decision:assumed-recommendation` | decision.sh | `answer --assumed` on an ask with no recommendation or no confidence |
+| `decision:assumed-choice` | decision.sh | `answer --assumed` with a `--choice` that is not the recommendation |
+| `decision:assumed-approves` | decision.sh | `answer --assumed` on an ask that names `--approves` (an approval is always the owner's) |
+| `decision:assumed-never` | decision.sh | `answer --assumed` on an ask whose category is on the project's never-list |
+| `decision:assumed-cost` | decision.sh | `answer --assumed` with an estimate above the top cost band |
+| `decision:assumed-confidence` | decision.sh | `answer --assumed` with a confidence not above the line of the estimate's band |
 | `spend:wave-args` | spend.sh | `wave open` with no name or no `--ceiling` |
 | `spend:wave-exists` | spend.sh | the wave name is already used |
 | `spend:wave-ambiguous` | spend.sh | no wave named, and not exactly one open |
@@ -1029,6 +1097,7 @@ refusals can be counted per tool and per check. The event is ops-event.sh's, wit
 | `spend:stepped-back` | spend.sh | a second architect run on one task with no `--stepped-back` |
 | `spend:first-record` | spend.sh | a first record without `--why`, `--predicted`, `--predicted-tokens`, `--result` or `--outcome` |
 | `spend:kind-required` | spend.sh | a first record without `--kind` |
+| `spend:headroom` | spend.sh headroom | the wave's spend plus the estimate is over its ceiling; it prints what is left |
 | `spend:kind-not-a-role` | spend.sh | a new first record, or a correction that changes the kind, gives a kind that names no role (`agent`) |
 | `predict-gate:check` | predict-gate.sh check | a move nobody predicted, a wrong move, or a mustNotMove key that moved (also the owner's override, which keeps its own purpose) |
 | `predict-gate:hook` | predict-gate.sh hook (pre-commit) | a staged measurement the gate refuses: one event per stopped commit (an override writes its own, per folder) |
@@ -1079,6 +1148,8 @@ The JSON object:
 | `project`, `records` | the repository root, and its records folder |
 | `workOrders` | each open work order: one with a `sealed` event in the ops ledger and no `work-order-closed` event after it (a work order with no seal is not open): `workOrder`, `events` (how many), `latestRound` (the `round` of its latest event that has one, else `null`), `latestKind` and `latestAt` (the kind and `ts` of its latest event) |
 | `waitingDecisions` | each decision asked, not decided autonomously, and not answered: `id`, `category`, `question`, `askedAt` |
+| `unattended` | whether unattended mode is on ("Unattended mode"): `on`, and `since`, `why` and `wave` from its start event (`null` when off) |
+| `assumedToConfirm` | each decision whose latest answer is an assumed one, for the owner to confirm or reverse: `id`, `question`, `confidence`, `estTokens` |
 | `closedSince` | each `work-order-closed` event at or after `--since` (all of them without it): `workOrder`, `closedAt`, `commit` (the commit the close event names), `overridden` (`true` when the close was the owner's override) |
 
 `predict-gate.sh close` writes a `work-order-closed` event only when the close passes, or when it

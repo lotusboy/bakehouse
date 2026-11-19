@@ -234,6 +234,26 @@
    "note": "S16 M6: only seal anchors commit in the records worktree; S16 fix2 P2-2: the PM's add leaves out the ops ledger, which the anchors commit by path (the census ends this sentence at the pathspec `.`)"
   },
   {
+   "id": "pm-25",
+   "file": "skills/pm/SKILL.md",
+   "sentences": [
+    "The tool refuses it below the confidence line for the step's cost, above the top cost band, for a category on the project's never-list, and for an approval of a gate exception."
+   ],
+   "enforcer": "code",
+   "proof": "test_decision_ledger.Ledger.test_r1_each_refusal_of_an_assumed_answer_has_its_own_gate",
+   "note": "R1: the bands' edges: test_decision_ledger.Ledger.test_r1_the_confidence_line_rises_with_the_steps_cost"
+  },
+  {
+   "id": "pm-26",
+   "file": "skills/pm/SKILL.md",
+   "sentences": [
+    "A gate exception (a `Prediction-approved:` decision, a close override) stays the owner's: never assume one."
+   ],
+   "enforcer": "code",
+   "proof": "test_predict_gate.CloseLedger.test_r1_a_trailer_citing_an_assumed_yes_refuses_until_the_owner_answers",
+   "note": "R1: an ask with --approves refuses --assumed (decision:assumed-approves, test_decision_ledger.Ledger.test_r1_each_refusal_of_an_assumed_answer_has_its_own_gate); a close override (PREDICT_GATE_CLOSE_OVERRIDE) is the owner's by prompt only: no tool tells who set it"
+  },
+  {
    "id": "bakehouse-change-01",
    "file": "commands/change.md",
    "sentences": [

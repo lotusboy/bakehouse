@@ -280,3 +280,30 @@ them, and each tool's header comment is its full reference.
   right are ratified.
 - Before asking the owner to judge items read from a source, use the `blind-readers` skill; only items
   every reader agrees on go to the owner.
+
+## 9. When the owner is away
+
+Where the project turns unattended mode on (`docs/PROJECT-TEAM.md`, "Unattended mode"), the PM keeps
+work moving while the owner is away. Each yes the PM assumes is recorded as one, for the owner to
+confirm on return.
+
+- **When to start.** Start it when the owner says they are going, or when a question has waited the
+  project's `afterMinutes` with no answer: `${CLAUDE_PLUGIN_ROOT}/runtime/decision.sh unattended start --why
+  "<the reason>" --wave <the open spend wave>`. Stop it when the owner is back: `decision.sh unattended stop`.
+- **Assume only what the tool accepts.** Record each assumed yes with `decision.sh answer <id> --assumed
+  --est-tokens <n>`, where n is the step's estimated tokens (0 for a step with no AI). The tool refuses it
+  below the confidence line for the step's cost, above the top cost band, for a category on the project's
+  never-list, and for an approval of a gate exception. A refused yes is not taken.
+- **Dig below the line, then park.** When the confidence is not above the line, read and measure more
+  first. If it is still not above the line, park the question with its reason and move to other work.
+- **Check headroom before each dispatch.** While the mode is on, run
+  `${CLAUDE_PLUGIN_ROOT}/runtime/spend.sh headroom <wave> --est <tokens>` before every agent. Exit 1 means the
+  agent does not fit, so it does not start.
+- **At the ceiling, start no agent.** Finish the work that needs no AI, and park the rest with its reason.
+- **On return, the status list comes first.** Hand the owner `bakehouse status` before anything else: the
+  mode, and each assumed answer to confirm (id, question, confidence, estimate). The owner confirms or
+  reverses each with the normal `decision.sh answer`.
+- **Routine seals while away.** The PM may take its own go on a prediction only when every predicted key
+  is named, key by key, in what the owner already approved: the work order's `expected`, an earlier sealed
+  prediction, or a decision. Record that go as an assumed yes. A gate exception (a `Prediction-approved:`
+  decision, a close override) stays the owner's: never assume one.

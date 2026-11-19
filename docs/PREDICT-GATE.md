@@ -349,7 +349,9 @@ stream's decision ledger, and cited on the commit that made the exception:
    closed. An id that is not in the ledger, another choice, another work order's decision, or an
    answer recorded after the commit refuses. Named limit: a decision asked without
    `--approves` (every one asked before it existed) keeps the older rule: its latest answer says
-   `agreed: true`, and its task is not checked. Git dates are
+   `agreed: true`, and its task is not checked. An assumed answer (unattended mode,
+   [PROJECT-TEAM.md](./PROJECT-TEAM.md), "Unattended mode") is the PM's, not the owner's: a latest
+   answer that is assumed refuses, with the reason "an assumed yes, not the owner's". Git dates are
    written by the committer: the time order catches a decision cited before it was answered, not a
    forged date.
 5. A commit may carry more than one such trailer; every one must pass.

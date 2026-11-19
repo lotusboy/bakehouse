@@ -9,6 +9,9 @@
 #   decision.sh ask --category spend --question "Run the audit now?" --option yes --option no \
 #       --recommendation yes --confidence 0.8 --evidence-kind measured --evidence "estimate in WIP.md"
 #   decision.sh answer <id> --choice yes            # agreed is worked out when the choice matches
+#   decision.sh unattended start --why "owner said unattended" [--wave W]   # only where the project
+#   decision.sh unattended stop                      # turns unattended mode on in its config
+#   decision.sh answer <id> --assumed --est-tokens N # unattended: the recommendation, as an assumed yes
 #   decision.sh outcome <id> --verdict held|reversed|refined --by "what showed it"
 #   decision.sh score [--repo R] [--category C] [--since DATE] [--json]
 #   decision.sh should-ask <category> [--seed N]    # ask | ask-blind | decide-and-log
