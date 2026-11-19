@@ -540,7 +540,9 @@ class Ledger(Scratch):
         self.refused("decision:assumed-recommendation", "answer", bare, "--assumed", "--est-tokens", "1000")
         unsure = self.run_("ask", "--category", "spend", "--question", "Warm the cache?", "--option", "yes",
                            "--option", "no", "--recommendation", "yes", env=loose).stdout.strip()
+        n = len(self.refusals())
         self.refused("decision:assumed-recommendation", "answer", unsure, "--assumed", "--est-tokens", "1000")
+        self.assertEqual(len(self.refusals()), n + 1, "the no-confidence refusal writes its own event")
         gate = self.ask(q="Approve the cache?", extra=["--approves", "yes", "--task", "W-1"])
         self.refused("decision:assumed-approves", "answer", gate, "--assumed", "--est-tokens", "1000")
         self.refused("decision:assumed-confidence", "answer", self.ask(q="Size the cache?", conf=0.7),
@@ -600,6 +602,85 @@ class Ledger(Scratch):
         s = self.score()["categories"]["placement"]
         self.assertEqual((s["answered"], s["scored"], s["withConfidence"]), (2, 2, 2))
         self.assertEqual(s["autonomy"], "autonomous", s["autonomyReasons"])
+
+    # --- unattended mode, fix round 1 ---
+    def test_r1_fix1_the_never_list_holds_whatever_the_case_or_spacing(self):
+        self.away(neverCategories=["Spend", "correction "])
+        for cat in ("spend", "SPEND", "spend ", "Correction", " correction"):
+            with self.subTest(category=cat):
+                did = self.ask(cat=cat, q=f"Ship the cache as {cat!r}?")
+                self.refused("decision:assumed-never", "answer", did, "--assumed", "--est-tokens", "1000")
+
+    def test_r1_fix1_only_the_json_value_true_turns_the_mode_on(self):
+        for value in ("false", "true", 1, "yes"):
+            with self.subTest(enabled=value):
+                self.settings(enabled=value)
+                self.refused("decision:unattended-disabled", "unattended", "start", "--why", "owner said unattended")
+        self.away()
+        did = self.ask(q="Ship the cache?", conf=0.9)
+        self.settings(enabled="false")
+        self.refused("decision:assumed-off", "answer", did, "--assumed", "--est-tokens", "1000")
+
+    def test_r1_fix1_stop_is_always_accepted_and_start_keeps_its_refusal(self):
+        self.away()
+        self.settings(enabled=False)
+        self.run_("unattended", "stop", env={"DECISION_TS": "2026-10-11T08:00:00+01:00"})
+        self.assertEqual(self.rows()[-1], {"kind": "unattended", "action": "stop", "ts": "2026-10-11T08:00:00+01:00",
+                                           "stream": "work"})
+        self.settings(enabled=True)  # the old start does not come back: the stop is the latest switch event
+        self.refused("decision:assumed-off", "answer", self.ask(q="Ship the cache?"), "--assumed", "--est-tokens", "1")
+        (self.work / ".team" / "decision-config.json").unlink()
+        self.run_("unattended", "stop")
+        self.refused("decision:unattended-disabled", "unattended", "start", "--why", "owner said unattended")
+
+    def test_r1_fix1_a_start_is_refused_while_the_mode_is_on(self):
+        self.away()
+        self.refused("decision:unattended-on", "unattended", "start", "--why", "second start", "--wave", "w9")
+        self.run_("unattended", "stop")
+        self.run_("unattended", "start", "--why", "owner said unattended", "--wave", "nowave")
+        self.assertEqual(self.rows()[-1]["wave"], "nowave", "the wave is not checked against the spend ledger")
+
+    def test_r1_fix1_agreed_is_refused_with_assumed(self):
+        self.away()
+        did = self.ask(q="Ship the cache?", conf=0.9)
+        for agreed in ("no", "yes"):
+            with self.subTest(agreed=agreed):
+                self.refused("decision:assumed-agreed", "answer", did, "--assumed", "--est-tokens", "1000",
+                             "--agreed", agreed)
+
+    def test_r1_fix1_an_assumed_answer_on_a_blind_ask_is_refused(self):
+        self.away()
+        did = self.ask(q="Ship the cache?", conf=0.9, extra=["--blind"])
+        self.refused("decision:assumed-blind", "answer", did, "--assumed", "--est-tokens", "1000")
+
+    def test_r1_fix1_an_unsorted_band_list_is_read_in_order_of_size(self):
+        self.away(bands=[{"maxTokens": 500000, "above": 0.85}, {"maxTokens": 100000, "above": 0.75}])
+        self.assume(self.ask(q="Ship the cache?", conf=0.8), 100000)
+        self.refused("decision:assumed-confidence", "answer", self.ask(q="Keep the cache?", conf=0.8),
+                     "--assumed", "--est-tokens", "100001")
+
+    def test_r1_fix1_a_bad_unattended_block_is_refused_with_one_gate_naming_the_file(self):
+        did = None
+        for block in (None, [], "on", {"enabled": True, "bands": None}, {"enabled": True, "bands": "100000"},
+                      {"enabled": True, "bands": [{"above": 0.5}]}, {"enabled": True, "bands": [{"maxTokens": 1000}]},
+                      {"enabled": True, "bands": [{"maxTokens": "100000", "above": "0.75"}]},
+                      {"enabled": True, "bands": [{"maxTokens": 1.5, "above": 0.5}]},
+                      {"enabled": True, "bands": [{"maxTokens": True, "above": 0.5}]},
+                      {"enabled": True, "bands": [5]},
+                      {"enabled": True, "neverCategories": None}, {"enabled": True, "neverCategories": "spend"},
+                      {"enabled": True, "neverCategories": ["spend", 3]}):
+            with self.subTest(block=block):
+                if did is None:
+                    self.away()
+                    did = self.ask(q="Ship the cache?", conf=0.9)
+                (self.work / ".team" / "decision-config.json").write_text(json.dumps({"unattended": block}))
+                for args in (("answer", did, "--assumed", "--est-tokens", "100001"),
+                             ("unattended", "start", "--why", "owner said unattended")):
+                    p = self.refused("decision:unattended-config", *args)
+                    self.assertIn(".team/decision-config.json", p.stderr)
+                    self.assertNotIn("Traceback", p.stderr)
+        self.settings(enabled=True, bands=[{"maxTokens": 1000, "above": 0}], neverCategories=[])
+        self.assume(did, 1000)  # a whole-number line is a number
 
 
 if __name__ == "__main__":

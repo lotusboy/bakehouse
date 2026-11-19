@@ -297,6 +297,18 @@ class Status(unittest.TestCase):
         s = self.as_json()
         self.assertEqual((s["unattended"]["on"], s["assumedToConfirm"]), (False, []))
 
+    def test_r1_fix1_a_bad_unattended_block_is_named_not_blamed_on_the_ledger(self):
+        self.away(self.START)
+        for block in (None, {"enabled": True, "bands": None}, {"enabled": True, "neverCategories": "spend"}):
+            with self.subTest(block=block):
+                (self.repo / ".team" / "decision-config.json").write_text(json.dumps({"unattended": block}))
+                for args in (("--json",), ()):
+                    rc, out, err = self.status(*args)
+                    self.assertEqual((rc, out), (1, ""), err)
+                    self.assertIn(".team/decision-config.json", err)
+                    self.assertNotIn("ledger", err)
+                    self.assertNotIn("Traceback", err)
+
 
 if __name__ == "__main__":
     unittest.main()

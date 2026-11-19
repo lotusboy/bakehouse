@@ -1095,6 +1095,29 @@ class CloseLedger(RepoFixture):
         p = self.change_prediction("prediction widened", f"Prediction-approved: {did}")
         self.assertEqual(p.returncode, 0, p.stdout)
 
+    def _answers(self, did, *answers):
+        decide(self.records, did, answers=())
+        with (self.records / "decisions/ledger.jsonl").open("a") as f:
+            f.write("".join(json.dumps(a) + "\n" for a in answers))
+
+    def test_r1_fix1_an_owners_answer_dated_after_the_commit_does_not_approve_an_assumed_yes(self):
+        did = "d20260101-a55a02"
+        self._answers(did, {"kind": "answer", "id": did, "ts": EARLY, "choice": "yes", "agreed": True,
+                            "assumed": True, "estTokens": 1000},
+                      {"kind": "answer", "id": did, "ts": LATE, "choice": "yes", "agreed": True})
+        p = self.change_prediction("prediction widened", f"Prediction-approved: {did}")
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn(f"decision {did}: an assumed yes, not the owner's", p.stdout)
+
+    def test_r1_fix1_two_answers_in_the_same_second_are_read_in_ledger_order(self):
+        did = "d20260101-a55a03"
+        self._answers(did, {"kind": "answer", "id": did, "ts": EARLY, "choice": "yes", "agreed": True,
+                            "assumed": True, "estTokens": 1000},
+                      {"kind": "answer", "id": did, "ts": EARLY, "choice": "yes", "agreed": True})
+        p = self.change_prediction("prediction widened", f"Prediction-approved: {did}")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertNotIn("Traceback", p.stderr)
+
 
 class CloseMerged(RepoFixture):
     """`close <work-order> --merged`, /bakehouse:change step 10 (owner D2): only step 9's sha256 values. Close's

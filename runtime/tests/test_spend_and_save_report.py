@@ -212,6 +212,22 @@ class Spend(Scratch):
         self.assertEqual(self.refusals()[-1]["gate"], "spend:wave-unknown")
         self.assertEqual(self.spent.read_text(), before, "headroom writes nothing to the spend ledger")
 
+    def test_r1_fix1_headroom_refuses_a_closed_wave_and_never_prints_a_negative_figure(self):
+        self.run_("wave", "open", "w1", "--ceiling", "1000")
+        self.rec("a1", 1200)
+        p = self.run_("headroom", "w1", "--est", "1", ok=False)
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn("spend: wave w1: 1,200 spent + 1 estimated is over the ceiling of 1,000 by 201; 0 left",
+                      p.stderr)
+        self.run_("wave", "close", "w1")
+        self.run_("wave", "open", "w2", "--ceiling", "1000")
+        self.rec("a2", 600)
+        self.run_("wave", "close", "w2")
+        p = self.run_("headroom", "w2", "--est", "100", ok=False)
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertEqual(self.refusals()[-1]["gate"], "spend:wave-closed")
+        self.assertIn("wave w2 was closed at", p.stderr)
+
 
 class SaveReport(unittest.TestCase):
     BODY = ("# Report\n\nTabs\tkept,  double  spaces, trailing space \n"
