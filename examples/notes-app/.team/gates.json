@@ -1,0 +1,9 @@
+{
+  "gates": [
+    {"id": "unit", "command": "npm test", "pass": "exit 0", "when": "after every commit"},
+    {"id": "api-moves",
+     "command": "node tools/measure.mjs <record folder>/moves.measured.json",
+     "pass": "predict-gate.sh check --measured <record folder>/moves.measured.json exits 0",
+     "when": "on BASE into moves.baseline.json first; then after the change"}
+  ]
+}

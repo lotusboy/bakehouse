@@ -1,0 +1,12 @@
+{
+  "_about": "Repository facts for the project team.",
+  "owned": true,
+  "tracker": {"file": "docs/TRACKER.md", "id": "^T[0-9]+$"},
+  "measure": {"commands": ["git log --no-merges --numstat -- src/{part}"]},
+  "gates": {
+    "byteIdentical": ".team/gates.json#gates",
+    "predictedMoves": {"gates": ".team/gates.json#gates", "prediction": "moves.prediction.json"}
+  },
+  "branches": {"refactor": "refactor/{id}-step{n}-{name}", "change": "fix/{id}-{name}"},
+  "records": {"codeRoots": ["src/"]}
+}
