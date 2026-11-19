@@ -420,7 +420,10 @@ by these events ("Closing a sealed work order", below).
 3. A prediction or baseline is sealed once per round. Sealing the same bytes again writes another
    seal. Sealing changed bytes is refused: a changed prediction goes through `revise`, and a changed
    baseline is a new round. A round's first prediction or baseline seal is refused once the round has
-   a sealed measured file. A seal later retired does not count.
+   a sealed measured file. A seal later retired does not count. A measured file is sealed once per
+   round too: sealing a measured file whose round already has a live measured seal with other bytes is
+   refused, because a new measurement is a new round, not a new seal. Close refused it before, too; the
+   seal now refuses it first.
 4. The seal refuses `OPS_TS` and `OPS_COMMIT` (exit 2): a seal is never backfilled. Its refusal event
    is stamped now, too.
 5. **The project.** The project `runtime/locator.py` finds for `--repo`, else for the file's
@@ -436,7 +439,10 @@ by these events ("Closing a sealed work order", below).
    sealed with, and the sealed path must be gone. The event takes that seal's kind and round.
    **Which seal a retire retires.** One function, `retire_of`, decides it for close, records-check and
    the sealer. A retire applies to the live seals of its bytes at that path that come before it in the
-   ledger. A seal of the same bytes after the retire is a new, live seal, not a retired one.
+   ledger. A seal of the same bytes after the retire is a new, live seal, not a retired one. A retire of
+   the bytes of the chain's latest seal or revise also retires every earlier seal and revise of that path
+   in the chain: a revised prediction moved to `history/` and retired leaves no live first seal behind,
+   so a fresh prediction at the same path seals.
    **A re-measure after a retire.** To measure a round again after its measured file was retired, write
    the new measured file at the same path, and seal it: `predict-gate.sh seal <work-order> <round>
    <file> --report <measure report>`. That seal starts a new chain for the path: its first seal stands,
@@ -494,7 +500,9 @@ On EVERY close, sealed or not, before that decision, close refuses when verify-c
 close did not write that line, so it names the line and says the owner decides its repair, through
 a decision (`decision.sh ask --task <id> --approves <option>`), and judges nothing until verify-chain
 is whole. It also refuses when the ledger file no longer begins with the ledger its last commit holds
-(a committed line edited, moved or removed). For a sealed work order, close then refuses, naming each:
+(a committed line edited, moved or removed). These two refusals name the ledger by its path in the
+project's records worktree (`ops/events.jsonl`), as records-check names it, so a symbolic-link spelling of
+the same ledger keeps their refusal ids. For a sealed work order, close then refuses, naming each:
 
 1. **The ledger it reads.** A sealed event of the work order that no commit holds. A line a
    `Sealed-line` trailer names that the ledger at `HEAD` no longer holds ("a sealed event was removed
@@ -513,6 +521,12 @@ is whole. It also refuses when the ledger file no longer begins with the ledger 
    own seal, because a measured seal carries its check and its commits. This is the measured seal's rule (point 2 of "Sealing"). So a chained
    round's baseline that holds the earlier round's sealed measured file closes.
 4. **Each sealed measured file whose check REFUSED** is retired.
+4b. **The baseline is the one the measurement checked.** A measured seal records the sha256 of the
+   baseline its check read (`check.baselineSha256`). For each measured file's latest live seal, the
+   baseline close pairs with that file at `HEAD` (the prediction's `baseline` field, else the round's own
+   or the first round's baseline) must hold those bytes. This covers a plain baseline file that is never
+   sealed. records-check judges the same rule and reports `hash-mismatch`. A seal written before the
+   field existed is not judged.
 5. **A round's prediction is sealed before its code.** Its first seal's commit is an ancestor of the
    round's measured base; or, if not, every file under the code roots that the round's measurement
    changed (base to head) reads the same at the seal's commit as at the base.
@@ -676,8 +690,9 @@ hard gate.
    - A refusal no action can clear: a round's prediction or baseline once the round has a live sealed
      measured file. The file is not listed. The check writes one line to `logs/agent-roles.log` for it,
      per stop check ("cannot be sealed", with the gate's reason), and does not block the stop for it.
-   - Any other refusal: a prediction or baseline changed since its seal (revise it, or start a new
-     round), or a measured file whose baseline is not sealed yet. The file is listed, and the reason
+   - Any other refusal: a prediction, baseline or measured file changed since its seal (revise a
+     prediction; a changed baseline or measurement is a new round), or a measured file whose baseline is
+     not sealed yet. The file is listed, and the reason
      adds the gate's own text, so the engineer sees what to do first.
    The measure report is the seal command's argument, not the record's state, so this check does not
    judge it. It judges this way only when the brief names its work order
