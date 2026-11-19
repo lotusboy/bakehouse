@@ -1278,6 +1278,22 @@ class SealTest(unittest.TestCase):
 
     # ---- seal fixes: seal refuses what close would refuse later ----
 
+    def test_223_a_retire_of_a_revised_prediction_retires_its_whole_chain(self):
+        # 223: the retire holds the revised bytes, so it matched only the revise; the first seal stayed live
+        self.assertEqual(self.seal("first", "moves.prediction.json").returncode, 0)
+        self.write({f"{REC}/moves.prediction.json": {"moves": [{"what": "out:v", "range": [2, 3]}]}})
+        self.decide("d20261101-bbbbb1", approves="revise", choice="revise", options=("keep", "revise"))
+        self.assertEqual(self.revise("d20261101-bbbbb1").returncode, 0)
+        self.decide("d20261101-bbbbb2", approves="retire", choice="retire", options=("keep", "retire"))
+        (self.repo / REC / "history").mkdir()
+        self.git("mv", f"{REC}/moves.prediction.json", f"{REC}/history/moves.prediction.json")
+        p = self.gate("retire", "W-1", "first", self.f("history/moves.prediction.json"), "--decision",
+                      "d20261101-bbbbb2")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.write({f"{REC}/moves.prediction.json": {"moves": [{"what": "out:v", "range": [2, 4]}]}})
+        p = self.seal("first", "moves.prediction.json")
+        self.assertEqual(p.returncode, 0, "the retired chain's first seal is retired too: " + p.stderr)
+
     def report(self, name="measure-report.json"):
         self.write({f"{REC}/{name}": {"base": {"sha": self.c1}, "head": {"sha": self.c2}}})
         return self.f(name)

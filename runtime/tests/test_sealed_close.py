@@ -426,6 +426,30 @@ class Sealed(unittest.TestCase):
         self.commit("W-1: re-measured")
         self.assertCloses()
 
+    def test_223_a_retired_revised_prediction_then_a_fresh_one_closes(self):
+        # 223: the retire holds the revised bytes; it retires the chain's first seal too, so a fresh seal is live
+        self.commit("W-1: prediction", {self.r("moves.prediction.json"): GOOD_P,
+                                        self.r("moves.baseline.json"): BASE_M})
+        self.assertEqual(self.seal("first", "moves.prediction.json"), 0)
+        self.assertEqual(self.seal("first", "moves.baseline.json"), 0)
+        self.put("moves.prediction.json", FIX_P)
+        self.decide("d20261101-bbbbb1")
+        self.assertEqual(self.gate("revise", "W-1", "first", str(self.repo / self.r("moves.prediction.json")),
+                                   "--decision", "d20261101-bbbbb1").returncode, 0)
+        self.commit("W-1: prediction revised")
+        self.commit("W-1: prediction to history/",
+                    mv=[(self.r("moves.prediction.json"), self.r("history/moves.prediction.json"))])
+        self.decide("d20261101-bbbbb2", approves="retire", choice="retire", options=("keep", "retire"))
+        self.assertEqual(self.gate("retire", "W-1", "first", str(self.repo / self.r("history/moves.prediction.json")),
+                                   "--decision", "d20261101-bbbbb2").returncode, 0)
+        self.commit("W-1: a fresh prediction", {self.r("moves.prediction.json"): WIDE_P})
+        self.assertEqual(self.seal("first", "moves.prediction.json"), 0)
+        b = self.head()
+        self.code("W-1: the change", {"src/app.py": "v = 2\n"})
+        self.measure("first", PASS_M, b, self.head())
+        self.commit("W-1: measurement")
+        self.assertCloses()
+
     def test_s1_fix1_rule_5b_judges_the_live_chains_prediction_seal(self):
         # the first prediction is sealed before the lane code and then retired; the live prediction is sealed
         # after the code seal, at a commit that holds no code (so rule 5's tree test passes): 5b must refuse

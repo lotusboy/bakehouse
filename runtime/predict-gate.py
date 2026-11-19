@@ -928,13 +928,19 @@ def retire_of(e: dict, evs: list) -> dict | None:
     """The retired event that retired the seal or revise e, or None when e is live. The one answer to "is
     this seal retired?", for close, records-check and the sealer. A retire applies to the seals of its bytes
     at <folder>/history/<name> that come before it in the ledger (evs, in ledger order, holding e itself).
-    A seal of the same bytes after that retire is a new, live seal."""
+    A seal of the same bytes after that retire is a new, live seal. A retire of the bytes of the chain's latest
+    seal or revise of that path (a revised prediction) retires every earlier seal and revise of the chain too."""
     if not isinstance(e.get("path"), str):
         return None
     i = next(n for n, x in enumerate(evs) if x is e)
-    want = history_path(e["path"])
-    return next((r for r in evs[i + 1:] if r.get("kind") == "retired" and r.get("sha256") == e.get("sha256")
-                 and r.get("path") == want), None)
+    want, last = history_path(e["path"]), e
+    for r in evs[i + 1:]:
+        if r.get("kind") in ("sealed", "revised") and r.get("path") == e["path"]:
+            last = r
+        elif r.get("kind") == "retired" and r.get("path") == want \
+                and r.get("sha256") in (e.get("sha256"), last.get("sha256")):
+            return r
+    return None
 
 
 def blob_sha(repo: Path, ref_path: str) -> str | None:
