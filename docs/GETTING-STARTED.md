@@ -155,7 +155,7 @@ The binding is the project's facts for the team. Write `.team/binding.json`:
 
 - `.team/gates.json#gates` is a pointer: the list under the key `gates` in that file.
 - `records.codeRoots` names the code folders. Close uses it to tell code commits apart. Preflight refuses a
-  `change` binding that names no code roots.
+  binding that names no code roots for `change` and for `refactor`.
 - `/bakehouse:change` needs no `register` and no `signal`. `/bakehouse:health` and `/bakehouse:refactor`
   need both: add them before you run those jobs ([The signal](PROJECT-TEAM.md#the-signal)).
 - `prediction` is the file the predicted-moves gate reads, `moves.prediction.json`. Preflight refuses a

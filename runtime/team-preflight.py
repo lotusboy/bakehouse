@@ -136,7 +136,7 @@ def check_fields(b, job):
         fails.append(f"check 2: field 'signal' = {json.dumps(b['signal'])} is not a command, a pointer or rules "
                      "for the shipped script (an object)")
     try:
-        if job == "change" and locator.code_roots(b) is None:  # close tells code commits apart by them
+        if job in ("change", "refactor") and locator.code_roots(b) is None:  # their code commits are told apart by them
             fails.append("check 2: the binding names no code roots: name the code folders in records.codeRoots "
                          "(or signal.codeRoots)")
     except locator.BadCodeRoots:

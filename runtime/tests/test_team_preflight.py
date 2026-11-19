@@ -87,7 +87,7 @@ class TestOwned(Fixture):
         self.assertNotIn("tests", out.split("prose gates")[1].split("\n")[0])
 
     def test_job_reports_roles(self):
-        self.owned()
+        self.owned(records={"codeRoots": ["docs/"]})  # 0.7.6: refactor needs code roots, as change does
         code, out = self.pre("refactor", "engine")
         self.assertEqual(code, 0, out)
         self.assertIn("role refactor:reviewer -> ", out)
@@ -102,6 +102,19 @@ class TestOwned(Fixture):
         code, out = self.pre("change", "T1")
         self.assertEqual(code, 0, out)
         self.assertIn("names ['no-such-agent'], not installed; skipped", out)
+
+    def test_076_refactor_needs_code_roots_as_change_does(self):
+        # both jobs close by code commits, so preflight refuses a binding with no code roots for either
+        self.owned()
+        for job in (("refactor", "engine"), ("change", "T1")):
+            with self.subTest(job=job[0]):
+                code, out = self.pre(*job)
+                self.assertEqual(code, 1, out)
+                self.assertIn("FAIL check 2: the binding names no code roots: name the code folders in "
+                              "records.codeRoots (or signal.codeRoots)", out)
+        self.assertNotIn("no code roots", self.pre("health")[1])
+        self.owned(records={"codeRoots": ["docs/"]})
+        self.assertEqual(self.pre("refactor", "engine")[0], 0)
 
     def test_renamed_path_fails_and_names_it(self):
         self.owned(tracker={"file": "docs/TRACKER-renamed.md", "id": "^T[0-9]+$"})
@@ -355,11 +368,11 @@ class TestApproval(Fixture):
 
     def test_unconsumed_matching_record_passes(self):
         self.other()
+        # item 8 and 0.7.6: change and refactor need code roots
+        self.binding.write_text(json.dumps(dict(json.loads(self.binding.read_text()), records={"codeRoots": ["docs/"]})))
         self.approvals([self.rec({"part": "engine"})])
         self.assertEqual(self.pre("refactor", "engine")[0], 0)
         self.approvals([self.rec({"workOrder": "T-1"})])
-        # item 8: change needs code roots
-        self.binding.write_text(json.dumps(dict(json.loads(self.binding.read_text()), records={"codeRoots": ["docs/"]})))
         self.assertEqual(self.pre("change", "T-1")[0], 0)
 
     def test_superset_scope_does_not_match(self):

@@ -240,7 +240,7 @@ in the binding, because preflight cannot check it.
 | `reviews` | tree mode: the folder of review records in the code tree; default `axis/runs/`. A binding that names it and no `runs` is in tree mode | no |
 | `reviewName` | one step's record folder name; default `{date}-{id}-step{n}-review` | no |
 | `leaveAlone` | files no step may edit | no |
-| `records` | `since`: the date the record contracts apply from (`YYYY-MM-DD`); `jobs`: artefacts added to a job's record contract (see "Records against the process"). It may add, never remove. `codeRoots`: the folders whose commits are code, in any binding. It is used when `signal` names no `codeRoots`: a binding with no `signal`, or a `signal` that is a command or a pointer. A rules `signal` that names its own `codeRoots` wins | no; `change` needs code roots here or in `signal.codeRoots` |
+| `records` | `since`: the date the record contracts apply from (`YYYY-MM-DD`); `jobs`: artefacts added to a job's record contract (see "Records against the process"). It may add, never remove. `codeRoots`: the folders whose commits are code, in any binding. It is used when `signal` names no `codeRoots`: a binding with no `signal`, or a `signal` that is a command or a pointer. A rules `signal` that names its own `codeRoots` wins | no; `change` and `refactor` need code roots here or in `signal.codeRoots` |
 | `mutation` | what the mutation runner runs for a mutated file: `command`, `env`, `timeout`, `tests` (a list of `{"files": <glob>, "tests": [<path>, ...]}`), `loads` (a command that prints where the tests' environment loads a file from), and `links` (paths in the copy that get a snapshot of a linked git repository; see "The mutation runner") | no |
 
 Placeholders are `{…}` only, from this closed list: `{root}`, `{register}`, `{id}`, `{n}`, `{date}`,
@@ -928,11 +928,11 @@ runs read-only git commands; it writes nothing. One line per failure; exit 1 on 
 2. It parses, has the fields its `owned` value requires, only adds to the record contracts
    (`records`), and uses only the closed placeholder list. `refactor` and `health` also need `register`
    and `signal`. `change` and `startup` do not; when the binding has them, checks 2 and 4 check them as
-   for any job. `change` needs code roots: `signal.codeRoots`, else `records.codeRoots`. With neither,
-   preflight fails: "name the code folders in records.codeRoots (or signal.codeRoots)". A field of the
-   wrong type fails, for every job: a `register` that is not a string, or a `signal` that is neither a
-   string (a command or a pointer) nor an object (rules for the shipped script). An empty `register` or
-   `signal` counts as missing.
+   for any job. `change` and `refactor` need code roots, as their code commits are told apart by them:
+   `signal.codeRoots`, else `records.codeRoots`. With neither, preflight fails: "name the code folders in
+   records.codeRoots (or signal.codeRoots)". A field of the wrong type fails, for every job: a `register`
+   that is not a string, or a `signal` that is neither a string (a command or a pointer) nor an object
+   (rules for the shipped script). An empty `register` or `signal` counts as missing.
 3. Every path field exists in the checkout. Each `records.codeRoots` entry is one, for every job; an entry
    that starts with `:` or holds `*`, `?` or `[` is a git pathspec or a glob, and fails. `reviews` is one
    folder, read by the role hook's own rule: `null`, a list, a full path (one inside the repository too)
