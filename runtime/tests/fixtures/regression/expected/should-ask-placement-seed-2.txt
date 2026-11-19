@@ -1,0 +1,6 @@
+$ decision.sh should-ask placement --seed 2
+exit 0
+--- stdout
+ask
+--- stderr
+placement is not autonomous: answered 12 < 20

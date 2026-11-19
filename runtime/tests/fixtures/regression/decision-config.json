@@ -1,0 +1,4 @@
+{
+  "categories": ["correction", "engine-design", "placement", "spend", "process", "scope", "release"],
+  "unattended": {"enabled": true}
+}

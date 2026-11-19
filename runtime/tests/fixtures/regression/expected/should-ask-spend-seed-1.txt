@@ -1,0 +1,6 @@
+$ decision.sh should-ask spend --seed 1
+exit 0
+--- stdout
+ask
+--- stderr
+spend is not autonomous: recency agreement 0.913 < 0.95; 1 reversed in the last 10

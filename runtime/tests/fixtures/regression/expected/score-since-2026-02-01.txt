@@ -1,0 +1,36 @@
+$ decision.sh score --since 2026-02-01
+exit 0
+--- stdout
+Decision scores: project fixture-app
+
+category       asked  auto  answered  agree  agree (recent)  Brier  blind agree  reversed  verdict
+correction     11     0     9         0.56   0.55            0.26   - (n 0)      2         ask
+engine-design  6      0     6         0.33   0.31            0.34   - (n 0)      0         ask
+naming         3      0     1         1.00   1.00            0.16   - (n 0)      0         ask
+placement      6      0     6         1.00   1.00            0.09   1.00 (n 1)   0         ask
+process        13     0     12        1.00   1.00            0.01   - (n 0)      0         ask
+release        6      1     5         1.00   1.00            0.06   - (n 0)      0         ask
+scope          14     0     4         0.75   0.77            0.23   - (n 0)      0         ask
+spend          10     0     9         0.89   0.87            0.10   - (n 0)      1         ask
+OVERALL        69     1     52        0.80   0.81            0.14   1.00 (n 1)   3         -
+
+Why each category still asks:
+- correction: answered 9 < 20; recency agreement 0.549 < 0.95; Brier 0.26 > 0.1; 2 reversed in the last 10
+- engine-design: answered 6 < 20; recency agreement 0.313 < 0.95; Brier 0.342 > 0.1
+- naming: answered 1 < 20; Brier 0.16 > 0.1
+- placement: answered 6 < 20
+- process: answered 12 < 20
+- release: answered 5 < 20
+- scope: answered 4 < 20; recency agreement 0.774 < 0.95; Brier 0.234 > 0.1
+- spend: answered 9 < 20; recency agreement 0.869 < 0.95; 1 reversed in the last 10
+
+Calibration (all categories, 50 decisions with a stated confidence):
+
+confidence band  n   mean confidence  owner agreed
+0.0-0.5          0   -                -
+0.5-0.7          8   0.58             0.50
+0.7-0.8          7   0.71             0.86
+0.8-0.9          13  0.83             0.69
+0.9-1.0          22  0.92             0.95
+
+--- stderr

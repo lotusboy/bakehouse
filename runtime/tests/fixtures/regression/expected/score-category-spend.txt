@@ -1,0 +1,22 @@
+$ decision.sh score --category spend
+exit 0
+--- stdout
+Decision scores: project fixture-app
+
+category  asked  auto  answered  agree  agree (recent)  Brier  blind agree  reversed  verdict
+spend     23     0     22        0.95   0.91            0.06   - (n 0)      1         ask
+OVERALL   123    3     105       0.81   0.81            0.13   1.00 (n 2)   4         -
+
+Why each category still asks:
+- spend: recency agreement 0.913 < 0.95; 1 reversed in the last 10
+
+Calibration (all categories, 101 decisions with a stated confidence):
+
+confidence band  n   mean confidence  owner agreed
+0.0-0.5          0   -                -
+0.5-0.7          15  0.57             0.60
+0.7-0.8          17  0.71             0.65
+0.8-0.9          27  0.83             0.78
+0.9-1.0          42  0.92             0.98
+
+--- stderr

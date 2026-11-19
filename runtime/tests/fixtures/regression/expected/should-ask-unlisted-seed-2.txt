@@ -1,0 +1,6 @@
+$ decision.sh should-ask unlisted --seed 2
+exit 0
+--- stdout
+ask
+--- stderr
+unlisted is not autonomous: answered 0 < 20; recency agreement None < 0.95; no confidence recorded, so calibration is unknown

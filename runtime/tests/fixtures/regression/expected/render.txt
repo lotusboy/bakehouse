@@ -1,0 +1,5 @@
+$ decision.sh render
+exit 0
+--- stdout
+<TMP>/fixture-app.bakehouse-records/DECISIONS.md
+--- stderr

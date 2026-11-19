@@ -1,0 +1,6 @@
+$ decision.sh should-ask process --seed 1
+exit 0
+--- stdout
+ask-blind
+--- stderr
+process is autonomous; blind sample rate 0.2, draw 0.134

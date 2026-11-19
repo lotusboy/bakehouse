@@ -1,0 +1,46 @@
+$ decision.sh review --since 2026-02-20
+exit 0
+--- stdout
+Decision scores: project fixture-app
+
+category    asked  auto  answered  agree  agree (recent)  Brier  blind agree  reversed  verdict
+correction  4      0     2         0.50   0.54            0.16   - (n 0)      0         ask
+placement   1      0     1         1.00   1.00            0.09   - (n 0)      0         ask
+process     3      0     2         1.00   1.00            0.01   - (n 0)      0         ask
+release     3      0     2         1.00   1.00            0.07   - (n 0)      0         ask
+spend       1      0     0         -      -               -      - (n 0)      0         ask
+OVERALL     12     0     7         0.86   0.86            0.08   - (n 0)      0         -
+
+Why each category still asks:
+- correction: answered 2 < 20; recency agreement 0.537 < 0.95; Brier 0.163 > 0.1
+- placement: answered 1 < 20
+- process: answered 2 < 20
+- release: answered 2 < 20
+- spend: answered 0 < 20; recency agreement None < 0.95; no confidence recorded, so calibration is unknown
+
+Calibration (all categories, 7 decisions with a stated confidence):
+
+confidence band  n  mean confidence  owner agreed
+0.0-0.5          0  -                -
+0.5-0.7          1  0.55             0.00
+0.7-0.8          2  0.70             1.00
+0.8-0.9          2  0.82             1.00
+0.9-1.0          2  0.92             1.00
+
+Every decision, newest first: project fixture-app
+
+when              id                category    project      question                                                      options   recommended  conf  evidence                         owner's choice   agreed  outcomes                            flags       notes                QUESTIONS.md entry
+2026-02-28 10:06  d20260228-c4c562  correction               Question 66 about correction: take option yes for item 66?    yes / no  yes          0.55  source-read: src/module3.js:76   (no answer yet)  -       held: the review of the next round
+2026-02-26 11:06  d20260226-84125c  release                  Question 126 about release: take option yes for item 126?     yes / no  yes          0.75  source-read: src/module0.js:136  (no answer yet)  -
+2026-02-26 11:05  d20260226-244d30  spend       fixture-sub  Question 125 about spend: take option yes for item 125?       yes / no  yes          0.75  source-read: src/module8.js:135  (no answer yet)  -
+2026-02-26 11:04  d20260226-805e1d  correction               Question 124 about correction: take option yes for item 124?  yes / no  yes          0.75  source-read: src/module7.js:134  (no answer yet)  -
+2026-02-26 11:03  d20260226-1c8df5  process                  Question 123 about process: take option yes for item 123?     yes / no  yes          0.75  source-read: src/module6.js:133  (no answer yet)  -
+2026-02-25 10:05  d20260225-f27b0c  correction  fixture-sub  Question 65 about correction: take option yes for item 65?    yes / no  yes          0.85  source-read: src/module2.js:75   yes              yes
+2026-02-24 10:58  d20260224-3968c1  release                  Question 118 about release: take option yes for item 118?     yes / no  yes          0.70  source-read: src/module1.js:128  yes              yes
+2026-02-23 10:32  d20260223-5baba4  placement                Question 92 about placement: take option yes for item 92?     yes / no  yes          0.70  source-read: src/module2.js:102  yes              yes
+2026-02-23 09:25  d20260223-6fdcb1  process     fixture-sub  Question 25 about process: take option yes for item 25?       yes / no  yes          0.92  source-read: src/module7.js:35   yes              yes     held: the next run used it
+2026-02-22 10:04  d20260222-b4b116  correction               Question 64 about correction: take option yes for item 64?    yes / no  yes          0.55  source-read: src/module1.js:74   no               no                                                      do it the other way
+2026-02-21 09:24  d20260221-f1e7e2  process                  Question 24 about process: take option yes for item 24?       yes / no  yes          0.92  source-read: src/module6.js:34   yes              yes
+2026-02-20 10:57  d20260220-7d9747  release                  Question 117 about release: take option yes for item 117?     yes / no  yes          0.80  source-read: src/module0.js:127  yes              yes                                         backfilled
+
+--- stderr

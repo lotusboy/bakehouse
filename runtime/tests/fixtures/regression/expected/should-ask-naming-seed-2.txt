@@ -1,0 +1,6 @@
+$ decision.sh should-ask naming --seed 2
+exit 0
+--- stdout
+ask
+--- stderr
+naming is not autonomous: answered 1 < 20; Brier 0.16 > 0.1

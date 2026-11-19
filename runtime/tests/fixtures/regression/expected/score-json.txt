@@ -1,0 +1,476 @@
+$ decision.sh score --json
+exit 0
+--- stdout
+{
+ "stream": "fixture-app",
+ "categories": {
+  "correction": {
+   "decisions": 19,
+   "asked": 19,
+   "autonomous": 0,
+   "answered": 17,
+   "scored": 17,
+   "agreement": 0.529,
+   "agreementRecency": 0.54,
+   "brier": 0.266,
+   "withConfidence": 17,
+   "blindN": 0,
+   "blindAgreement": null,
+   "reversed": 3,
+   "reversedInWindow": 2,
+   "reliability": [
+    {
+     "band": "0.0-0.5",
+     "n": 0,
+     "meanConfidence": null,
+     "agreement": null
+    },
+    {
+     "band": "0.5-0.7",
+     "n": 7,
+     "meanConfidence": 0.564,
+     "agreement": 0.429
+    },
+    {
+     "band": "0.7-0.8",
+     "n": 4,
+     "meanConfidence": 0.75,
+     "agreement": 0.5
+    },
+    {
+     "band": "0.8-0.9",
+     "n": 6,
+     "meanConfidence": 0.85,
+     "agreement": 0.667
+    },
+    {
+     "band": "0.9-1.0",
+     "n": 0,
+     "meanConfidence": null,
+     "agreement": null
+    }
+   ],
+   "autonomy": "ask",
+   "autonomyReasons": [
+    "answered 17 < 20",
+    "recency agreement 0.54 < 0.95",
+    "Brier 0.266 > 0.1",
+    "2 reversed in the last 10"
+   ]
+  },
+  "engine-design": {
+   "decisions": 14,
+   "asked": 14,
+   "autonomous": 0,
+   "answered": 14,
+   "scored": 14,
+   "agreement": 0.357,
+   "agreementRecency": 0.339,
+   "brier": 0.372,
+   "withConfidence": 14,
+   "blindN": 0,
+   "blindAgreement": null,
+   "reversed": 0,
+   "reversedInWindow": 0,
+   "reliability": [
+    {
+     "band": "0.0-0.5",
+     "n": 0,
+     "meanConfidence": null,
+     "agreement": null
+    },
+    {
+     "band": "0.5-0.7",
+     "n": 5,
+     "meanConfidence": 0.6,
+     "agreement": 0.6
+    },
+    {
+     "band": "0.7-0.8",
+     "n": 5,
+     "meanConfidence": 0.7,
+     "agreement": 0.2
+    },
+    {
+     "band": "0.8-0.9",
+     "n": 4,
+     "meanConfidence": 0.8,
+     "agreement": 0.25
+    },
+    {
+     "band": "0.9-1.0",
+     "n": 0,
+     "meanConfidence": null,
+     "agreement": null
+    }
+   ],
+   "autonomy": "ask",
+   "autonomyReasons": [
+    "answered 14 < 20",
+    "recency agreement 0.339 < 0.95",
+    "Brier 0.372 > 0.1"
+   ]
+  },
+  "naming": {
+   "decisions": 4,
+   "asked": 4,
+   "autonomous": 0,
+   "answered": 1,
+   "scored": 1,
+   "agreement": 1.0,
+   "agreementRecency": 1.0,
+   "brier": 0.16,
+   "withConfidence": 1,
+   "blindN": 0,
+   "blindAgreement": null,
+   "reversed": 0,
+   "reversedInWindow": 0,
+   "reliability": [
+    {
+     "band": "0.0-0.5",
+     "n": 0,
+     "meanConfidence": null,
+     "agreement": null
+    },
+    {
+     "band": "0.5-0.7",
+     "n": 1,
+     "meanConfidence": 0.6,
+     "agreement": 1.0
+    },
+    {
+     "band": "0.7-0.8",
+     "n": 0,
+     "meanConfidence": null,
+     "agreement": null
+    },
+    {
+     "band": "0.8-0.9",
+     "n": 0,
+     "meanConfidence": null,
+     "agreement": null
+    },
+    {
+     "band": "0.9-1.0",
+     "n": 0,
+     "meanConfidence": null,
+     "agreement": null
+    }
+   ],
+   "autonomy": "ask",
+   "autonomyReasons": [
+    "answered 1 < 20",
+    "Brier 0.16 > 0.1"
+   ]
+  },
+  "placement": {
+   "decisions": 12,
+   "asked": 12,
+   "autonomous": 0,
+   "answered": 12,
+   "scored": 8,
+   "agreement": 1.0,
+   "agreementRecency": 1.0,
+   "brier": 0.1,
+   "withConfidence": 8,
+   "blindN": 2,
+   "blindAgreement": 1.0,
+   "reversed": 0,
+   "reversedInWindow": 0,
+   "reliability": [
+    {
+     "band": "0.0-0.5",
+     "n": 0,
+     "meanConfidence": null,
+     "agreement": null
+    },
+    {
+     "band": "0.5-0.7",
+     "n": 2,
+     "meanConfidence": 0.5,
+     "agreement": 1.0
+    },
+    {
+     "band": "0.7-0.8",
+     "n": 3,
+     "meanConfidence": 0.7,
+     "agreement": 1.0
+    },
+    {
+     "band": "0.8-0.9",
+     "n": 0,
+     "meanConfidence": null,
+     "agreement": null
+    },
+    {
+     "band": "0.9-1.0",
+     "n": 3,
+     "meanConfidence": 0.9,
+     "agreement": 1.0
+    }
+   ],
+   "autonomy": "ask",
+   "autonomyReasons": [
+    "answered 12 < 20"
+   ]
+  },
+  "process": {
+   "decisions": 27,
+   "asked": 27,
+   "autonomous": 0,
+   "answered": 26,
+   "scored": 26,
+   "agreement": 1.0,
+   "agreementRecency": 1.0,
+   "brier": 0.005,
+   "withConfidence": 26,
+   "blindN": 0,
+   "blindAgreement": null,
+   "reversed": 0,
+   "reversedInWindow": 0,
+   "reliability": [
+    {
+     "band": "0.0-0.5",
+     "n": 0,
+     "meanConfidence": null,
+     "agreement": null
+    },
+    {
+     "band": "0.5-0.7",
+     "n": 0,
+     "meanConfidence": null,
+     "agreement": null
+    },
+    {
+     "band": "0.7-0.8",
+     "n": 0,
+     "meanConfidence": null,
+     "agreement": null
+    },
+    {
+     "band": "0.8-0.9",
+     "n": 0,
+     "meanConfidence": null,
+     "agreement": null
+    },
+    {
+     "band": "0.9-1.0",
+     "n": 26,
+     "meanConfidence": 0.932,
+     "agreement": 1.0
+    }
+   ],
+   "autonomy": "autonomous",
+   "autonomyReasons": []
+  },
+  "release": {
+   "decisions": 13,
+   "asked": 10,
+   "autonomous": 3,
+   "answered": 9,
+   "scored": 9,
+   "agreement": 1.0,
+   "agreementRecency": 1.0,
+   "brier": 0.055,
+   "withConfidence": 9,
+   "blindN": 0,
+   "blindAgreement": null,
+   "reversed": 0,
+   "reversedInWindow": 0,
+   "reliability": [
+    {
+     "band": "0.0-0.5",
+     "n": 0,
+     "meanConfidence": null,
+     "agreement": null
+    },
+    {
+     "band": "0.5-0.7",
+     "n": 0,
+     "meanConfidence": null,
+     "agreement": null
+    },
+    {
+     "band": "0.7-0.8",
+     "n": 5,
+     "meanConfidence": 0.7,
+     "agreement": 1.0
+    },
+    {
+     "band": "0.8-0.9",
+     "n": 1,
+     "meanConfidence": 0.8,
+     "agreement": 1.0
+    },
+    {
+     "band": "0.9-1.0",
+     "n": 3,
+     "meanConfidence": 0.95,
+     "agreement": 1.0
+    }
+   ],
+   "autonomy": "ask",
+   "autonomyReasons": [
+    "answered 9 < 20"
+   ]
+  },
+  "scope": {
+   "decisions": 14,
+   "asked": 14,
+   "autonomous": 0,
+   "answered": 4,
+   "scored": 4,
+   "agreement": 0.75,
+   "agreementRecency": 0.774,
+   "brier": 0.234,
+   "withConfidence": 4,
+   "blindN": 0,
+   "blindAgreement": null,
+   "reversed": 0,
+   "reversedInWindow": 0,
+   "reliability": [
+    {
+     "band": "0.0-0.5",
+     "n": 0,
+     "meanConfidence": null,
+     "agreement": null
+    },
+    {
+     "band": "0.5-0.7",
+     "n": 0,
+     "meanConfidence": null,
+     "agreement": null
+    },
+    {
+     "band": "0.7-0.8",
+     "n": 0,
+     "meanConfidence": null,
+     "agreement": null
+    },
+    {
+     "band": "0.8-0.9",
+     "n": 1,
+     "meanConfidence": 0.88,
+     "agreement": 1.0
+    },
+    {
+     "band": "0.9-1.0",
+     "n": 3,
+     "meanConfidence": 0.917,
+     "agreement": 0.667
+    }
+   ],
+   "autonomy": "ask",
+   "autonomyReasons": [
+    "answered 4 < 20",
+    "recency agreement 0.774 < 0.95",
+    "Brier 0.234 > 0.1"
+   ]
+  },
+  "spend": {
+   "decisions": 23,
+   "asked": 23,
+   "autonomous": 0,
+   "answered": 22,
+   "scored": 22,
+   "agreement": 0.955,
+   "agreementRecency": 0.913,
+   "brier": 0.055,
+   "withConfidence": 22,
+   "blindN": 0,
+   "blindAgreement": null,
+   "reversed": 1,
+   "reversedInWindow": 1,
+   "reliability": [
+    {
+     "band": "0.0-0.5",
+     "n": 0,
+     "meanConfidence": null,
+     "agreement": null
+    },
+    {
+     "band": "0.5-0.7",
+     "n": 0,
+     "meanConfidence": null,
+     "agreement": null
+    },
+    {
+     "band": "0.7-0.8",
+     "n": 0,
+     "meanConfidence": null,
+     "agreement": null
+    },
+    {
+     "band": "0.8-0.9",
+     "n": 15,
+     "meanConfidence": 0.83,
+     "agreement": 0.933
+    },
+    {
+     "band": "0.9-1.0",
+     "n": 7,
+     "meanConfidence": 0.9,
+     "agreement": 1.0
+    }
+   ],
+   "autonomy": "ask",
+   "autonomyReasons": [
+    "recency agreement 0.913 < 0.95",
+    "1 reversed in the last 10"
+   ]
+  }
+ },
+ "overall": {
+  "decisions": 126,
+  "asked": 123,
+  "autonomous": 3,
+  "answered": 105,
+  "scored": 101,
+  "agreement": 0.812,
+  "agreementRecency": 0.811,
+  "brier": 0.133,
+  "withConfidence": 101,
+  "blindN": 2,
+  "blindAgreement": 1.0,
+  "reversed": 4,
+  "reversedInWindow": 0,
+  "reliability": [
+   {
+    "band": "0.0-0.5",
+    "n": 0,
+    "meanConfidence": null,
+    "agreement": null
+   },
+   {
+    "band": "0.5-0.7",
+    "n": 15,
+    "meanConfidence": 0.57,
+    "agreement": 0.6
+   },
+   {
+    "band": "0.7-0.8",
+    "n": 17,
+    "meanConfidence": 0.712,
+    "agreement": 0.647
+   },
+   {
+    "band": "0.8-0.9",
+    "n": 27,
+    "meanConfidence": 0.831,
+    "agreement": 0.778
+   },
+   {
+    "band": "0.9-1.0",
+    "n": 42,
+    "meanConfidence": 0.924,
+    "agreement": 0.976
+   }
+  ],
+  "autonomy": "ask",
+  "autonomyReasons": [
+   "recency agreement 0.811 < 0.95",
+   "Brier 0.133 > 0.1"
+  ]
+ }
+}
+--- stderr

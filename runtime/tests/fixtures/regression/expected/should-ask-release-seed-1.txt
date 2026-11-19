@@ -1,0 +1,6 @@
+$ decision.sh should-ask release --seed 1
+exit 0
+--- stdout
+ask
+--- stderr
+release is not autonomous: answered 9 < 20
