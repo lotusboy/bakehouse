@@ -938,7 +938,8 @@ runs read-only git commands; it writes nothing. One line per failure; exit 1 on 
    folder, read by the role hook's own rule: `null`, a list, a full path (one inside the repository too)
    and a path with a `..` part fail, as they do at dispatch.
 4. Every pointer finds its key. A gate the repo wrote as prose is listed, not failed. A rules `signal`
-   whose `codeRoots` is not a list of one or more folder names fails in one line.
+   whose `codeRoots` is not a list of one or more folder names fails in one line. An entry of nothing but
+   slashes, such as `/`, is not a folder name: check 4 uses the rule close uses for code roots.
 5. Every role the job dispatches resolves. A role table (the personal one or the shipped one) that cannot
    be read, does not parse, is not a JSON object or has a `roles` that is not an object fails, named. So
    does a binding whose `roles` is not an object.

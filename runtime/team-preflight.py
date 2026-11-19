@@ -340,7 +340,7 @@ def check_signal_rules(sig, repo, job):
     if "part" not in sig and not listed:
         fails.append("check 4: signal has no part rule (signal.part or signal.parts)")
     roots = sig.get("codeRoots") or []
-    if roots and not (isinstance(roots, list) and all(isinstance(r, str) and r for r in roots)):
+    if roots and not (isinstance(roots, list) and all(locator.is_code_root(r) for r in roots)):
         # the shipped script reads a list of folders (health-signal.py): any other form is one line here
         fails.append(f"check 4: signal.codeRoots = {json.dumps(roots)} is not a list of one or more folders, "
                      'for example ["src/"]')

@@ -275,6 +275,12 @@ class BadCodeRoots(ValueError):
     and the fix."""
 
 
+def is_code_root(r) -> bool:
+    """One entry of a code-roots list: a folder name, a string with more than slashes in it. The one rule for
+    code_roots and preflight check 4."""
+    return isinstance(r, str) and bool(r.strip("/"))
+
+
 def code_roots(binding: dict):
     """The folders whose commits are code: the binding's signal.codeRoots when `signal` is an object that names
     them, else its records.codeRoots, else None. The one answer for close, seal, seal-code, records-check and
@@ -288,7 +294,7 @@ def code_roots(binding: dict):
         field, roots = "records.codeRoots", rec.get("codeRoots") if isinstance(rec, dict) else None
     if not roots:
         return None
-    if not isinstance(roots, list) or not all(isinstance(r, str) and r.strip("/") for r in roots):
+    if not isinstance(roots, list) or not all(is_code_root(r) for r in roots):
         raise BadCodeRoots(f"the binding's {field} = {json.dumps(roots)} is not a list of repository folders, "
                            'for example ["src/"]')
     return roots

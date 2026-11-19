@@ -505,6 +505,18 @@ class TestR03SignalCodeRoots(Fixture):
                 self.assertEqual(len(lines), 1, out)
                 self.assertTrue(lines[0].startswith("FAIL check 4: signal.codeRoots = "), lines)
 
+    def test_076_a_code_root_of_only_slashes_fails_check_4_by_the_locator_rule(self):
+        # locator.code_roots refuses an entry with nothing but slashes: check 4 judges the list by that rule
+        for bad in (["/"], ["src/", "//"]):
+            with self.subTest(codeRoots=bad):
+                self.sig(bad)
+                code, out = self.pre("health")
+                self.assertEqual(code, 1, out)
+                self.assertNotIn("Traceback", out)
+                lines = [x for x in out.splitlines() if x.startswith("FAIL ")]
+                self.assertEqual(len(lines), 1, out)
+                self.assertTrue(lines[0].startswith("FAIL check 4: signal.codeRoots = "), lines)
+
     def test_b2_a_list_of_folders_still_passes(self):
         self.sig(["src/"])
         code, out = self.pre("health")
