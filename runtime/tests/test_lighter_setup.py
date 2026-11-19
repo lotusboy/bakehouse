@@ -95,9 +95,10 @@ class Preflight(preflight_tests.Fixture):
         self.assertEqual(code, 1, out)
         self.assertIn(NO_ROOTS, out)
 
-    def test_only_change_asks_for_code_roots(self):
+    def test_health_and_startup_do_not_ask_for_code_roots(self):
+        # change (item 8) and refactor (0.7.6) refuse this shape; their code commits are told apart by code roots
         self.owned(runs="tree")  # a pointer signal and no records.codeRoots, as before item 8
-        for job in (("refactor", "engine"), ("health",), ("startup",)):
+        for job in (("health",), ("startup",)):
             with self.subTest(job=job):
                 code, out = self.pre(*job)
                 self.assertEqual(code, 0, out)
