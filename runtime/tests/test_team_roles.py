@@ -264,6 +264,22 @@ class TestRules(Fixture):
                              text=True, env=self.env()).stdout
         self.assertIn("write records/<YYYY-MM-DD>", out)
 
+    def test_a_saved_brief_is_not_a_written_file_of_the_run(self):
+        """A brief whose name holds a findings-like word is not refused as a misnamed findings file: the run did
+        not write it (the run's written files, `wrote`, skip it)."""
+        self.bpath.write_text(json.dumps({"owned": True, "reviews": "records/"}))
+        t = self.repo / "t.jsonl"
+        t.write_text("")
+        d = self.repo / "records" / "2026-10-05-x-review"
+        d.mkdir(parents=True)
+        (d / "02-pass-output.md").write_text("x")
+        (d / "brief.reviewer.fix1-recheck.md").write_text("x")
+        stop = {"hook_event_name": "SubagentStop", "agent_type": "reviewer",
+                "agent_transcript_path": str(t), "cwd": str(self.repo)}
+        out = subprocess.run(["python3", str(self.hook)], input=json.dumps(stop), capture_output=True,
+                             text=True, env=self.env()).stdout
+        self.assertEqual(out, "")
+
 
 class TestReview(Fixture):
     """Findings of the adversarial review of 31fe3fe + a907219."""
@@ -1070,6 +1086,17 @@ class DecisionFixture(RecordFixture):
 class TestDispatchDecision(DecisionFixture):
     """T8 fix round 2: the record folder is decided once, at dispatch, from a full path; the stop checks the
     folder decided there, whatever its own cwd."""
+
+    def test_a_saved_brief_is_not_a_marked_record_when_the_role_has_no_marks(self):
+        # a run_record role that is no job in the record contracts has no marks: any file the run wrote counts,
+        # but never the brief the PM saved there
+        self.personal({"architect": {"providers": ["architect"], "run_record": True}})
+        got, sent = self.decide("role:architect", f"Review T7.\nRecord folder: {self.rf}/\n", self.ws)
+        self.assertEqual(got, "ok")
+        out = self.stop_in(sent, {self.rf / "brief.architect.first.md": "b"}, cwd=self.repo, agent="architect")
+        self.assertIn('"decision": "block"', out)
+        self.assertIn("requires a run record", out)
+        self.assertEqual(self.stop_in(sent, {self.rf / "notes.md": "n"}, cwd=self.repo, agent="architect"), "")
 
     def test_a_relative_line_is_refused_at_dispatch_naming_where_it_resolves(self):
         line = "Record folder: records/2026-01-03-T7-x/"
