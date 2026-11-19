@@ -432,13 +432,14 @@ def unattended(project, events=None):
 
 
 def cmd_unattended(a):
-    """Start and stop are refused unless the project turns the mode on; start also while the mode is on."""
+    """Start is refused unless the project turns the mode on, and while it is on. Stop is always taken: it is
+    the safe direction."""
     project = resolve_project(a.repo)
-    if unattended_settings(project).get("enabled") is not True:
-        fail('unattended mode is off for this project; the project turns it on with "unattended": {"enabled": true}'
-             f" in {project.decision_config}", "decision:unattended-disabled")
     ev = {"kind": "unattended", "action": a.action, "ts": stamp(), "stream": name_of(project)}
     if a.action == "start":
+        if unattended_settings(project).get("enabled") is not True:
+            fail('unattended mode is off for this project; the project turns it on with "unattended": {"enabled": true}'
+                 f" in {project.decision_config}", "decision:unattended-disabled")
         if not a.why.strip():
             fail('--why is empty: say why, for example "owner said unattended" or "no answer to <id> for 30 minutes"',
                  "decision:unattended-why")

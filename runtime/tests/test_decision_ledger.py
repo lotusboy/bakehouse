@@ -493,7 +493,6 @@ class Ledger(Scratch):
 
     def test_r1_start_and_stop_are_refused_until_the_project_turns_the_mode_on(self):
         self.refused("decision:unattended-disabled", "unattended", "start", "--why", "owner said unattended")
-        self.refused("decision:unattended-disabled", "unattended", "stop")
         self.settings(enabled=False)
         self.refused("decision:unattended-disabled", "unattended", "start", "--why", "owner said unattended")
         self.settings(enabled=True)

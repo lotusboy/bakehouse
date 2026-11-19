@@ -988,7 +988,8 @@ owner to confirm or reverse on return.
 **The switch.** `decision.sh unattended start --why "<text>" [--wave <spend wave>]` and
 `decision.sh unattended stop` each append one event to the decision ledger:
 `{"kind": "unattended", "action": "start" | "stop", "ts", "stream", "why", "wave"}` (`why` and `wave`
-on a start only). Both are refused while the project has not turned the mode on. A start is also
+on a start only). A start is refused while the project has not turned the mode on. A stop is always
+taken, because it is the safe direction. A start is also
 refused while the mode is on (gate `decision:unattended-on`): stop it first. `--wave` is not checked
 against the spend ledger. The mode is on when the project turns it on and the latest switch event is a
 start.
@@ -1088,7 +1089,7 @@ refusals can be counted per tool and per check. The event is ops-event.sh's, wit
 | `decision:choice` | decision.sh | `--choice` is empty |
 | `decision:agreed` | decision.sh | the choice differs from the recommendation and `--agreed` is not given |
 | `decision:by` | decision.sh | `--by` is empty |
-| `decision:unattended-disabled` | decision.sh | `unattended start` or `stop` while the project has not turned unattended mode on |
+| `decision:unattended-disabled` | decision.sh | `unattended start` while the project has not turned unattended mode on |
 | `decision:unattended-on` | decision.sh | `unattended start` while unattended mode is already on |
 | `decision:unattended-config` | decision.sh | the project's `"unattended"` block in `.team/decision-config.json` has a shape the tools cannot use ("Unattended mode") |
 | `decision:unattended-why` | decision.sh | `unattended start` with an empty `--why` |
