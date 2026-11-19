@@ -552,6 +552,29 @@ class Ledger(Scratch):
         self.settings(enabled=True)
         self.assume(did, 1000)
 
+    def test_an_assumed_answer_needs_a_category_from_the_projects_list(self):
+        self.away()
+        made_up = self.ask(cat="spnd", q="Ship the cache?")
+        p = self.refused("decision:assumed-category", "answer", made_up, "--assumed", "--est-tokens", "1000")
+        self.assertIn("spnd", p.stderr)
+        self.assertIn(".team/decision-config.json", p.stderr)
+        # the same name as a known one, but for case and a trailing space: known
+        self.assume(self.ask(cat="Spend ", q="Warm the cache?"), 1000)
+        self.assertTrue(self.rows()[-1]["assumed"])
+        # an answer from the owner is unchanged: any category
+        self.run_("answer", made_up, "--choice", "yes")
+        self.assertNotIn("assumed", self.rows()[-1])
+
+    def test_a_projects_own_category_can_be_assumed(self):
+        (self.work / ".team" / "decision-config.json").write_text(json.dumps(
+            {"categories": ["caching"], "unattended": {"enabled": True}}))
+        self.run_("unattended", "start", "--why", "owner said unattended")
+        self.assume(self.ask(cat="caching", q="Ship the cache?"), 1000)
+        self.assertTrue(self.rows()[-1]["assumed"])
+        # the project's list replaces the defaults: a default name is no longer known
+        self.refused("decision:assumed-category", "answer", self.ask(cat="spend", q="Warm the cache?"),
+                     "--assumed", "--est-tokens", "1000")
+
     def test_r1_fix_an_assumed_answer_is_refused_once_the_owner_has_answered(self):
         self.away()
         did = self.ask(q="Ship the cache?", conf=0.9)

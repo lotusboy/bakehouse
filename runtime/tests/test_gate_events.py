@@ -1196,6 +1196,7 @@ SITE_GATES = [
     ('decision.py', 'answer_assumed', '--agreed is not given with --assumed: an', 'decision:assumed-agreed'),
     ('decision.py', 'answer_assumed', 'an assumed answer gives both --assumed a', 'decision:assumed-estimate'),
     ('decision.py', 'answer_assumed', 'an assumed answer is the recommendation ', 'decision:assumed-choice'),
+    ('decision.py', 'answer_assumed', "category {} is not in the project's cate", 'decision:assumed-category'),
     ('decision.py', 'answer_assumed', "category {} is on the project's never-li", 'decision:assumed-never'),
     ('decision.py', 'answer_assumed', 'confidence {} is not above {} for a step', 'decision:assumed-confidence'),
     ('decision.py', 'answer_assumed', 'the estimate {} tokens is above the top ', 'decision:assumed-cost'),
@@ -1554,7 +1555,7 @@ class TestGateIds(unittest.TestCase):
         table = set(re.findall(rf"^\| `({self.ID})` \|", section, re.MULTILINE))
         self.assertEqual(sorted(code - table), [], "in code, not in the docs table")
         self.assertEqual(sorted(table - code), [], "in the docs table, not in code")
-        self.assertEqual(len(code), 70)  # 51, plus V12b's new id, V12c's predict-gate:anchor and stop:seal, less decision:questions-ref (R0), plus dispatch:role-table (R0.1 S6), plus R1's 12 (unattended mode, assumed answers, spend:headroom), plus R1 fix1's 4 (unattended-on, unattended-config, assumed-agreed, assumed-blind)
+        self.assertEqual(len(code), 71)  # 51, plus V12b's new id, V12c's predict-gate:anchor and stop:seal, less decision:questions-ref (R0), plus dispatch:role-table (R0.1 S6), plus R1's 12 (unattended mode, assumed answers, spend:headroom), plus R1 fix1's 4 (unattended-on, unattended-config, assumed-agreed, assumed-blind), plus 0.7.2's assumed-category
 
     def test_no_refusal_in_decision_or_spend_is_without_a_gate(self):
         """Every fail() outside resolve_project passes a gate id, so a refusal added without one fails here."""
