@@ -251,6 +251,19 @@ class TestRules(Fixture):
         (self.repo / "records" / "2026-10-05-x-review" / "02-pass-output.md").write_text("x")
         self.assertEqual(run(), "")
 
+    def test_a_saved_brief_is_not_the_agents_run_record(self):
+        """The PM saves the brief in the record folder just before the dispatch: it is not the agent's record."""
+        self.bpath.write_text(json.dumps({"owned": True, "reviews": "records/"}))
+        t = self.repo / "t.jsonl"
+        t.write_text("")
+        (self.repo / "records" / "2026-10-05-x-review").mkdir(parents=True)
+        (self.repo / "records" / "2026-10-05-x-review" / "brief.reviewer.fix1.md").write_text("x")
+        stop = {"hook_event_name": "SubagentStop", "agent_type": "reviewer",
+                "agent_transcript_path": str(t), "cwd": str(self.repo)}
+        out = subprocess.run(["python3", str(self.hook)], input=json.dumps(stop), capture_output=True,
+                             text=True, env=self.env()).stdout
+        self.assertIn("write records/<YYYY-MM-DD>", out)
+
 
 class TestReview(Fixture):
     """Findings of the adversarial review of 31fe3fe + a907219."""

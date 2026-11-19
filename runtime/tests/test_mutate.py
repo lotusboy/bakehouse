@@ -217,6 +217,7 @@ class TestRun(Fixture):
         code, out = self.run_(self.mutants(LIVE))
         self.assertEqual(code, 2, out)
         self.assertIn("the control (unmutated", out)
+        self.assertIn("no .git and no uncommitted files", out)
         self.assertFalse(self.rec.exists(), "nothing is written")
 
     def test_the_copy_is_the_commit_never_the_working_tree(self):

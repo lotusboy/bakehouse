@@ -40,6 +40,7 @@ class HeavyRun(unittest.TestCase):
         for kind in ("resource-waited", "resource-started", "resource-ended"):
             self.assertIn(f"the {kind} lane event was not written", p.stderr)
         self.assertIn("bakehouse setup --pointer", p.stderr)
+        self.assertIn("run heavy-run.sh from the project's own folder", p.stderr)
 
     def test_with_records_no_warning_and_three_events(self):
         rec = self.tmp / "proj.bakehouse-records"

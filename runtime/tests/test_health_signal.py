@@ -197,6 +197,15 @@ class TestSizeAndReviews(Fixture):
         self.assertEqual(r["computed"]["reviewFolders"], 2)
         self.assertEqual(r["parts"]["a"]["state"], "settled")  # reported only: never moves the state
 
+    def test_a_saved_brief_is_not_read_as_findings(self):
+        self.commit("init", {"src/pkg/runner.py": 1})
+        d = self.repo / "reviews" / "2026-06-12-step1"
+        d.mkdir(parents=True)
+        (d / "findings.md").write_text("P1: src/pkg/runner.py:42 drops the last row.\n")
+        (d / "brief.engineer.fix1.md").write_text("P1: src/pkg/runner.py:42 drops the last row.\n")
+        self.run_signal()
+        self.assertEqual(self.reg()["parts"]["pkg"]["reviewFindings"], 1)
+
     def test_a_bare_file_name_counts_when_only_one_part_has_it(self):
         self.commit("init", {"src/a/runner.py": 1, "src/a/__init__.py": 1, "src/b/__init__.py": 1,
                              "src/b/gaps.py": 1, "tests/test_runner.py": 1})

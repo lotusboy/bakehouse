@@ -565,6 +565,31 @@ class Ledger(Scratch):
         self.run_("answer", made_up, "--choice", "yes")
         self.assertNotIn("assumed", self.rows()[-1])
 
+    def ask_args(self, cat, q):
+        return ["ask", "--category", cat, "--question", q, "--option", "yes", "--option", "no",
+                "--recommendation", "yes", "--confidence", "0.9", "--evidence-kind", "measured",
+                "--evidence", "WIP.md", *self.grounded]
+
+    def test_the_ask_note_names_the_projects_categories_and_the_consequence(self):
+        p = self.run_(*self.ask_args("spnd", "Ship the cache?"))
+        self.assertIn("category 'spnd' is outside the project's categories (", p.stderr)
+        self.assertIn("an assumed answer is refused for it", p.stderr)
+        p = self.run_(*self.ask_args("Spend ", "Warm the cache?"))
+        self.assertNotIn("outside the project's categories", p.stderr)
+
+    def test_categories_of_another_shape_are_refused(self):
+        self.away()
+        did = self.ask(q="Ship the cache?")
+        for cats in (None, "spend", ["spend", 3], []):
+            with self.subTest(categories=cats):
+                (self.work / ".team" / "decision-config.json").write_text(json.dumps(
+                    {"categories": cats, "unattended": {"enabled": True}}))
+                for args in (("answer", did, "--assumed", "--est-tokens", "1000"),
+                             self.ask_args("spend", "Warm the cache?")):
+                    p = self.refused("decision:categories-config", *args)
+                    self.assertIn(".team/decision-config.json", p.stderr)
+                    self.assertNotIn("Traceback", p.stderr)
+
     def test_a_projects_own_category_can_be_assumed(self):
         (self.work / ".team" / "decision-config.json").write_text(json.dumps(
             {"categories": ["caching"], "unattended": {"enabled": True}}))
