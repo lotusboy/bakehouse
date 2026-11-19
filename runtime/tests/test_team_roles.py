@@ -593,6 +593,18 @@ class TestPredictionRecord(Fixture):
         self.assertIn("seal it first: predict-gate.sh seal T7 first 2026-01-02-T7-step1-review/moves.baseline.json",
                       refused)
 
+    def test_d8_b_when_the_gate_refuses_every_unsealed_file_there_is_no_seal_each_one_list(self):
+        # the prediction is sealed; the measured file's seal is refused (no baseline sealed first), and it is
+        # the only unsealed file: the reason names the refusal and asks to seal nothing
+        self.folder.mkdir(parents=True, exist_ok=True)
+        for name, text in (("moves.prediction.json", self.OKP), ("moves.measured.json", '{"tests:passed": 11}')):
+            (self.folder / name).write_text(text)
+        self.sealed_lines(("first", "prediction", "moves.prediction.json"))
+        out = json.loads(self.engineer_stop(self.marked(), seal=False))["reason"]
+        self.assertIn("The gate refuses these seals as the files are now: ", out)
+        self.assertIn("moves.measured.json", out.split("The gate refuses these seals")[1])
+        self.assertNotIn("Seal each one", out)
+
     def test_d8_with_no_refused_file_every_file_is_in_the_list(self):
         self.folder.mkdir(parents=True, exist_ok=True)
         (self.folder / "moves.prediction.json").write_text(self.OKP)
