@@ -263,7 +263,9 @@ branch), `BASE` and the record folder. Commit by path, with the trailer. Fill th
 
 ### 6. Engineer (PM, then `role:change:engineer`)
 
-1. **Dispatch.** Check that no `{…}` and no `[…]` field is left in the brief. State the token
+1. **Dispatch.** Check that no `{…}` and no `[…]` field is left in the brief. Save the filled brief in
+   the record folder it names, as `brief.engineer.first.md`; it is committed with the round's other
+   records (the PM skill, "The records the PM keeps"). State the token
    estimate and wait for the owner's go. Dispatch it with `subagent_type: "role:change:engineer"`,
    on the branch. The engineer writes the prediction file and commits it by its path before its
    first code edit, then stops and reports. Close refuses a code commit of the work order that no
@@ -327,7 +329,8 @@ branch), `BASE` and the record folder. Commit by path, with the trailer. Fill th
 ### 7. Review (PM, then `role:change:reviewer`)
 
 Dispatch the reviewer from this session as soon as the engineer reports. A reviewer started inside
-another agent dies when that agent hands back. Fill the [reviewer brief](#reviewer-brief). State the
+another agent dies when that agent hands back. Fill the [reviewer brief](#reviewer-brief). Save it
+in the record folder it names, as `brief.reviewer.first.md`, as step 6.1 does. State the
 token estimate and wait for the owner's go. Dispatch it with
 `subagent_type: "role:change:reviewer"`. Record the run (owned repos only).
 
@@ -337,7 +340,9 @@ the ops ledger. An empty folder alone is not proof.
 ### 8. Fix round (PM, then an engineer)
 
 Send the findings to the same engineer with SendMessage, if it is still running. Otherwise dispatch a
-fresh `role:change:engineer` with the findings, the branch and the brief.
+fresh `role:change:engineer` with the findings, the branch and the brief. Each fresh dispatch of fix
+round N saves its filled brief first, as step 6.1 does, as `brief.engineer.fix<N>.md` or
+`brief.reviewer.fix<N>.md`.
 
 - Fix every ANDON, P0 and P1 finding before the pull request.
 - Fix real P2 and P3 findings too. Skip only the cosmetic.

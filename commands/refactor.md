@@ -245,7 +245,9 @@ Owned repos only. Run `git fetch`.
 
 ### 7. Engineer, one step (PM, then `role:refactor:engineer`)
 
-1. Check that no `{…}` and no `[…]` field is left in the brief. State the token estimate and wait
+1. Check that no `{…}` and no `[…]` field is left in the brief. Save the filled brief in the record
+   folder it names, as `brief.engineer.first.md`; it is committed with the step's other records (the
+   PM skill, "The records the PM keeps"). State the token estimate and wait
    for the owner's go. Dispatch it with `subagent_type: "role:refactor:engineer"`, on the step's
    branch.
 2. **A meaning-change step** runs only when the plan names it. The engineer writes its prediction
@@ -259,7 +261,8 @@ Owned repos only. Run `git fetch`.
 ### 8. Review (PM, then `role:refactor:reviewer`)
 
 Dispatch the reviewer from this session as soon as the engineer reports. A reviewer started inside
-another agent dies when that agent hands back. Fill the [reviewer brief](#reviewer-brief). State the
+another agent dies when that agent hands back. Fill the [reviewer brief](#reviewer-brief). Save it
+in the record folder it names, as `brief.reviewer.first.md`, as step 7 does. State the
 token estimate and wait for the owner's go. Dispatch it with
 `subagent_type: "role:refactor:reviewer"`. Record the run (owned repos only).
 
@@ -269,7 +272,9 @@ the ops ledger. An empty folder alone is not proof.
 ### 9. Fix round (PM, then an engineer)
 
 Send the findings to the same engineer with SendMessage, if it is still running. Otherwise dispatch a
-fresh `role:refactor:engineer` with the findings, the branch and the step's brief.
+fresh `role:refactor:engineer` with the findings, the branch and the step's brief. Each fresh dispatch
+of fix round N saves its filled brief first, as step 7 does, as `brief.engineer.fix<N>.md` or
+`brief.reviewer.fix<N>.md`.
 
 - Fix every ANDON, P0 and P1 finding before the pull request.
 - Fix real P2 and P3 findings too. Skip only the cosmetic.

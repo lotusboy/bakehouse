@@ -280,6 +280,11 @@ them, and each tool's header comment is its full reference.
   (docs/PROJECT-TEAM.md, "Turn caps"), then resumed or re-briefed.
 - **Reports are saved, never re-typed.** When an agent's report must live in a file, pipe its text
   exactly as returned into `${CLAUDE_PLUGIN_ROOT}/runtime/save-report.sh`. A re-typed report is a paraphrase.
+- **Each filled brief is saved before its dispatch.** Before each dispatch, the PM saves the filled brief,
+  as sent, in the record folder the brief names, as `brief.<role>.<round>.md` (for example
+  `brief.engineer.first.md`, `brief.reviewer.fix1.md`). It is committed with the round's other records. A
+  brief kept only in the conversation is lost with the session, and a reviewer cannot check what the
+  engineer was told.
 - **A predicted-moves gate is a machine, not a choice.** In a repo that uses `${CLAUDE_PLUGIN_ROOT}/runtime/predict-gate.sh`,
   the prediction is written before the first edit. Nobody edits the prediction, a test or an output to
   make the gate pass. Only the owner overrides it, and the override is recorded.
