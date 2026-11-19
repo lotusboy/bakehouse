@@ -1074,6 +1074,27 @@ class CloseLedger(RepoFixture):
         self.assertEqual(p.returncode, 1, p.stdout)
         self.assertIn("is not agreed true", p.stdout)
 
+    def test_r1_a_trailer_citing_an_assumed_yes_refuses_until_the_owner_answers(self):
+        did = "d20260101-a55a01"
+        assumed = {"kind": "answer", "id": did, "ts": EARLY, "choice": "yes", "agreed": True, "assumed": True,
+                   "estTokens": 1000}
+        owner = {"kind": "answer", "id": did, "ts": "2026-01-02T00:00:00+00:00", "choice": "yes", "agreed": True}
+
+        def ledger(*answers):
+            decide(self.records, did, answers=())
+            with (self.records / "decisions/ledger.jsonl").open("a") as f:
+                f.write("".join(json.dumps(a) + "\n" for a in answers))
+
+        ledger(assumed)
+        p = self.change_prediction("prediction widened", f"Prediction-approved: {did}")
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn(f"decision {did}: an assumed yes, not the owner's", p.stdout)
+        self.assertEqual(self.events()[-1].get("gate"), "predict-gate:close")
+        self.again()
+        ledger(assumed, owner)
+        p = self.change_prediction("prediction widened", f"Prediction-approved: {did}")
+        self.assertEqual(p.returncode, 0, p.stdout)
+
 
 class CloseMerged(RepoFixture):
     """`close <work-order> --merged`, /bakehouse:change step 10 (owner D2): only step 9's sha256 values. Close's

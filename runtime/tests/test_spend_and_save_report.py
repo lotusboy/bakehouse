@@ -194,6 +194,24 @@ class Spend(Scratch):
         self.assertNotEqual(p.returncode, 0)
         self.assertIn("--repo", p.stderr)
 
+    # --- headroom before each agent (R1) ---
+    def test_r1_headroom_fits_exactly_fits_and_is_refused_over_by_one(self):
+        self.run_("wave", "open", "w1", "--ceiling", "1000")
+        self.rec("a1", 600)
+        before = self.spent.read_text()
+        p = self.run_("headroom", "w1", "--est", "300")
+        self.assertEqual(p.stdout, "wave w1: 600 spent + 300 estimated fits the ceiling of 1,000; 100 left after it\n")
+        p = self.run_("headroom", "w1", "--est", "400")
+        self.assertEqual(p.stdout, "wave w1: 600 spent + 400 estimated fits the ceiling of 1,000; 0 left after it\n")
+        p = self.run_("headroom", "w1", "--est", "401", ok=False)
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn("spend: wave w1: 600 spent + 401 estimated is over the ceiling of 1,000 by 1; 400 left", p.stderr)
+        self.assertEqual(self.refusals()[-1]["gate"], "spend:headroom")
+        p = self.run_("headroom", "nope", "--est", "1", ok=False)
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertEqual(self.refusals()[-1]["gate"], "spend:wave-unknown")
+        self.assertEqual(self.spent.read_text(), before, "headroom writes nothing to the spend ledger")
+
 
 class SaveReport(unittest.TestCase):
     BODY = ("# Report\n\nTabs\tkept,  double  spaces, trailing space \n"

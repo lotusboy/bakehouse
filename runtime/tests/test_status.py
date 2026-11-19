@@ -256,6 +256,47 @@ class Status(unittest.TestCase):
         self.assertEqual((rc, out), (1, ""), err)
         self.assertIn(f"the ledger {self.decisions} is BROKEN: line {len(DECISIONS) + 1} is not a JSON object", err)
 
+    # --- unattended mode (R1) ---
+    START = {"kind": "unattended", "action": "start", "ts": "2026-11-05T20:00:00+00:00", "stream": "proj",
+             "why": "owner said unattended", "wave": "w1"}
+    ASK = {**DECISIONS[0], "id": "d20261105-dddddd", "ts": "2026-11-05T20:10:00+00:00", "question": "Ship the cache?",
+           "confidence": 0.8}
+    ASSUMED = {"kind": "answer", "id": "d20261105-dddddd", "ts": "2026-11-05T20:20:00+00:00", "choice": "yes",
+               "agreed": True, "notes": None, "assumed": True, "estTokens": 50000}
+
+    def away(self, *events, enabled=True):
+        (self.repo / ".team" / "decision-config.json").write_text(json.dumps({"unattended": {"enabled": enabled}}))
+        self.decisions.write_text("".join(json.dumps(e) + "\n" for e in DECISIONS + list(events)))
+
+    def test_r1_status_shows_unattended_mode_and_the_assumed_answers_to_confirm(self):
+        self.away(self.START, self.ASK, self.ASSUMED)
+        s = self.as_json()
+        self.assertEqual(s["unattended"], {"on": True, "since": "2026-11-05T20:00:00+00:00",
+                                           "why": "owner said unattended", "wave": "w1"})
+        self.assertEqual(s["assumedToConfirm"], [{"id": "d20261105-dddddd", "question": "Ship the cache?",
+                                                  "confidence": 0.8, "estTokens": 50000}])
+        self.assertEqual([d["id"] for d in s["waitingDecisions"]], ["d20261101-aaaaaa"])
+        rc, out, err = self.status()
+        self.assertEqual(rc, 0, out + err)
+        self.assertIn("unattended mode: on since 2026-11-05T20:00:00+00:00 (owner said unattended), wave w1", out)
+        self.assertIn("assumed, to confirm: 1\n  d20261105-dddddd confidence 0.8, estimate 50,000 tokens: "
+                      "Ship the cache?", out)
+
+    def test_r1_unattended_mode_is_off_by_default_and_after_a_stop_and_an_owners_answer_confirms(self):
+        s = self.as_json()
+        self.assertEqual((s["unattended"], s["assumedToConfirm"]),
+                         ({"on": False, "since": None, "why": None, "wave": None}, []))
+        rc, out, err = self.status()
+        self.assertIn("unattended mode: off\nassumed, to confirm: 0", out)
+        self.away(self.START, enabled=False)
+        self.assertFalse(self.as_json()["unattended"]["on"], "the project has not turned the mode on")
+        stop = {"kind": "unattended", "action": "stop", "ts": "2026-11-06T08:00:00+00:00", "stream": "proj"}
+        owner = {"kind": "answer", "id": "d20261105-dddddd", "ts": "2026-11-06T08:10:00+00:00", "choice": "yes",
+                 "agreed": True, "notes": None}
+        self.away(self.START, self.ASK, self.ASSUMED, stop, owner)
+        s = self.as_json()
+        self.assertEqual((s["unattended"]["on"], s["assumedToConfirm"]), (False, []))
+
 
 if __name__ == "__main__":
     unittest.main()

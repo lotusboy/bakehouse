@@ -471,6 +471,127 @@ class Ledger(Scratch):
         self.run_("render")
         self.assertIn("**QUESTIONS.md entry:** Keep the old cache?", (self.records / "DECISIONS.md").read_text())
 
+    # --- unattended mode (R1) ---
+    def settings(self, **unattended):
+        (self.work / ".team" / "decision-config.json").write_text(json.dumps({"unattended": unattended}))
+
+    def away(self, **unattended):
+        """Unattended mode turned on by the project and started."""
+        self.settings(enabled=True, **unattended)
+        self.run_("unattended", "start", "--why", "owner said unattended")
+
+    def refused(self, gate, *args):
+        before = self.decisions.read_text() if self.decisions.exists() else None
+        p = self.run_(*args, ok=False)
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertEqual(self.refusals()[-1]["gate"], gate, p.stderr)
+        self.assertEqual(self.decisions.read_text() if self.decisions.exists() else None, before)
+        return p
+
+    def assume(self, did, est, *extra, ok=True):
+        return self.run_("answer", did, "--assumed", "--est-tokens", str(est), *extra, ok=ok)
+
+    def test_r1_start_and_stop_are_refused_until_the_project_turns_the_mode_on(self):
+        self.refused("decision:unattended-disabled", "unattended", "start", "--why", "owner said unattended")
+        self.refused("decision:unattended-disabled", "unattended", "stop")
+        self.settings(enabled=False)
+        self.refused("decision:unattended-disabled", "unattended", "start", "--why", "owner said unattended")
+        self.settings(enabled=True)
+        self.refused("decision:unattended-why", "unattended", "start", "--why", "  ")
+        self.run_("unattended", "start", "--why", "no answer to d20260101-aaaaaa for 30 minutes", "--wave", "w1",
+                  env={"DECISION_TS": "2026-10-10T20:00:00+01:00"})
+        self.run_("unattended", "stop", env={"DECISION_TS": "2026-10-11T08:00:00+01:00"})
+        self.assertEqual(self.rows(), [
+            {"kind": "unattended", "action": "start", "ts": "2026-10-10T20:00:00+01:00", "stream": "work",
+             "why": "no answer to d20260101-aaaaaa for 30 minutes", "wave": "w1"},
+            {"kind": "unattended", "action": "stop", "ts": "2026-10-11T08:00:00+01:00", "stream": "work"}])
+        # the switch's events are not decisions: the scores and the views read as before
+        self.assertEqual(self.score()["overall"]["decisions"], 0)
+        self.run_("review")
+
+    def test_r1_an_assumed_answer_is_the_recommendation_marked_assumed(self):
+        self.away()
+        did = self.ask(q="Ship the cache?", conf=0.9)
+        self.assume(did, 50000, "--notes", "owner away")
+        row = self.rows()[-1]
+        self.assertEqual({k: row[k] for k in ("kind", "id", "choice", "agreed", "assumed", "estTokens", "notes")},
+                         {"kind": "answer", "id": did, "choice": "yes", "agreed": True, "assumed": True,
+                          "estTokens": 50000, "notes": "owner away"})
+        self.assertIn("Assumed by the PM, to confirm", (self.records / "DECISIONS.md").read_text())
+        # --choice may be given, and must then be the recommendation itself
+        other = self.ask(q="Keep the cache?", conf=0.9)
+        self.assume(other, 0, "--choice", "yes")
+        self.assertEqual(self.rows()[-1]["choice"], "yes")
+        # the owner confirms or reverses with the normal answer, and the latest answer wins
+        self.run_("answer", did, "--choice", "no", "--agreed", "no")
+        self.assertNotIn("assumed", self.rows()[-1])
+
+    def test_r1_each_refusal_of_an_assumed_answer_has_its_own_gate(self):
+        did = self.ask(q="Ship the cache?", conf=0.9)
+        self.refused("decision:assumed-off", "answer", did, "--assumed", "--est-tokens", "1000")
+        self.settings(enabled=True)
+        self.refused("decision:assumed-off", "answer", did, "--assumed", "--est-tokens", "1000")
+        self.run_("unattended", "start", "--why", "owner said unattended")
+        self.refused("decision:assumed-estimate", "answer", did, "--assumed")
+        self.refused("decision:assumed-estimate", "answer", did, "--choice", "yes", "--est-tokens", "1000")
+        self.refused("decision:assumed-choice", "answer", did, "--assumed", "--est-tokens", "1000", "--choice", "no")
+        loose = {"DECISION_BACKFILL": "1", "DECISION_TS": "2026-10-09T08:00:00+01:00"}
+        bare = self.run_("ask", "--category", "spend", "--question", "Clear the cache?", env=loose).stdout.strip()
+        self.refused("decision:assumed-recommendation", "answer", bare, "--assumed", "--est-tokens", "1000")
+        unsure = self.run_("ask", "--category", "spend", "--question", "Warm the cache?", "--option", "yes",
+                           "--option", "no", "--recommendation", "yes", env=loose).stdout.strip()
+        self.refused("decision:assumed-recommendation", "answer", unsure, "--assumed", "--est-tokens", "1000")
+        gate = self.ask(q="Approve the cache?", extra=["--approves", "yes", "--task", "W-1"])
+        self.refused("decision:assumed-approves", "answer", gate, "--assumed", "--est-tokens", "1000")
+        self.refused("decision:assumed-confidence", "answer", self.ask(q="Size the cache?", conf=0.7),
+                     "--assumed", "--est-tokens", "1000")
+        self.refused("decision:assumed-cost", "answer", did, "--assumed", "--est-tokens", "500001")
+        self.settings(enabled=True, neverCategories=["spend"])
+        self.refused("decision:assumed-never", "answer", did, "--assumed", "--est-tokens", "1000")
+        self.settings(enabled=True)
+        self.assume(did, 1000)
+
+    def test_r1_the_confidence_line_rises_with_the_steps_cost(self):
+        self.away()
+        for conf, est, gate in ((0.75, 100000, "decision:assumed-confidence"), (0.76, 100000, None),
+                                (0.76, 0, None), (0.85, 100001, "decision:assumed-confidence"),
+                                (0.86, 100001, None), (0.86, 500000, None),
+                                (0.99, 500001, "decision:assumed-cost"), (1.0, 900000, "decision:assumed-cost")):
+            with self.subTest(conf=conf, est=est):
+                did = self.ask(q=f"Ship the cache at {est}?", conf=conf)
+                if gate:
+                    self.refused(gate, "answer", did, "--assumed", "--est-tokens", str(est))
+                else:
+                    self.assume(did, est)
+                    self.assertTrue(self.rows()[-1]["assumed"])
+
+    def test_r1_a_project_file_merges_over_the_default_settings(self):
+        self.away()  # only enabled is set: the default bands hold
+        self.assume(self.ask(q="Ship the cache?", conf=0.8), 100000)
+        self.refused("decision:assumed-confidence", "answer", self.ask(q="Keep the cache?", conf=0.8),
+                     "--assumed", "--est-tokens", "100001")
+        self.settings(enabled=True, bands=[{"maxTokens": 1000, "above": 0.5}])
+        self.assume(self.ask(q="Size the cache?", conf=0.6), 1000)
+        self.refused("decision:assumed-cost", "answer", self.ask(q="Warm the cache?", conf=0.99),
+                     "--assumed", "--est-tokens", "1001")
+
+    def test_r1_an_assumed_answer_is_left_out_of_the_scores_until_the_owner_answers(self):
+        (self.work / ".team" / "decision-config.json").write_text(json.dumps(
+            {"unattended": {"enabled": True}, "autonomy": {"minAnswered": 2}}))
+        self.run_("unattended", "start", "--why", "owner said unattended")
+        owner = self.ask(cat="placement", conf=0.95)
+        self.run_("answer", owner, "--choice", "yes")
+        guessed = self.ask(cat="placement", conf=0.95, q="Place the cache?")
+        self.assume(guessed, 1000)
+        s = self.score()["categories"]["placement"]
+        self.assertEqual((s["answered"], s["scored"], s["withConfidence"], s["agreement"]), (1, 1, 1, 1.0))
+        self.assertEqual(s["autonomy"], "ask")
+        self.assertIn("answered 1 < 2", s["autonomyReasons"][0])
+        self.run_("answer", guessed, "--choice", "yes")
+        s = self.score()["categories"]["placement"]
+        self.assertEqual((s["answered"], s["scored"], s["withConfidence"]), (2, 2, 2))
+        self.assertEqual(s["autonomy"], "autonomous", s["autonomyReasons"])
+
 
 if __name__ == "__main__":
     unittest.main()
