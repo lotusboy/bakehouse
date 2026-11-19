@@ -974,22 +974,32 @@ owner to confirm or reverse on return.
   100,000 tokens needs a confidence strictly above 0.75. A step up to 500,000 needs one strictly above
   0.85. A step above the top band is never assumed; it waits for the owner. An estimate of 0 is a step
   with no AI. A project's `bands` replaces the default list whole.
-- `neverCategories`: the categories that always wait for the owner.
+- `neverCategories`: the categories that always wait for the owner. The category is compared without
+  regard to case or spacing.
+- `enabled`: only the JSON value `true` turns the mode on. Any other value, the text `"true"` included,
+  leaves it off.
+- A block of another shape is refused with gate `decision:unattended-config`, by every command that
+  reads it, with a message naming `.team/decision-config.json`. Another shape is: not an object; `bands`
+  not a list of `{"maxTokens": <whole number>, "above": <number>}`; `neverCategories` not a list of
+  text. `bakehouse status` names the file too, and exits 1.
 - `afterMinutes`: how long a question waits with no answer before the PM may start the mode. The PM
   reads it; no tool does, because a session acts only when it is woken.
 
 **The switch.** `decision.sh unattended start --why "<text>" [--wave <spend wave>]` and
 `decision.sh unattended stop` each append one event to the decision ledger:
 `{"kind": "unattended", "action": "start" | "stop", "ts", "stream", "why", "wave"}` (`why` and `wave`
-on a start only). Both are refused while the project has not turned the mode on. The mode is on when
-the project turns it on and the latest switch event is a start.
+on a start only). Both are refused while the project has not turned the mode on. A start is also
+refused while the mode is on (gate `decision:unattended-on`): stop it first. `--wave` is not checked
+against the spend ledger. The mode is on when the project turns it on and the latest switch event is a
+start.
 
 **An assumed yes.** `decision.sh answer <id> --assumed --est-tokens <n> [--notes ...]` records the
 ask's recommendation as an answer with `"agreed": true`, `"assumed": true` and `"estTokens": <n>`.
 `--choice` may be left out; given, it must be the recommendation. It is refused, each with its own gate
-id (table below), when the mode is not on, the owner has already answered it, the ask has no recommendation or no confidence, the ask
-names `--approves`, its category is on the never-list, the estimate is above the top band, or the
-confidence is not above its band's line. The owner confirms or reverses it on return with the normal
+id (table below), when the mode is not on, `--agreed` is given, the owner has already answered it, the
+ask has no recommendation or no confidence, the ask names `--approves`, the ask was asked `--blind`, its
+category is on the never-list, the estimate is above the top band, or the confidence is not above its
+band's line. A blind ask measures the owner's own answer, so it always waits for the owner. The owner confirms or reverses it on return with the normal
 `decision.sh answer`; the latest answer counts, as always.
 
 **An assumed yes is never the owner's voice.**
@@ -1006,8 +1016,11 @@ A ledger with no switch events and no `assumed` field reads and scores exactly a
 
 **Spend headroom.** `spend.sh headroom <wave> --est <tokens>` exits 0 when the wave's spend plus the
 estimate fits its ceiling, and prints what is left after it. Otherwise it exits 1 with gate
-`spend:headroom` and prints what is left now. It writes nothing. The PM runs it before every dispatch
-while the mode is on, so a run stops before its ceiling, not after it.
+`spend:headroom` and prints what is left now (0 when the wave is already over). A closed wave is
+refused with gate `spend:wave-closed`. It writes nothing. Headroom counts recorded spend only, and an
+agent still running has recorded none. So `--est` is the next agent's estimate plus the estimates of
+every agent still running. The PM runs it before every dispatch while the mode is on, so a run stops
+before its ceiling when the estimates hold.
 
 ### Gate refusals
 
@@ -1076,13 +1089,17 @@ refusals can be counted per tool and per check. The event is ops-event.sh's, wit
 | `decision:agreed` | decision.sh | the choice differs from the recommendation and `--agreed` is not given |
 | `decision:by` | decision.sh | `--by` is empty |
 | `decision:unattended-disabled` | decision.sh | `unattended start` or `stop` while the project has not turned unattended mode on |
+| `decision:unattended-on` | decision.sh | `unattended start` while unattended mode is already on |
+| `decision:unattended-config` | decision.sh | the project's `"unattended"` block in `.team/decision-config.json` has a shape the tools cannot use ("Unattended mode") |
 | `decision:unattended-why` | decision.sh | `unattended start` with an empty `--why` |
 | `decision:assumed-off` | decision.sh | `answer --assumed` while unattended mode is not on |
-| `decision:assumed-estimate` | decision.sh | `--assumed` without `--est-tokens`, or `--est-tokens` without `--assumed` |
+| `decision:assumed-estimate` | decision.sh | `--assumed` without `--est-tokens`, or `--est-tokens` and `--choice` without `--assumed` (`--est-tokens` alone, with no `--choice`, is a usage error, exit 2, with no gate event) |
+| `decision:assumed-agreed` | decision.sh | `answer --assumed` with `--agreed`: only the owner agrees or not |
 | `decision:assumed-answered` | decision.sh | `answer --assumed` on a decision that already has an answer from the owner |
 | `decision:assumed-recommendation` | decision.sh | `answer --assumed` on an ask with no recommendation or no confidence |
 | `decision:assumed-choice` | decision.sh | `answer --assumed` with a `--choice` that is not the recommendation |
 | `decision:assumed-approves` | decision.sh | `answer --assumed` on an ask that names `--approves` (an approval is always the owner's) |
+| `decision:assumed-blind` | decision.sh | `answer --assumed` on an ask asked `--blind` |
 | `decision:assumed-never` | decision.sh | `answer --assumed` on an ask whose category is on the project's never-list |
 | `decision:assumed-cost` | decision.sh | `answer --assumed` with an estimate above the top cost band |
 | `decision:assumed-confidence` | decision.sh | `answer --assumed` with a confidence not above the line of the estimate's band |
@@ -1090,7 +1107,7 @@ refusals can be counted per tool and per check. The event is ops-event.sh's, wit
 | `spend:wave-exists` | spend.sh | the wave name is already used |
 | `spend:wave-ambiguous` | spend.sh | no wave named, and not exactly one open |
 | `spend:wave-unknown` | spend.sh | the named wave does not exist |
-| `spend:wave-closed` | spend.sh | the wave is already closed |
+| `spend:wave-closed` | spend.sh | the wave is already closed (`wave close`, `headroom`) |
 | `spend:backfill-note` | spend.sh | a backfilled row (SPEND_TS) with no `--note` |
 | `spend:already-recorded` | spend.sh | the agent already has a row and `--correct` is not given |
 | `spend:correct-no-row` | spend.sh | `--correct` for an agent with no row |
@@ -1159,7 +1176,9 @@ fails and the owner's override is recorded first.
 Exit codes match the locator's. 0: the state was printed. 3: no team here; `--json` prints
 `{"format": 1, "team": false}`. 4: setup is needed; the locator's message is on stderr. 1: a ledger is
 broken (the ops ledger as `verify-chain` judges it, or a decision ledger line that is not a JSON
-object), or holds a line whose shape status cannot use; stderr names it. 2: bad usage, or a `--repo`
+object), or holds a line whose shape status cannot use; stderr names it. 1 also: the project's
+`"unattended"` settings have a shape the tools cannot use; stderr names `.team/decision-config.json`,
+not a ledger. 2: bad usage, or a `--repo`
 that is not a folder inside a git repository.
 
 ## Known limits in this release

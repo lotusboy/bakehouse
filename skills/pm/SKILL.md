@@ -292,13 +292,15 @@ confirm on return.
   "<the reason>" --wave <the open spend wave>`. Stop it when the owner is back: `decision.sh unattended stop`.
 - **Assume only what the tool accepts.** Record each assumed yes with `decision.sh answer <id> --assumed
   --est-tokens <n>`, where n is the step's estimated tokens (0 for a step with no AI). The tool refuses it
-  below the confidence line for the step's cost, above the top cost band, for a category on the project's
-  never-list, and for an approval of a gate exception. A refused yes is not taken.
+  not above the confidence line for the step's cost, above the top cost band, for a category on the
+  project's never-list, for a blind ask, and for an approval of a gate exception. A refused yes is not taken.
 - **Dig below the line, then park.** When the confidence is not above the line, read and measure more
   first. If it is still not above the line, park the question with its reason and move to other work.
 - **Check headroom before each dispatch.** While the mode is on, run
-  `${CLAUDE_PLUGIN_ROOT}/runtime/spend.sh headroom <wave> --est <tokens>` before every agent. Exit 1 means the
-  agent does not fit, so it does not start.
+  `${CLAUDE_PLUGIN_ROOT}/runtime/spend.sh headroom <wave> --est <tokens>` before every agent. `--est` is the
+  next agent's estimate plus the estimates of every agent still running, because headroom counts recorded
+  spend only. Exit 1 means the agent does not fit, so it does not start. A run then stops before its
+  ceiling when the estimates hold.
 - **At the ceiling, start no agent.** Finish the work that needs no AI, and park the rest with its reason.
 - **On return, the status list comes first.** Hand the owner `bakehouse status` before anything else: the
   mode, and each assumed answer to confirm (id, question, confidence, estimate). The owner confirms or

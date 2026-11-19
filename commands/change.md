@@ -24,7 +24,8 @@ figure from anywhere else. A copied fact would bind every repo to the one it cam
 needs a fact that none of these gives, stop and name the missing field.
 
 **No dispatch without the owner's go on the spend.** Before each agent dispatch, state the estimated
-tokens and wait for the owner's go.
+tokens and wait for the owner's go. The one exception is unattended mode: while it is on, the PM skill's
+"When the owner is away" section governs, with a headroom check before each dispatch.
 
 ## The work order
 
@@ -296,7 +297,9 @@ branch), `BASE` and the record folder. Commit by path, with the trailer. Fill th
    Bring the prediction to the owner as one decision, before any site is switched, with each failed
    check named. A predicted move that `expected` does not name is a new decision, never a detail. On
    the owner's go, commit one line into the item on the branch: the prediction file and "approved by
-   the owner, {date}". Then tell the engineer to continue (SendMessage). A prediction changed after
+   the owner, {date}". In unattended mode, a go the PM takes itself on a routine seal (the PM skill,
+   "When the owner is away") is an assumed yes, and the line reads "assumed by the PM, decision <id>, to
+   confirm", never "approved by the owner". Then tell the engineer to continue (SendMessage). A prediction changed after
    its measured file was committed needs that go recorded as a decision (`decision.sh ask`, then the
    owner's `decision.sh answer`) and cited in git: the commit that changes it ends with the trailer
    `Prediction-approved: <decision id>`, in the last paragraph of the message, never the subject.
@@ -605,8 +608,9 @@ Turn budget: [PM: turns] of your cap. Leave 15 turns to write findings.md.
 ## Guardrails
 
 - **The owner decides.** The job never starts without the owner's go on the work order, never
-  switches a site before the owner's go on the prediction, and never runs a move the work order and
-  the approved prediction do not name.
+  switches a site before the owner's go on the prediction (the one exception: in unattended mode, the
+  PM's own go on a routine seal, recorded as an assumed yes, as the PM skill's "When the owner is away"
+  section allows), and never runs a move the work order and the approved prediction do not name.
 - **One work order, one branch.** The branch is the item's `branch:` line; the job never opens a
   second one and never copies a work order between branches.
 - **Behaviour changes only as predicted.** Any output move not predicted stops the job.

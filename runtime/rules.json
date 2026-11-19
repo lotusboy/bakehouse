@@ -237,7 +237,7 @@
    "id": "pm-25",
    "file": "skills/pm/SKILL.md",
    "sentences": [
-    "The tool refuses it below the confidence line for the step's cost, above the top cost band, for a category on the project's never-list, and for an approval of a gate exception."
+    "The tool refuses it not above the confidence line for the step's cost, above the top cost band, for a category on the project's never-list, for a blind ask, and for an approval of a gate exception."
    ],
    "enforcer": "code",
    "proof": "test_decision_ledger.Ledger.test_r1_each_refusal_of_an_assumed_answer_has_its_own_gate",
@@ -561,6 +561,16 @@
    "note": "R1: the same rule as pm-26; revise and retire refuse it through the same check (predict-gate.py decision_refusal)"
   },
   {
+   "id": "bakehouse-change-71",
+   "file": "commands/change.md",
+   "sentences": [
+    "In unattended mode, a go the PM takes itself on a routine seal (the PM skill, \"When the owner is away\") is an assumed yes, and the line reads \"assumed by the PM, decision <id>, to confirm\", never \"approved by the owner\"."
+   ],
+   "enforcer": "prompt",
+   "proof": "prompt only: no tool, hook or review brief checks it",
+   "note": "R1 fix1 (review F6): no tool reads the committed line; the assumed yes itself is refused as an approval by close (bakehouse-change-70)"
+  },
+  {
    "id": "bakehouse-change-32",
    "file": "commands/change.md",
    "sentences": [
@@ -688,7 +698,7 @@
    "id": "bakehouse-change-45",
    "file": "commands/change.md",
    "sentences": [
-    "- **The owner decides.** The job never starts without the owner's go on the work order, never switches a site before the owner's go on the prediction, and never runs a move the work order and the approved prediction do not name."
+    "- **The owner decides.** The job never starts without the owner's go on the work order, never switches a site before the owner's go on the prediction (the one exception: in unattended mode, the PM's own go on a routine seal, recorded as an assumed yes, as the PM skill's \"When the owner is away\" section allows), and never runs a move the work order and the approved prediction do not name."
    ],
    "enforcer": "prompt",
    "proof": "prompt only: no tool, hook or review brief checks it",
@@ -698,7 +708,7 @@
    "id": "bakehouse-change-46",
    "file": "commands/change.md",
    "sentences": [
-    "- **The owner decides.** The job never starts without the owner's go on the work order, never switches a site before the owner's go on the prediction, and never runs a move the work order and the approved prediction do not name."
+    "- **The owner decides.** The job never starts without the owner's go on the work order, never switches a site before the owner's go on the prediction (the one exception: in unattended mode, the PM's own go on a routine seal, recorded as an assumed yes, as the PM skill's \"When the owner is away\" section allows), and never runs a move the work order and the approved prediction do not name."
    ],
    "enforcer": "code",
    "proof": "test_predict_gate.Check.test_the_2026_10_10_case_unpredicted_move_refuses",
@@ -708,7 +718,7 @@
    "id": "bakehouse-change-59",
    "file": "commands/change.md",
    "sentences": [
-    "- **The owner decides.** The job never starts without the owner's go on the work order, never switches a site before the owner's go on the prediction, and never runs a move the work order and the approved prediction do not name."
+    "- **The owner decides.** The job never starts without the owner's go on the work order, never switches a site before the owner's go on the prediction (the one exception: in unattended mode, the PM's own go on a routine seal, recorded as an assumed yes, as the PM skill's \"When the owner is away\" section allows), and never runs a move the work order and the approved prediction do not name."
    ],
    "enforcer": "prompt",
    "proof": "prompt only: no tool, hook or review brief checks it",
