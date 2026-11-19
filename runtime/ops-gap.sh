@@ -37,5 +37,5 @@ if [ "$BEHIND" -ge "$THRESHOLD" ]; then
   echo "   Record what actually happened with $HERE/ops-event.sh (rules: $(locate operations))."
   echo "   Agent runs, fan-outs, gates and decisions cannot be recovered from commits later."
 else
-  echo "ops ledger: $BEHIND commit(s) behind (last event $LAST_TS)"
+  echo "ops ledger: $BEHIND commit(s) behind (last event $LAST_TS): fine, a warning comes at $THRESHOLD"
 fi

@@ -382,7 +382,8 @@ class Setup(Base):
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         rc, out = self.commit(self.repo, "--allow-empty", "-m", "second")
         self.assertEqual(rc, 0, out)
-        self.assertIn("ops ledger: 2 commit(s) behind", out)
+        self.assertIn("ops ledger: 2 commit(s) behind (last event 2000-01-01T00:00:00+00:00): fine, a warning comes at 5",
+                      out)
 
     def test_a_sidecar_team_is_refused_and_nothing_changes(self):
         # S16 M8: R0 does not set up records for a repo another party owns (a known limit)
