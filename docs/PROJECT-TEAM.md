@@ -1019,7 +1019,8 @@ id (table below), when the mode is not on, `--agreed` is given, the owner has al
 ask has no recommendation or no confidence, the ask names `--approves`, the ask was asked `--blind`, its
 category is on the never-list, its category is not in the project's categories (`ask` still takes any
 category, with a note; a project lists its own in `.team/decision-config.json`, and that list replaces the
-default one), the estimate is above the top band, or the confidence is not above its
+default one; a `categories` that is not a non-empty list of text is refused, by `ask` too, with gate
+`decision:categories-config`), the estimate is above the top band, or the confidence is not above its
 band's line. A blind ask measures the owner's own answer, so it always waits for the owner. The owner confirms or reverses it on return with the normal
 `decision.sh answer`; the latest answer counts, as always.
 
@@ -1122,6 +1123,7 @@ refusals can be counted per tool and per check. The event is ops-event.sh's, wit
 | `decision:assumed-approves` | decision.sh | `answer --assumed` on an ask that names `--approves` (an approval is always the owner's) |
 | `decision:assumed-blind` | decision.sh | `answer --assumed` on an ask asked `--blind` |
 | `decision:assumed-never` | decision.sh | `answer --assumed` on an ask whose category is on the project's never-list |
+| `decision:categories-config` | decision.sh | `ask`, or `answer --assumed`, while `categories` in the project's `.team/decision-config.json` is not a non-empty list of text |
 | `decision:assumed-category` | decision.sh | `answer --assumed` on an ask whose category is not in the project's categories (`categories` in `.team/decision-config.json`, which replaces the default list; case and spaces ignored) |
 | `decision:assumed-cost` | decision.sh | `answer --assumed` with an estimate above the top cost band |
 | `decision:assumed-confidence` | decision.sh | `answer --assumed` with a confidence not above the line of the estimate's band |

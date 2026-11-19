@@ -318,7 +318,8 @@ branch), `BASE` and the record folder. Commit by path, with the trailer. Fill th
    same decision, asked with `--approves` and `--task {id}`. It refuses a decision that does not approve
    this work order's revise. It refuses a prediction that has not changed.
 3. **Continue.** If the engineer is no longer running, dispatch a fresh `role:change:engineer` with
-   the same brief, the approved prediction and "switch now".
+   the same brief, the approved prediction and "switch now". Save that brief first, as step 6.1 does, as
+   `brief.engineer.first-continue.md` (in fix round N: `brief.engineer.fix<N>-continue.md`).
 4. **An andon** from the engineer — an unpredicted move, a gate that cannot pass, a `mustNotMove`
    output that moved, a need the evidence does not show — goes to the owner as one decision. The job
    waits.

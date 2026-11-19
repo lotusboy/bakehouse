@@ -858,7 +858,8 @@ def fresh_folders(runs, started):
     """Record folders under runs with a file written since the agent started."""
     if not runs.is_dir():
         return []
-    return sorted({p.parent for p in runs.glob("*/*") if p.is_file() and p.stat().st_mtime >= started - 5})
+    return sorted({p.parent for p in runs.glob("*/*") if p.is_file() and not locator.BRIEF.fullmatch(p.name)
+                   and p.stat().st_mtime >= started - 5})
 
 
 def first_prompt(path):
@@ -1081,7 +1082,7 @@ def record_problems(rname, root, folder, started, binding, code=None):
         runs = root / folder
         made, wrote = {}, {}
         for q in runs.rglob("*"):
-            if q.is_file() and q.stat().st_mtime >= started - 5:
+            if q.is_file() and not locator.BRIEF.fullmatch(q.name) and q.stat().st_mtime >= started - 5:
                 wrote.setdefault(q.parent, set()).add(q.name)
                 if any(fnmatch.fnmatchcase(q.name, g) for g in job["marks"]):
                     made.setdefault(q.parent, set()).add(q.name)
@@ -1130,7 +1131,7 @@ def marked(rname, folder, started, binding):
         log(f"ERROR record marks for {rname}: {e!r}")
         marks = None
     hit = folder.is_dir() and any(
-        q.is_file() and q.stat().st_mtime >= started - 5
+        q.is_file() and not locator.BRIEF.fullmatch(q.name) and q.stat().st_mtime >= started - 5
         and (marks is None or any(fnmatch.fnmatchcase(q.name, g) for g in marks)) for q in folder.rglob("*"))
     return ([folder] if hit else []), marks
 

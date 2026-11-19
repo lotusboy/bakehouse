@@ -174,7 +174,9 @@ Find where this part's job stands before doing anything else. Run `git fetch` fi
    pressure, `REDESIGN` when it was flagged by correction, override or declaration files piling up
    (the step-back Compensation pile signal). State the token estimate and wait for the owner's go.
    Dispatch it with
-   `subagent_type: "role:refactor:architect"`. The architect reads and measures only.
+   `subagent_type: "role:refactor:architect"`. The architect reads and measures only. Its brief is not
+   saved: it names no record folder, because none exists before the owner's decision, and the register's
+   decision holds the owner's words, not a brief.
 3. Record the run (owned repos only):
    `${CLAUDE_PLUGIN_ROOT}/runtime/ops-event.sh agent-run - "architect: <part>" <model> - - <tokens> <seconds> <outcome>`.
 

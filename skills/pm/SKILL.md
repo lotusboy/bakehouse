@@ -282,7 +282,8 @@ them, and each tool's header comment is its full reference.
   exactly as returned into `${CLAUDE_PLUGIN_ROOT}/runtime/save-report.sh`. A re-typed report is a paraphrase.
 - **Each filled brief is saved before its dispatch.** Before each dispatch, the PM saves the filled brief,
   as sent, in the record folder the brief names, as `brief.<role>.<round>.md` (for example
-  `brief.engineer.first.md`, `brief.reviewer.fix1.md`). It is committed with the round's other records. A
+  `brief.engineer.first.md`, `brief.reviewer.fix1.md`). The architect's brief, which names no record folder,
+  is the exception (`/bakehouse:refactor` step 4). It is committed with the round's other records. A
   brief kept only in the conversation is lost with the session, and a reviewer cannot check what the
   engineer was told.
 - **A predicted-moves gate is a machine, not a choice.** In a repo that uses `${CLAUDE_PLUGIN_ROOT}/runtime/predict-gate.sh`,

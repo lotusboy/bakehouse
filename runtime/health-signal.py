@@ -277,6 +277,8 @@ def review_findings(repo, rules, files, since, until):
             continue
         folders += 1
         for md in sorted(d.rglob("*.md")):
+            if locator.BRIEF.fullmatch(md.name):
+                continue  # a saved brief repeats the findings it hands on
             try:
                 text = md.read_text(encoding="utf-8", errors="replace")
             except OSError:

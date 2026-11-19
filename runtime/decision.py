@@ -132,6 +132,16 @@ def config(project):
     return cfg
 
 
+def categories(project):
+    """The project's categories: its own list in .team/decision-config.json replaces the default one. A list of
+    another shape is refused: null would stop the tool, and a text would be matched one character at a time."""
+    cats = config(project).get("categories")
+    if not isinstance(cats, list) or not cats or not all(isinstance(c, str) for c in cats):
+        fail(f'"categories" in {project.decision_config} is not a non-empty list of text: fix it there',
+             "decision:categories-config")
+    return cats
+
+
 def read_events(project):
     p = project.decisions_ledger
     if not p.exists():
@@ -243,10 +253,10 @@ def cmd_ask(a):
         fail("--approves must be one of the --option values", "decision:approves")
     if not loose:
         check_grounding(a, config(project))
-    cats = config(project)["categories"]
-    if a.category not in cats:
-        print(f"decision: note: category '{a.category}' is outside the default vocabulary ({', '.join(cats)})",
-              file=sys.stderr)
+    cats = categories(project)
+    if norm(a.category) not in {norm(c) for c in cats}:
+        print(f"decision: note: category '{a.category}' is outside the project's categories ({', '.join(cats)}):"
+              " an assumed answer is refused for it", file=sys.stderr)
     ts = stamp()
     did = a.id or "d" + ts[:10].replace("-", "") + "-" + hashlib.sha1(
         f"{ts}{project.root}{a.question}{random.random()}".encode()).hexdigest()[:6]
@@ -483,7 +493,7 @@ def answer_assumed(project, a, d):
     if norm(ask.get("category")) in {norm(c) for c in cfg["neverCategories"]}:
         fail(f"category {ask.get('category')} is on the project's never-list: it waits for the owner",
              "decision:assumed-never")
-    cats = config(project)["categories"]
+    cats = categories(project)
     if norm(ask.get("category")) not in {norm(c) for c in cats}:
         fail(f"category {ask.get('category')} is not in the project's categories ({', '.join(cats)}): an"
              " assumed answer needs one of them, so this waits for the owner. A project lists its own categories"

@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -201,6 +202,10 @@ def find(folder=None, env=os.environ) -> Project | None:
 
 DEFAULT_REVIEWS = "axis/runs/"
 RUNS = "runs/"
+# A brief the PM saved in a record folder before a dispatch (skills/pm/SKILL.md, "The records the PM keeps"):
+# brief.<role>.<round>.md. It is the PM's, so no reader of a record folder takes it as findings or as an agent's
+# own record.
+BRIEF = re.compile(r"brief\..+\.md")
 
 
 class BadRuns(ValueError):
