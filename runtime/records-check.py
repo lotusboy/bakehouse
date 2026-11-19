@@ -1165,13 +1165,9 @@ def build(binding: dict, ledger: Path | None, repo: Path, a, contracts: dict, pr
 
 def shown_ledger(ledger: Path, project) -> str:
     """The ops ledger as the register names it: in the project's records worktree, by its path there (as
-    computed.reviews names the run folders), never a machine path; a ledger given elsewhere, as it was given."""
-    if project is not None:
-        try:
-            return Path(ledger).resolve().relative_to(Path(project.records).resolve()).as_posix()
-        except ValueError:
-            pass
-    return str(ledger)
+    computed.reviews names the run folders), never a machine path; a ledger given elsewhere, by its file name
+    under a prefix that says so (locator.ledger_name, as close's refusals name it)."""
+    return locator.ledger_name(ledger, project)
 
 
 def render(reg: dict, as_of: str, head: str) -> str:

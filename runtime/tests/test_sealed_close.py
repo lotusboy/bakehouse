@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 
@@ -992,6 +993,16 @@ class Sealed(unittest.TestCase):
         link.symlink_to(self.records)
         self.git("config", "bakehouse.records", str(link))
         self.assertEqual(ledger_ids(), real)
+
+    def test_076_a_ledger_outside_the_records_worktree_is_refused_with_no_machine_path(self):
+        # a ledger that resolves outside the records worktree: its file name under a fixed prefix, never its full path
+        outside = Path(self.tmp.name) / "elsewhere" / "events.jsonl"
+        outside.parent.mkdir()
+        outside.write_bytes(b'{"kind": "no\n')
+        rows = pg.ledger_refusals(outside, "W-1", types.SimpleNamespace(records=self.records))
+        self.assertTrue(rows, "a broken ledger is refused")
+        self.assertIn("the ops ledger (outside the records worktree)/events.jsonl is BROKEN", rows[0])
+        self.assertNotIn(self.tmp.name, "".join(rows))
 
     def test_h4_records_check_and_close_read_one_sealed_state(self):
         self.flow()

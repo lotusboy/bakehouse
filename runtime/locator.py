@@ -275,6 +275,20 @@ class BadCodeRoots(ValueError):
     and the fix."""
 
 
+OUTSIDE_RECORDS = "(outside the records worktree)"
+
+
+def ledger_name(ledger, project) -> str:
+    """The ops ledger as a register or a refusal names it, never by a machine path: in the project's records
+    worktree, by its path there; anywhere else (or with no project), by its file name under OUTSIDE_RECORDS."""
+    if project is not None:
+        try:
+            return Path(ledger).resolve().relative_to(Path(project.records).resolve()).as_posix()
+        except ValueError:
+            pass
+    return f"{OUTSIDE_RECORDS}/{Path(ledger).name}"
+
+
 def is_code_root(r) -> bool:
     """One entry of a code-roots list: a folder name, a string with more than slashes in it. The one rule for
     code_roots and preflight check 4."""

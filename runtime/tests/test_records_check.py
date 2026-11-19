@@ -945,6 +945,16 @@ class TestRecordEdges(Fixture):
         self.run_check()
         self.assertEqual(self.reg()["computed"]["ledger"], "ops/events.jsonl")
 
+    def test_076_a_ledger_outside_the_records_worktree_is_named_with_no_machine_path(self):
+        # a --ledger outside the records worktree: its file name under a fixed prefix, never its full path
+        outside = Path(self.tmp.name) / "elsewhere" / "events.jsonl"
+        outside.parent.mkdir()
+        outside.write_bytes(self.ledger.read_bytes())
+        self.closed_record()
+        code, out = self.run_check("--ledger", str(outside))
+        self.assertEqual(self.reg()["computed"]["ledger"], "(outside the records worktree)/events.jsonl", out)
+        self.assertNotIn(self.tmp.name, self.register.read_text())
+
 
 class TestStreamCurrency(Fixture):
     """The ops ledger keeps up with the repo."""

@@ -851,17 +851,14 @@ def ledger_refusals(ledger: Path | None, wo: str, project=None) -> list:
     must read whole, and the ledger file must still begin with the ledger its last commit holds. A
     ledger file that is gone reads as empty, so its committed lines refuse. The refusals name the ledger by its
     path in the project's records worktree, as records-check does, so a refusal's id does not change with the
-    spelling of the ledger's path (a symbolic link)."""
+    spelling of the ledger's path (a symbolic link); a ledger outside it, by its file name under a prefix that
+    says so (locator.ledger_name), never a machine path."""
     if ledger is None:
         return []
+    import locator
     ol = ledger_module()
     out = []
-    name = str(ledger)
-    if project is not None:
-        try:
-            name = ledger.resolve().relative_to(Path(project.records).resolve()).as_posix()
-        except ValueError:
-            pass
+    name = locator.ledger_name(ledger, project)
     whole, text = ol.verify(ledger) if ledger.is_file() else (True, "")
     if not whole:
         out.append(f"the ops ledger {name} is BROKEN, and close did not write it: "

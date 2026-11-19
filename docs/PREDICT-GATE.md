@@ -502,7 +502,9 @@ a decision (`decision.sh ask --task <id> --approves <option>`), and judges nothi
 is whole. It also refuses when the ledger file no longer begins with the ledger its last commit holds
 (a committed line edited, moved or removed). These two refusals name the ledger by its path in the
 project's records worktree (`ops/events.jsonl`), as records-check names it, so a symbolic-link spelling of
-the same ledger keeps their refusal ids. For a sealed work order, close then refuses, naming each:
+the same ledger keeps their refusal ids. A ledger that resolves outside the records worktree is named
+`(outside the records worktree)/<file name>`, never by its machine path. For a sealed work order, close
+then refuses, naming each:
 
 1. **The ledger it reads.** A sealed event of the work order that no commit holds. A line a
    `Sealed-line` trailer names that the ledger at `HEAD` no longer holds ("a sealed event was removed
