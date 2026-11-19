@@ -21,18 +21,44 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
-      - name: Run runtime/tests with the standard library's own runner
+      - name: Run runtime/tests with the standard library's own runner, one process per file
         shell: bash
         env:
           # Every sentence the rule register quotes must still match its source word for word.
           BAKEHOUSE_RULES_REGISTER: '1'
         run: |
-          set -e
-          # Several tests commit in scratch repos; a fresh runner has no git identity.
-          git config --global user.email "ci@example.invalid"
-          git config --global user.name "CI"
-          git config --global init.defaultBranch main
-          python3 -m unittest discover -s runtime/tests -p 'test_*.py'
+          set -euo pipefail
+          cd runtime/tests
+          # One process per test file, as many at a time as the runner has cores. Each file gets its own HOME,
+          # machine folder, git config and temp folder, so no two files share state.
+          export OUT="$RUNNER_TEMP/tests"
+          mkdir -p "$OUT"
+          run_one() {
+            local f="$1" w="$OUT/${1%.py}"
+            mkdir -p "$w/home/machine" "$w/tmp"
+            # Several tests commit in scratch repos; a fresh runner has no git identity.
+            printf '[user]\n\temail = ci@example.invalid\n\tname = CI\n[init]\n\tdefaultBranch = main\n' > "$w/home/.gitconfig"
+            if HOME="$w/home" GIT_CONFIG_GLOBAL="$w/home/.gitconfig" TMPDIR="$w/tmp" BAKEHOUSE_MACHINE_DIR="$w/home/machine" \
+                python3 -m unittest "${f%.py}" > "$w/log.txt" 2>&1; then
+              echo "ok   $f: $(grep -E '^Ran ' "$w/log.txt") $(tail -n 1 "$w/log.txt")"
+            else
+              echo "FAIL $f"
+              return 1
+            fi
+          }
+          export -f run_one
+          FAIL=0
+          # Largest files first, so the longest runs start early.
+          ls -S test_*.py | xargs -P "$(getconf _NPROCESSORS_ONLN)" -n 1 bash -c 'run_one "$1"' _ || FAIL=1
+          for log in "$OUT"/*/log.txt; do
+            if ! tail -n 1 "$log" | grep -q '^OK'; then
+              echo "::group::$(basename "$(dirname "$log")")"
+              cat "$log"
+              echo "::endgroup::"
+            fi
+          done
+          echo "Files: $(ls test_*.py | wc -l | tr -d ' '); tests run: $(cat "$OUT"/*/log.txt | awk '/^Ran [0-9]+ tests? in/ {s += $2} END {print s}')"
+          exit $FAIL
 
   lint:
     name: Lint
