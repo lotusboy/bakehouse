@@ -13,7 +13,7 @@
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # The job runs whether or not its lane event is written; a lost event is said, never hidden.
-lost() { echo "heavy-run.sh: warning: the $1 lane event was not written (in a clone of the project, run \`bakehouse setup --pointer <main clone>\` first)" >&2; }
+lost() { echo "heavy-run.sh: warning: the $1 lane event was not written (run heavy-run.sh from the project's own folder, or, in a clone of the project, run \`bakehouse setup --pointer <main clone>\` first)" >&2; }
 if [ "${1:-}" = "--held" ]; then
   shift; res="$1"; t_wait="$2"; shift 2
   now=$(date +%s)
