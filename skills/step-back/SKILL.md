@@ -37,9 +37,11 @@ Count them; do not paraphrase. Each with its evidence in one line:
 | Upstream cause | a second serious review finding whose cause lies outside the code under review |
 | Second architect | a second architect run is asked for in one chain |
 | Third fix round | a task is about to get its third fix round |
+| Reach not falling | across a task's fix rounds, the findings' reach (the reviewer's "Reach:" lines) holds or rises: the rounds are not converging, and the cause may sit a layer up |
 
-**Five signals stop the next dispatch on their own:** Compensation pile, Nothing moved, Upstream
-cause, Second architect and Third fix round. The last three mean the step being built is fed
+**Six signals stop the next dispatch on their own:** Compensation pile, Nothing moved, Upstream
+cause, Second architect, Third fix round and Reach not falling. Upstream cause, Second architect and
+Third fix round mean the step being built is fed
 something wrong: Seesaw what feeds it before anything else. For Compensation pile, fix the step that
 produced the defects instead of adding the next correction. Learned 2026-10-09: a falling gap count
 hid about 270 hand corrections on one input. Where the owner keeps the decision ledger, the tools

@@ -349,6 +349,9 @@ round N saves its filled brief first, as step 6.1 does, as `brief.engineer.fix<N
 
 - Fix every ANDON, P0 and P1 finding before the pull request.
 - Fix real P2 and P3 findings too. Skip only the cosmetic.
+- Before the round, check its altitude (`skills/pm/SKILL.md`, "Check the altitude before a fix round"):
+  a finding outside the owning layer gets a short architect check first, and a P2 or P3 finding with
+  reach 0 in code the work order did not change goes into a new work order, not this round.
 - A fix that moves an output the approved prediction did not name is a new prediction, and goes to
   the owner first (step 6.2). It is written as its own round (see "A round").
 - Each fix round commits its prediction file before its first code edit, as step 6.1 does.
@@ -594,6 +597,7 @@ Prose gates to run and record: [preflight: check 4 ids, read from the binding's 
 Known suspects: [the engineer's report: its found-not-fixed list].
 Serves: [tracker: the item's serves: line]. Open findings.md with your own count of what the change
 touches, in scope against out of scope, and say whether the prediction's first line is true.
+Give each finding its "Reach:" and "Layer:" lines, the layer judged against the owning layer above.
 RUN the risky case and the work order's evidence on real inputs in a scratch dir (a constructed case
 is fine); say "read, not run" where you could not run it.
 Drivers (the scripts you write to run it, measure or attack the change): in drivers/, directly inside

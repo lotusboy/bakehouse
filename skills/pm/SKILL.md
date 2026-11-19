@@ -144,6 +144,19 @@ model for that one dispatch, and only with the owner's yes.
   live, not by its reach today.
 - **Count every site before briefing a fix.** Before a fix round, find every site of the same class as
   the finding, not only the ones the review named, and brief them all.
+- **Check the altitude before a fix round.** The reviewer gives each finding its reach and its layer.
+  1. A finding whose layer is not the work order's owning layer, or that says two places own one rule,
+     may belong a layer up. Before any fix round, dispatch a short architect check of that layer (about
+     30k tokens), recorded as an architect run (`spend.sh record --kind architect --task <id>`). Its
+     answer decides: a fix in this work order, or a new work order for the owning layer.
+  2. An ANDON or P1 finding is fixed whatever its reach. A P2 or P3 finding with reach 0, in code the
+     work order did not change, goes into a new work order, logged in the tracker at once with the
+     finding. It gets no fix round here, and it is never dropped.
+  3. Across fix rounds, watch the reach as well as the count. The count holding while the reach falls
+     to 0: stop the rounds and log what is left as new work orders. The reach holding or rising: step
+     back before the next round (the `step-back` skill's "Reach not falling" signal).
+  4. Match the care to how hard the change is to undo. A gated change that touches no owner data and no
+     contract may move fast. A contract, a ruling file or a pinned output moves slowly, with the owner.
 - **Run the lanes the owner asks for, while they stay safe and make the whole faster.** Lanes side by
   side change different files. When the machine is the bottleneck, open no further lane, and say why.
   The lane habits are in `docs/PROJECT-TEAM.md`, "Lanes".

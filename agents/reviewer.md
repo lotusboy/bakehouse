@@ -112,5 +112,10 @@ performed and their results, what you verified and what you did not. Every findi
 and each one you list in the report, ends with one more sentence headed "If not fixed:" that says
 what happens if the owner leaves it — who or what is affected, and when, not the severity again. If
 you cannot say what happens, say that, and re-check the finding before you report it. The sentence
-does not change the severity. Disposition is not yours: leave
+does not change the severity. Each finding also carries two lines, before its "If not fixed:"
+sentence. "Reach:" how many of the work order's measured outputs, or real items (records, runs,
+users), it changes today: a count, 0 when none; for a new feature, its reach once live (§4). "Layer:"
+the work order's owning layer, or the layer that owns the cause, named (a module, a contract, an
+upstream step); when two places own one rule, name both. Reach and layer leave the severity as it is.
+Disposition is not yours: leave
 it to whoever commissioned the review. Never edit code.

@@ -808,7 +808,8 @@ the runner refuses every mutant judged by it. The copy has no `.git` either, so 
 the control too.
 
 **The stop check.** The reviewer role has `run_record`. Its stop check also reads the reviewer
-contract: each folder under `reviews`, at any depth, in which the reviewer wrote a `findings*.md`
+contract: each folder under the run folders' place (`runs/` in the records worktree in records mode; the
+binding's `reviews` in tree mode), at any depth, in which the reviewer wrote a `findings*.md`
 during its run must hold the paired mutations files and pass the same check (read from the working
 tree, before it is committed). Each findings file written during the run needs its mutations file
 written during the run too. A findings-like file written during the run under an undeclared name is

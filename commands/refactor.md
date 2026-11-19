@@ -41,7 +41,8 @@ tokens and wait for the owner's go.
 - **The default branch**: run `git fetch` first. Then `git rev-parse --abbrev-ref origin/HEAD` gives
   `origin/<default>`. Every "merged" and every "on the default branch" below means on
   `origin/<default>`, never a local branch. If `origin/HEAD` is not set, ask the owner which branch
-  pull requests go into.
+  pull requests go into. In a repository with no remote there is no `origin/<default>`: the default
+  branch is the local one the owner names (for example `main`), and "merged" means merged into it.
 - **The tracker item**: the item in `<binding.tracker.file>` whose id matches `binding.tracker.id`
   and equals the part's `decision.backlogId` in the register. It is the job's re-entry state. It holds
   the plan: each step's kind, target and gate type; for a meaning-change step, the meaning and the

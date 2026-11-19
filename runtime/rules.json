@@ -1896,6 +1896,15 @@
    ],
    "enforcer": "prompt",
    "proof": "prompt only: no tool, hook or review brief checks it"
+  },
+  {
+   "id": "pm-29",
+   "file": "skills/pm/SKILL.md",
+   "sentences": [
+    "It gets no fix round here, and it is never dropped."
+   ],
+   "enforcer": "prompt",
+   "proof": "prompt only: no tool, hook or review brief checks it"
   }
  ],
  "notRules": [
