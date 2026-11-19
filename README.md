@@ -34,6 +34,12 @@ bakehouse in one repo is not supported yet.
 - What is fine: several sessions, and lane clones, on the same machine. A lane clone set up with
   `bakehouse setup --pointer <main clone>` writes to the main clone's records, so there is one history.
 
+## One team plugin per repo
+
+Do not switch bakehouse on in a repo where another project-team plugin already runs the work, with its
+own plan, build, review or push rules. Their skills compete for the same requests, and the other
+plugin's rules may refuse bakehouse's branches. Install bakehouse in a different repo instead.
+
 ## Install
 
 New here? [`docs/GETTING-STARTED.md`](docs/GETTING-STARTED.md) takes one project from install to its first
