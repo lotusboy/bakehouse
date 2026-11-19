@@ -1654,6 +1654,9 @@ def seal_refusal(path: Path, rel: str, wo: str, rnd: str, fkind: str, digest: st
                     "sealed after its measurement is not evidence of a prediction made before it"), True
         return None
     if fkind == "measured":
+        same = [e for e in live if e.get("round") == rnd and e.get("fileKind") == "measured"]
+        if same and same[-1].get("sha256") != digest:
+            return f"{rel} changed since its seal: a new measurement is a new round, not a new seal", False
         try:
             base = round_files(path)[1]
         except BadInput as e:

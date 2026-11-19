@@ -948,6 +948,21 @@ class SealTest(unittest.TestCase):
         self.assertEqual(p.returncode, 2)
         self.assertIn("has a sealed measured file and no sealed baseline", p.stderr)
 
+    def test_274_seal_refuses_a_measured_file_changed_since_its_seal(self):
+        # 274: a measured file sealed again with other bytes was accepted here, and refused only at close
+        self.assertEqual(self.seal("first", "moves.baseline.json").returncode, 0)
+        self.assertEqual(self.seal("first", "moves.measured.json").returncode, 0)
+        self.assertEqual(self.seal("first", "moves.measured.json").returncode, 0, "unchanged: sealed again")
+        n = len([e for e in self.events() if e["kind"] == "sealed"])
+        self.write({f"{REC}/moves.measured.json": {"out:v": 2, "out:w": 7}})
+        p = self.seal("first", "moves.measured.json")
+        self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+        self.assertIn("changed since its seal: a new measurement is a new round, not a new seal", p.stderr)
+        self.assertEqual(len([e for e in self.events() if e["kind"] == "sealed"]), n, "no seal is written")
+        self.seal("fix1", "moves.measured.fix1.json")
+        self.assertEqual((self.events()[-1]["kind"], self.events()[-1]["round"]), ("sealed", "fix1"),
+                         "another round is not judged")
+
     def test_f10_seal_checks_the_work_order_against_the_binding(self):
         self.binding.write_text(
             json.dumps({"owned": True, "runs": "tree", "tracker": {"id": "^W-[0-9]+$"}})
