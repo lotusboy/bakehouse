@@ -49,6 +49,8 @@ def load_entries(path):
         fail(f"{path}: entries must be a JSON array")
     seen = set()
     for n, e in enumerate(entries):
+        if not isinstance(e, dict):
+            fail(f"{path}: entry {n} is not an object")
         for k in ("id", "pattern", "patternKind", "class"):
             if not isinstance(e.get(k), str) or not e[k]:
                 fail(f"{path}: entry {n} has no string '{k}'")
@@ -118,10 +120,14 @@ def cmd_sample(a):
     if not isinstance(corpus, list):
         fail(f"{a.corpus}: corpus must be a JSON array")
     for n, c in enumerate(corpus):
+        if not isinstance(c, dict):
+            fail(f"{a.corpus}: record {n} is not an object")
         for k in ("docId", "text", "pointer"):
             if not isinstance(c.get(k), str):
                 fail(f"{a.corpus}: record {n} has no string '{k}'")
     classes = load_json(a.classes, "classes") if a.classes else {}
+    if not isinstance(classes, dict):
+        fail(f"{a.classes}: classes must be a JSON object (class -> one-line meaning)")
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     result, sampled, unmatched = [], 0, []
@@ -185,7 +191,11 @@ def readers_sample(result, classes):
 
 
 def last_json(path):
-    blocks = re.findall(r"```json\s*\n(.*?)```", Path(path).read_text(), re.S)
+    try:
+        text = Path(path).read_text()
+    except OSError as e:
+        fail(f"cannot read the report {path}: {e}")
+    blocks = re.findall(r"```json\s*\n(.*?)```", text, re.S)
     if not blocks:
         fail(f"{path}: no ```json block")
     try:
@@ -207,6 +217,8 @@ def last_json(path):
         if label not in LABELS:
             fail(f"{path}: item {i.get('id')} label '{i.get('label')}' is not one of {', '.join(LABELS)}")
         items[str(i["id"])] = dict(i, label=label)
+    if data.get("reader") is not None and not isinstance(data["reader"], str):
+        fail(f"{path}: last ```json block's \"reader\" is not text")
     return data.get("reader") or Path(path).stem, items
 
 

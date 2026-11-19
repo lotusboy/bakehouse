@@ -12,18 +12,20 @@ Three entry points, all wired by the plugin's hooks:
       - an agent spawned BY a role's provider is held to that role's nested_model.
   SubagentStop                stdin = hook JSON
       - a role with run_record: the agent is sent back once if it wrote no record folder under the
-        binding's `reviews` (default axis/runs/). When the role is a job in runtime/record-contracts.json
-        (the reviewer), every folder under `reviews`, at any depth, in which it wrote a file the job's
-        `marks` match (findings*.md) must also hold that job's artefacts, checked by records-check's own
+        place of the run folders (runs_text): in records mode, runs/ in the project's records worktree; in
+        tree mode, the binding's `reviews` (axis/runs/ when it names none). When the role is a job in
+        runtime/record-contracts.json (the reviewer), every folder under that place, at any depth, in
+        which it wrote a file the job's `marks` match (findings*.md) must also hold that job's artefacts,
+        checked by records-check's own
         check_folder: a reviewer's mutation record beside each findings file (findings.md owes
         mutations.json, findings-fix1.md owes mutations-fix1.json), in the mutation-record format, every
         survivor with a disposition; each findings file not empty. A contract (a .md whose name holds
         "contract": contract.md, a round's contract-fix1.md) sits beside each findings file written or in
         a folder above it, inside the folder checked (this check is the stop's own). The folder is decided
         at dispatch (PreToolUse, for a change job and a run_record role; a plain-name reviewer only where
-        the cwd has a binding, or a line names a folder under a bound repo's `reviews`): every line labelled
+        the cwd has a binding, or a line names a folder under a bound repo's run folders): every line labelled
         as a record folder is read; a line record_line's reader does not read, a path that is not full
-        (`/` or `~`), a full path under no bound repo's `reviews` (that repo found from the path, not the
+        (`/` or `~`), a full path under no bound repo's run folders (that repo found from the path, not the
         cwd), and two lines naming different folders are refused,
         naming the line and where it resolves. The decided folder is logged with the dispatch, and the
         stop checks it (a repo record with its own repo's binding), never re-reading the line from its cwd.
@@ -79,7 +81,7 @@ shipped table is a bug in the plugin: every dispatch passes unchanged, and the u
 lets the dispatch through unchanged: a crash anywhere in the hook. A stop always fails open:
 an unreadable binding there is read as none. A `Record folder:` line with any text after its path is
 refused at dispatch, showing the line, and reported at a stop, never read; a refused full path under a
-bound repo's reviews puts the dispatch in care. The whole run has one deadline, RUN_BUDGET_S, counted from hook
+bound repo's run folders puts the dispatch in care. The whole run has one deadline, RUN_BUDGET_S, counted from hook
 start (STARTUP_S allowed for the interpreter), well below the harness's 10 s: the locator and git get what is
 left of it less EVENT_S, the refusal event the rest less EXIT_S; each path's binding is read once per run. Every
 change it makes is logged to logs/agent-roles.log in the machine folder (locator.machine_dir()).
@@ -376,7 +378,10 @@ def place(v):
     p = path.resolve()
     b = bound(path, named=True)
     mode, bad = runs_mode(b) if b else (None, None)
-    reviews, why = reviews_folder(b) if mode == "tree" else (None, bad)
+    q = path
+    while not q.exists() and q != q.parent:
+        q = q.parent
+    reviews, why = reviews_folder(b, q) if mode == "tree" else (None, bad)
     if why:
         # the binding's own field is the cause, never the brief (R0.1 B-N4)
         where = team_roles.locate("binding", path, log, timeout=min(team_roles.RESOLVE_TIMEOUT, left()),
@@ -390,9 +395,6 @@ def place(v):
             return "repo", rec, p.relative_to(rec).as_posix(), v, str(path)
         return None
     if reviews:
-        q = path
-        while not q.exists() and q != q.parent:
-            q = q.parent
         top = repo_root(str(q)).resolve()
         if (top / reviews).resolve() in p.parents:
             return "repo", top, p.relative_to(top).as_posix(), v, str(path)
@@ -465,7 +467,11 @@ def record_line(prompt, cwd, binding):
         return None
     if problem:
         return "refused", top, f"which {problem}", v, p
-    if runs_mode(binding)[0] == "records":
+    mode, bad = runs_mode(binding)
+    if bad:
+        # the binding's `runs` is the cause: no run folder can be placed (0.7.3)
+        return "refused", top, f"which cannot be placed: the binding's `runs` field is bad ({bad})", v, p
+    if mode == "records":
         rec = records_of(top)
         if rec and (rec / locator.RUNS).resolve() in p.parents:
             return "repo", rec, p.relative_to(rec).as_posix(), v
@@ -527,13 +533,15 @@ def users_at(cwd):
     return users
 
 
-def reviews_folder(binding):
-    """(folder, None) for the binding's `reviews`, or (None, reason) when it is not a safe path."""
+def reviews_folder(binding, where=None):
+    """(folder, None) for the binding's `reviews`, or (None, reason) when it is not a safe path, by the rule
+    preflight check 3 uses (locator.reviews_problem). where: a path in the binding's repository, so the reason
+    says whether a full path is inside it (that repository is asked only then)."""
     v = binding.get("reviews", DEFAULT_REVIEWS)
-    if not isinstance(v, str) or not v.strip():
-        return None, f"reviews {v!r} is not a path"
-    if os.path.isabs(v) or ".." in Path(v).parts:
-        return None, f"reviews {v!r} is outside the repository"
+    root = repo_root(str(where)) if where is not None and isinstance(v, str) and os.path.isabs(v) else None
+    why = locator.reviews_problem(v, root)
+    if why:
+        return None, f"reviews {v!r} {why}"
     return v.rstrip("/") + "/", None
 
 
@@ -579,7 +587,7 @@ def dispatch_runs_text(binding, cwd):
     the dispatch, naming the field and the binding file, as place() does (R0.3 B7), where runs_text would put
     axis/runs/ in its place without a word."""
     mode, bad = runs_mode(binding) if binding else (None, None)
-    why = bad or (reviews_folder(binding)[1] if binding and mode == "tree" else None)
+    why = bad or (reviews_folder(binding, cwd)[1] if binding and mode == "tree" else None)
     if why:
         raise Unreadable(f"the binding {binding_file(cwd) or 'of the repository ' + str(cwd)} has a bad field "
                          f"`{'runs' if bad else 'reviews'}` ({why}): fix that field")
@@ -658,8 +666,7 @@ def pre_tool_use(d):
     by_role = st.startswith("role:")
     # an agent's name from before R0.1 in bakehouse's own namespaces (role:, bakehouse:) is refused with its new
     # name (R0.3 B1); a bare old name, or another plugin's, may be someone's own agent: it is left as it was
-    own_old = st.startswith("bakehouse:") and st[len("bakehouse:"):] in team_roles.RENAMED
-    renamed = team_roles.renamed_hint(st[5:]) if by_role else team_roles.renamed_hint(st) if own_old else None
+    renamed = team_roles.renamed_hint(st)
     if by_role or renamed:
         spec = st[5:] if by_role else st.split(":")[-1]
         binding = bound(cwd)
@@ -957,7 +964,7 @@ def prediction_stop(d):
         return None
     mode, why = runs_mode(binding)
     if mode == "tree":
-        reviews, why = reviews_folder(binding)
+        reviews, why = reviews_folder(binding, cwd)
     else:
         reviews = None if why else runs_text(binding, cwd)
     if not reviews:
@@ -1164,7 +1171,7 @@ def subagent_stop(d):
     mode = None
     if personal or (rbind and (rbind.get("owned") is True or "reviews" in rbind)):
         mode, why = runs_mode(rbind) if rbind else ("tree", None)
-        folder, why = reviews_folder(rbind) if mode == "tree" else (None if why else locator.RUNS, why)
+        folder, why = reviews_folder(rbind, rroot) if mode == "tree" else (None if why else locator.RUNS, why)
         if mode == "records" and folder and not (kind == "repo" and line[4]):
             rroot = records_of(rroot)  # the run folders are runs/ in the records worktree
             folder, why = (folder, None) if rroot else (None, "has no records worktree the locator finds")

@@ -69,7 +69,9 @@ the job's re-entry state.
 - **The default branch**: run `git fetch` first. Then `git rev-parse --abbrev-ref origin/HEAD` gives
   `origin/<default>`. Every "merged" and every "on the default branch" below means on
   `origin/<default>`, never a local branch. If `origin/HEAD` is not set, ask the owner which branch
-  pull requests go into.
+  pull requests go into. In a repository with no remote there is no `origin/<default>`: the default
+  branch is the local one the owner names (for example `main`), and `predict-gate.sh close --merged`
+  reads only `HEAD`, so it runs on that branch after the local merge.
 - **The tracker item**: the lines in `<binding.tracker.file>` that carry `{id}`, where `{id}` matches
   `binding.tracker.id`. An item may span a register row and a section under its own heading; read
   every place that carries `{id}` and a field label. Until its branch merges, the item may exist

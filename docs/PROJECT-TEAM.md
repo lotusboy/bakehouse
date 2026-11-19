@@ -804,7 +804,8 @@ row as `data`, so a verdict names the data it ran on. The snapshot is removed wi
 
 Preflight checks the block's shape (check 2) and that each test path and link target exists (check 3). A
 test that reads a file neither the commit nor a linked repository's HEAD holds fails the control, and
-the runner refuses every mutant judged by it.
+the runner refuses every mutant judged by it. The copy has no `.git` either, so a test that needs one fails
+the control too.
 
 **The stop check.** The reviewer role has `run_record`. Its stop check also reads the reviewer
 contract: each folder under `reviews`, at any depth, in which the reviewer wrote a `findings*.md`
@@ -929,10 +930,12 @@ runs read-only git commands; it writes nothing. One line per failure; exit 1 on 
    for any job. `change` needs code roots: `signal.codeRoots`, else `records.codeRoots`. With neither,
    preflight fails: "name the code folders in records.codeRoots (or signal.codeRoots)". A field of the
    wrong type fails, for every job: a `register` that is not a string, or a `signal` that is neither a
-   string (a command or a pointer) nor an object (rules for the shipped script).
+   string (a command or a pointer) nor an object (rules for the shipped script). An empty `register` or
+   `signal` counts as missing.
 3. Every path field exists in the checkout. Each `records.codeRoots` entry is one, for every job; an entry
    that starts with `:` or holds `*`, `?` or `[` is a git pathspec or a glob, and fails. `reviews` is one
-   folder: a list fails.
+   folder, read by the role hook's own rule: `null`, a list, a full path (one inside the repository too)
+   and a path with a `..` part fail, as they do at dispatch.
 4. Every pointer finds its key. A gate the repo wrote as prose is listed, not failed. A rules `signal`
    whose `codeRoots` is not a list of one or more folder names fails in one line.
 5. Every role the job dispatches resolves. A role table (the personal one or the shipped one) that cannot

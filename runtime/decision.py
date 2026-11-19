@@ -43,8 +43,9 @@ VERDICTS = ("held", "reversed", "refined")
 # A question rests on a source the asker opened, not on an agent's report about it (owner, 2026-10-14).
 REPORT_NAMES = re.compile(r"(^|[-_.])(report|findings|result|prediction|disposition|contract|pass\d|handback)"
                           r"([-_.]|$)", re.I)
-# A blind-readers run writes its readers' reports as reader-<x>.md and its comparison as agreement.md
-# (skills/blind-readers), side by side in its run folder. Only there are those names an agent's record.
+# A blind-readers run writes its readers' reports as reader-<x>.md and its comparison as agreement.md, and
+# ratify.sh compare writes agreement.json beside them (skills/blind-readers), side by side in its run folder.
+# Only there are those names an agent's record.
 READER_REPORT = re.compile(r"reader-.+\.md", re.I)
 # Only a text record can be an agent's report: a contract.pdf or a report.csv is source material.
 REPORT_SUFFIXES = (".md", ".txt", ".json", ".jsonl")
@@ -285,8 +286,9 @@ def meaningful(value, words=3):
 
 
 def blind_readers_record(path):
-    """True for a reader-<x>.md or an agreement.md in a folder that holds both: a blind-readers run folder."""
-    if not (READER_REPORT.fullmatch(path.name) or path.name.lower() == "agreement.md"):
+    """True for a reader-<x>.md, an agreement.md or an agreement.json in a folder that holds a reader-<x>.md and
+    an agreement.md: a blind-readers run folder."""
+    if not (READER_REPORT.fullmatch(path.name) or path.name.lower() in ("agreement.md", "agreement.json")):
         return False
     try:
         here = [p.name for p in path.parent.iterdir() if p.is_file()]

@@ -15,15 +15,16 @@ the sidecar folder); --binding replaces it (for a scratch copy). approvals.json 
 binding's folder.
 
 Checks, in order: 1 binding exists; 2 it parses, has the fields its `owned` value requires (and
-`register` and `signal` for `refactor` and `health`, the jobs that use them; when present, `register` is a
-string and `signal` a string or an object), names code roots for `change`
+`register` and `signal` for `refactor` and `health`, the jobs that use them, an empty one counting as missing;
+when present, `register` is a string and `signal` a string or an object), names code roots for `change`
 (runtime/locator.py code_roots: signal.codeRoots, else records.codeRoots), names a machine-checked
 prediction file (`gates.predictedMoves.prediction`, one predict-gate reads), only adds to the record
 contracts (`records`, runtime/records-check.py), has a well-formed `mutation`
 block when it has one (runtime/mutate.py), says where the run folders are with a `runs` the locator reads
 ("records" or "tree", and "records" never beside `reviews`; runtime/locator.py runs_mode; a binding with `reviews`
 and no `runs` is noted), and uses only the closed placeholder list; 3 every path
-field (each `records.codeRoots` entry among them, which is never a git pathspec or a glob), and every test
+field (each `records.codeRoots` entry among them, which is never a git pathspec or a glob; `reviews` by the
+role hook's rule, locator.reviews_problem), and every test
 path the `mutation` block names, exists in the checkout; 4 every pointer
 finds its key (prose gates are listed, not failed), and a generic-script signal is valid (a
 missing script is a note, except for `refactor`, which runs the signal); 5 every
@@ -124,7 +125,9 @@ def check_fields(b, job):
                  ("branches", "change")]
     else:
         need += [("approver",)]
-    fails += [f"check 2: required field '{label(p)}' is missing" for p in need if get(b, p) is None]
+    # an empty `register` or `signal` is absent, as a missing key is (0.7.3)
+    fails += [f"check 2: required field '{label(p)}' is missing" for p in need
+              if get(b, p) is None or (p in (("register",), ("signal",)) and get(b, p) == "")]
     # a present field of the wrong type: `register` is a path; `signal` is a command or a pointer (a string), or
     # rules for the shipped script (an object), the forms check_pointers and check_signal_rules read
     if b.get("register") is not None and not isinstance(b["register"], str):
@@ -174,8 +177,14 @@ def check_paths(b, repo):
     root = repo.resolve()
     for path in PATH_FIELDS:
         val = get(b, path)
-        if path == ("reviews",) and isinstance(val, list):
-            val = [val]  # one folder: a list is not a path
+        if path == ("reviews",) and "reviews" in b:
+            # the role hook's own rule (locator.reviews_problem, agent-roles.py reviews_folder), so both refuse
+            # the same values: null, a full path, a `..` part (0.7.3, B7)
+            why = locator.reviews_problem(val, root)
+            if why:
+                shown = json.dumps(val) if not isinstance(val, str) or not val.strip() else f"'{val}'"
+                fails.append(f"check 3: path field 'reviews' = {shown} {why}")
+                continue
         for v in val if isinstance(val, list) else [] if val is None else [val]:
             if not isinstance(v, str) or not v.strip():
                 fails.append(f"check 3: path field '{label(path)}' = {json.dumps(v)} is not a path")

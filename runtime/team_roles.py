@@ -295,10 +295,17 @@ def resolve(spec, lvls, have):
     return res
 
 
-def renamed_hint(name):
-    """For an agent's name from before R0.1 (bare, `bakehouse:`-prefixed, or the role part of a `role:` spec), the
-    sentence that gives its new name; None for any other name."""
-    old = name.split(":")[-1]
+def renamed_hint(st):
+    """For a subagent_type that names an agent from before R0.1 in bakehouse's own namespaces, `bakehouse:<old>`
+    or a `role:` spec whose role part is `<old>` (`role:<old>`, `role:<job>:<old>`), the sentence that gives its
+    new name; None for any other subagent_type. A bare `<old>` or another plugin's `<plugin>:<old>` may be someone's
+    own agent, so it gets None."""
+    if st.startswith("role:"):
+        old = st[len("role:"):].rpartition(":")[2]  # the role part, as resolve() reads a spec
+    elif st.startswith("bakehouse:"):
+        old = st[len("bakehouse:"):]
+    else:
+        return None
     new = RENAMED.get(old)
     if not new:
         return None

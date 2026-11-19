@@ -208,6 +208,29 @@ RUNS = "runs/"
 BRIEF = re.compile(r"brief\..+\.md")
 
 
+def reviews_problem(v, root=None) -> str | None:
+    """Why the binding's `reviews` value v is not a folder in the code tree, or None when it is one: it is not
+    text, or is blank, or is a full path, or has a `..` part. The one rule for the role hook (agent-roles.py
+    reviews_folder) and preflight check 3. root: the repository, so a full path is said to be inside it or
+    outside it; without root a full path is only named as one."""
+    if not isinstance(v, str) or not v.strip():
+        return "is not a path"
+    if os.path.isabs(v):
+        if root is None:
+            return "is a full path: name the folder relative to the repository root"
+        p, top = Path(v).resolve(), Path(root).resolve()
+        if p != top and top not in p.parents:
+            return "is outside the repository"
+        return "is a full path inside the repository: name the folder relative to the repository root" + (
+            f", as '{p.relative_to(top).as_posix()}/'" if p != top else "")
+    if ".." in Path(v).parts:
+        n = os.path.normpath(v)
+        if n == ".." or n.startswith("../"):
+            return "is outside the repository"
+        return f"has a '..' part: name the folder without one, as '{n}/'"
+    return None
+
+
 class BadRuns(ValueError):
     """The binding's `runs` field is not one the run-folder rule reads; the message names the fix."""
 
@@ -248,24 +271,26 @@ def runs_location(project, binding: dict, repo=None) -> tuple[Path, str, str]:
 
 
 class BadCodeRoots(ValueError):
-    """The binding's records.codeRoots is not a list of folders; the message names the fix."""
+    """The binding's signal.codeRoots or records.codeRoots is not a list of folders; the message names the field
+    and the fix."""
 
 
 def code_roots(binding: dict):
     """The folders whose commits are code: the binding's signal.codeRoots when `signal` is an object that names
     them, else its records.codeRoots, else None. The one answer for close, seal, seal-code, records-check and
-    preflight. signal.codeRoots is returned as the binding writes it, as before. BadCodeRoots: records.codeRoots
-    is used and is not a list of folder names (preflight check 2 and records-check name the full rule)."""
+    preflight. BadCodeRoots: the field used is not a list of folder names (preflight check 2 and records-check
+    name the full rule for records.codeRoots, check 4 for signal.codeRoots)."""
     sig = binding.get("signal")
     if isinstance(sig, dict) and sig.get("codeRoots"):
-        return sig["codeRoots"]
-    rec = binding.get("records")
-    roots = rec.get("codeRoots") if isinstance(rec, dict) else None
+        field, roots = "signal.codeRoots", sig["codeRoots"]
+    else:
+        rec = binding.get("records")
+        field, roots = "records.codeRoots", rec.get("codeRoots") if isinstance(rec, dict) else None
     if not roots:
         return None
     if not isinstance(roots, list) or not all(isinstance(r, str) and r.strip("/") for r in roots):
-        raise BadCodeRoots(f"the binding's records.codeRoots = {json.dumps(roots)} is not a list of repository "
-                           'folders, for example ["src/"]')
+        raise BadCodeRoots(f"the binding's {field} = {json.dumps(roots)} is not a list of repository folders, "
+                           'for example ["src/"]')
     return roots
 
 

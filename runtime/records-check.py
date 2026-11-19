@@ -951,7 +951,10 @@ def build(binding: dict, ledger: Path | None, repo: Path, a, contracts: dict, pr
     rx = id_search(tracker["id"])
     sig = binding.get("signal") if isinstance(binding.get("signal"), dict) else {}
     # signal.codeRoots, else records.codeRoots (a command or pointer signal, or none, names no code roots)
-    roots = a.code_roots or locator.code_roots(binding)
+    try:
+        roots = a.code_roots or locator.code_roots(binding)
+    except locator.BadCodeRoots as e:  # a signal.codeRoots of the wrong shape: one line, never a traceback
+        raise BadInput(str(e))
     if not roots:
         raise BadInput("no code roots: the binding's signal.codeRoots (a rules signal), records.codeRoots "
                        "(a command or pointer signal), or --code-roots; a binding with no signal names them in "
@@ -1138,7 +1141,7 @@ def build(binding: dict, ledger: Path | None, repo: Path, a, contracts: dict, pr
                   "binding's 'records'. Rewritten on every run; it holds no decision.",
         "computed": {
             "since": since.isoformat(), "ref": ref, "codeRoots": list(roots),
-            "reviews": reviews + "/", "ledger": str(ledger) if owned else None,
+            "reviews": reviews + "/", "ledger": shown_ledger(ledger, project) if owned else None,
             "owned": owned,
             "uncredited": len(uncredited), "workOrders": len(wos), "warnings": warnings,
             "openFlags": sum(1 for f in flags if f["state"] == "open"),
@@ -1154,6 +1157,17 @@ def build(binding: dict, ledger: Path | None, repo: Path, a, contracts: dict, pr
         "rules": dict(sorted(rules.items())),
         "mutations": {"records": read_files, "rows": read_rows, "gates": dict(sorted(per_gate.items()))},
     }
+
+
+def shown_ledger(ledger: Path, project) -> str:
+    """The ops ledger as the register names it: in the project's records worktree, by its path there (as
+    computed.reviews names the run folders), never a machine path; a ledger given elsewhere, as it was given."""
+    if project is not None:
+        try:
+            return Path(ledger).resolve().relative_to(Path(project.records).resolve()).as_posix()
+        except ValueError:
+            pass
+    return str(ledger)
 
 
 def render(reg: dict, as_of: str, head: str) -> str:
