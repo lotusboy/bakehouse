@@ -129,6 +129,49 @@ class Start(Base):
         self.assertFalse((self.records / "reservations").exists())
 
 
+class Gate(Base):
+    """The PM's gate: a floor decided by a letter-suffixed id only, and the records token kept from other remotes."""
+
+    def test_a_floor_decided_by_a_letter_suffixed_id_only(self):
+        self.two()
+        self.reserve_on(self.repo)
+        (self.repo / "T.md").write_text("| W-3 | three |\n")
+        self.g(self.repo, "commit", "-q", "-m", "tracker rows", "--", "T.md")
+        self.branch(self.repo, "f/suffix", "| W-3 | three |\n| W-20b | twenty b, with no plain twenty on any branch |\n")
+        self.reserve(self.repo, "--start")
+        self.assertEqual(json.loads((self.records / "reservations" / "FLOOR").read_text())["floor"], 20)
+        self.assertEqual(self.reserve(self.repo).stdout.strip(), "W-21")
+
+    def test_start_gives_the_records_token_only_to_the_records_remote(self):
+        self.two()
+        self.reserve_on(self.repo)
+        tf = Path(self.env["HOME"]) / "secrets.env"
+        tf.write_text(f"RECORDS_TOKEN='{trs.TOKEN}'\n")
+        p = self.bakehouse("setup", "--token-file", tf, "--token-key", "RECORDS_TOKEN", "--token-user", "records-bot")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        server = trs.FakeHttp()  # asks for a login, and keeps what each request sends
+        self.addCleanup(server.close)
+        self.g(self.repo, "remote", "add", "other", server.url)
+        p = self.reserve(self.repo, "--start", rc=1)
+        self.assertIn("fetch to other", p.stderr)
+        self.assertTrue(server.seen)  # it was asked
+        self.assertFalse([h for h in server.seen if h], server.seen)  # and was never sent a login
+        # the records upstream's own URL still gets the token: fetch_code's choice, seen in-process
+        sys.path.insert(0, str(trs.RUNTIME))
+        import reserve
+        given = []
+
+        def network(records, token=True):
+            def net(where, *args):
+                given.append((args[-1], token))
+                return subprocess.CompletedProcess(args, 0, "", "")
+            return net
+        self.g(self.repo, "remote", "add", "mirror", str(self.origin))
+        with trs.mock.patch.object(reserve, "network", network):
+            reserve.fetch_code(self.records, self.repo, ("origin", "bakehouse-records"))
+        self.assertEqual(sorted(given), [("mirror", True), ("origin", True), ("other", False)])
+
+
 class Race(Base):
     """Test 2: two machines reserve at once through one bare remote. B's pre-push hook runs A's reserve first, so A's
     push lands and B's is refused; B drops its losing commit and takes the next id."""
