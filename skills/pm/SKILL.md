@@ -242,10 +242,12 @@ and the PM does not start one unasked — offer it once when the need first show
 them, and each tool's header comment is its full reference.
 
 - **The records folder is always committed: after each close, and before the session ends.** The tools
-  write the records but commit only the ops ledger's seal anchors, so the PM commits the records worktree
+  write the records but commit only the ops ledger's seal anchors and close lines, so the PM commits the records worktree
   (`bakehouse status` names it), as the session committed its notes folder before, leaving the ops ledger to
   the seal anchors: `git -C <records> add -A -- . ':!ops/events.jsonl' ':!ops/events' && git -C <records> commit -m "<work
-  order or 'records'>: records"`. A record left uncommitted is lost to a `git clean` or a move.
+  order or 'records'>: records"`. Then run `bakehouse sync`: in records format 2 it pushes the records to the
+  other machines and pulls theirs; a line starting `bakehouse sync:` says why it could not, and the commit stays
+  local. A record left uncommitted is lost to a `git clean` or a move.
 - **A lane's commands carry its lane and its work order.** Where work runs in lanes, set
   `BAKEHOUSE_LANE=<lane>` and `BAKEHOUSE_WO=<work order id>` in each lane's commands: `heavy-run.sh` takes
   that lane's lock and `lane-event.sh` labels the lane's events with them. The older lane variable names

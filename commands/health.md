@@ -141,6 +141,8 @@ command that is the same for every repo, and asks you to read its output. A copi
      product-repo commit the register describes. The register holds no date or head, so it changes
      only when the findings do. Nothing changed: say
      so; make no empty commit.
+   - In records format 2 (a `FORMAT` file in the records folder) skip that commit: `records.json` is
+     ignored there, because each machine rewrites its own (bakehouse `docs/PROJECT-TEAM.md`, "Records sync").
 
 ## Guardrails
 
