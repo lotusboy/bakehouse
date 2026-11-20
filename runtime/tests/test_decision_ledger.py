@@ -195,14 +195,14 @@ class Ledger(Scratch):
                              "--recommendation", "a", "--confidence", "0.5", "--evidence-kind", "measured",
                              "--evidence", "e", *self.grounded, *extra, ok=False)
         up = ["--upstream", "the upstream writer drops the column order"]
-        self.assertNotEqual(go("Go on the A1 fix round?", "--task", "A1", "--fix-round", "1").returncode, 0)
+        self.assertNotEqual(go("Go on the A1 fix round?", "--task", "A1", "--fix-round", "1", "--layer", "in", "--owners", "1", "--area", "reader").returncode, 0)
         self.assertNotEqual(go("Go on the A1 fix round?", *up).returncode, 0)
-        self.assertNotEqual(go("Go on the A1 fix round?", "--fix-round", "1", *up).returncode, 0)
-        self.assertEqual(go("Go on the A1 fix round?", "--task", "A1", "--fix-round", "1", *up).returncode, 0)
-        p = go("Go on the second A1 fix round?", "--task", "A1", "--fix-round", "2", *up)
+        self.assertNotEqual(go("Go on the A1 fix round?", "--fix-round", "1", "--layer", "in", "--owners", "1", "--area", "reader", *up).returncode, 0)
+        self.assertEqual(go("Go on the A1 fix round?", "--task", "A1", "--fix-round", "1", "--layer", "in", "--owners", "1", "--area", "reader", *up).returncode, 0)
+        p = go("Go on the second A1 fix round?", "--task", "A1", "--fix-round", "2", "--layer", "in", "--owners", "1", "--area", "reader", *up)
         self.assertNotEqual(p.returncode, 0)
         self.assertIn("--rechecked", p.stderr)
-        ok = go("Go on the second A1 fix round?", "--task", "A1", "--fix-round", "2", *up,
+        ok = go("Go on the second A1 fix round?", "--task", "A1", "--fix-round", "2", "--layer", "in", "--owners", "1", "--area", "reader", *up,
                 "--rechecked", "opened rows 1-2 of the source table")
         self.assertEqual(ok.returncode, 0, ok.stderr)
         self.assertEqual(self.rows()[-1]["rechecked"], "opened rows 1-2 of the source table")
@@ -215,10 +215,10 @@ class Ledger(Scratch):
             p = self.run_(*base, "--question", q)
             self.assertIn("the question mentions a fix", p.stderr, q)
             self.assertEqual(self.rows()[-1]["question"], q)
-        p = self.run_(*base, "--question", "Fix the count?", "--task", "A1", "--fix-round", "1", ok=False)
+        p = self.run_(*base, "--question", "Fix the count?", "--task", "A1", "--fix-round", "1", "--layer", "in", "--owners", "1", "--area", "reader", ok=False)
         self.assertNotEqual(p.returncode, 0)
         self.assertIn("--upstream", p.stderr)
-        self.run_(*base, "--question", "Fix the count?", "--task", "A1", "--fix-round", "1",
+        self.run_(*base, "--question", "Fix the count?", "--task", "A1", "--fix-round", "1", "--layer", "in", "--owners", "1", "--area", "reader",
                   "--upstream", "the upstream writer drops the column order")
         self.assertEqual(self.rows()[-1]["upstream"], "the upstream writer drops the column order")
 
@@ -252,7 +252,7 @@ class Ledger(Scratch):
         # no note where no fix word is used, or where the asker declared the fix round or the recheck
         p = self.run_(*base, "--question", "Run the audit now?")
         self.assertNotIn("mentions a fix", p.stderr)
-        p = self.run_(*base, "--question", "Fix the count?", "--task", "A2", "--fix-round", "1",
+        p = self.run_(*base, "--question", "Fix the count?", "--task", "A2", "--fix-round", "1", "--layer", "in", "--owners", "1", "--area", "reader",
                       "--upstream", "the upstream writer drops the column order")
         self.assertNotIn("mentions a fix", p.stderr)
         p = self.run_(*base, "--question", "Re-check the A2 fix?", "--task", "A2", "--recheck")
@@ -262,7 +262,7 @@ class Ledger(Scratch):
     def test_a_fix_round_without_the_word_still_needs_upstream(self):
         base = ["ask", "--category", "process", "--option", "a", "--option", "b", "--recommendation", "a",
                 "--confidence", "0.5", "--evidence-kind", "measured", "--evidence", "e", *self.grounded,
-                "--task", "A1", "--fix-round", "1"]
+                "--task", "A1", "--fix-round", "1", "--layer", "in", "--owners", "1", "--area", "reader"]
         for up in ([], ["--upstream", "."]):
             p = self.run_(*base, "--question", "Change the reader to keep the column order?", *up, ok=False)
             self.assertNotEqual(p.returncode, 0, up)
@@ -277,7 +277,7 @@ class Ledger(Scratch):
     def test_upstream_needs_three_words(self):
         base = ["ask", "--category", "process", "--option", "a", "--option", "b", "--recommendation", "a",
                 "--confidence", "0.5", "--evidence-kind", "measured", "--evidence", "e", *self.grounded,
-                "--task", "A1", "--fix-round", "1", "--question", "Change the reader to keep the column order?"]
+                "--task", "A1", "--fix-round", "1", "--layer", "in", "--owners", "1", "--area", "reader", "--question", "Change the reader to keep the column order?"]
         p = self.run_(*base, "--upstream", "writer drops", ok=False)
         self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
         self.assertIn("the question proposes a fix: give --upstream", p.stderr)
@@ -291,7 +291,7 @@ class Ledger(Scratch):
                              "--option", "a", "--option", "b", "--recommendation", "a", "--confidence", "0.5",
                              "--evidence-kind", "measured", "--evidence", "e", *self.grounded,
                              "--upstream", "the extract step hands over merged cells", "--task", "A9",
-                             "--fix-round", str(n), "--rechecked", "re-ran the reader on every sheet",
+                             "--fix-round", str(n), "--layer", "in", "--owners", "1", "--area", "reader", "--rechecked", "re-ran the reader on every sheet",
                              *extra, ok=False)
         self.assertEqual(go(1).returncode, 0)
         self.assertEqual(go(2).returncode, 0)
@@ -361,17 +361,17 @@ class Ledger(Scratch):
                              "--evidence", "e", *self.grounded, *extra, ok=False)
         for n in (1, 2):
             self.assertEqual(go(f"Go on the A7 fix round {n}?", "--upstream", "the extract step hands over merged cells",
-                                "--task", "A7", "--fix-round", str(n), "--rechecked", "re-ran the reader on every sheet").returncode, 0)
+                                "--task", "A7", "--fix-round", str(n), "--layer", "in", "--owners", "1", "--area", "reader", "--rechecked", "re-ran the reader on every sheet").returncode, 0)
         ok = go("Re-check fix round 2 of A7?", "--task", "A7", "--recheck")
         self.assertEqual(ok.returncode, 0, ok.stderr)
         self.assertTrue(self.rows()[-1]["recheck"])
         self.assertIsNone(self.rows()[-1]["fixRound"])
         self.assertNotEqual(go("Re-check A7?", "--recheck").returncode, 0)
-        self.assertNotEqual(go("Re-check A7?", "--task", "A7", "--recheck", "--fix-round", "3",
+        self.assertNotEqual(go("Re-check A7?", "--task", "A7", "--recheck", "--fix-round", "3", "--layer", "in", "--owners", "1", "--area", "reader",
                                "--rechecked", "re-ran the reader on every sheet", "--stepped-back", "a whole-problem census came first").returncode, 0)
         self.assertNotEqual(go("Re-check A99?", "--task", "A99", "--recheck").returncode, 0)  # no round to review
         p = go("Go on the A7 fix round 3?", "--upstream", "the extract step hands over merged cells", "--task", "A7",
-               "--fix-round", "3", "--rechecked", "re-ran the reader on every sheet")
+               "--fix-round", "3", "--layer", "in", "--owners", "1", "--area", "reader", "--rechecked", "re-ran the reader on every sheet")
         self.assertNotEqual(p.returncode, 0)
         self.assertIn("--stepped-back", p.stderr)
 

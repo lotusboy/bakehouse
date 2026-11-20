@@ -1202,10 +1202,19 @@ SITE_GATES = [
     ('decision.py', 'answer_assumed', 'the estimate {} tokens is above the top ', 'decision:assumed-cost'),
     ('decision.py', 'answer_assumed', 'unattended mode is not on, so nothing is', 'decision:assumed-off'),
     ('decision.py', 'answer_assumed', "{} already has the owner's answer; an as", 'decision:assumed-answered'),
+    ('decision.py', 'answer_assumed', '{} fired the altitude trigger and its re', 'decision:altitude'),
     ('decision.py', 'answer_assumed', '{} has no recommendation or no confidenc', 'decision:assumed-recommendation'),
     ('decision.py', 'answer_assumed', '{} names --approves: an approval of a ga', 'decision:assumed-approves'),
     ('decision.py', 'answer_assumed', '{} was asked blind: a blind ask measures', 'decision:assumed-blind'),
     ('decision.py', 'categories', '"categories" in {} is not a non-empty li', 'decision:categories-config'),
+    ('decision.py', 'check_change', '--architect-option {} is not one of the ', 'decision:change'),
+    ('decision.py', 'check_change', '--change needs --task (the work order id', 'decision:change'),
+    ('decision.py', 'check_change', '--layer, --owners, --area and --architec', 'decision:change'),
+    ('decision.py', 'check_change', '--owners counts from 1: the places that ', 'decision:change'),
+    ('decision.py', 'check_change', 'a cluster of altitude triggers on {}: gi', 'decision:altitude-cluster'),
+    ('decision.py', 'check_change', 'the altitude trigger fired on {} ({}): g', 'decision:altitude'),
+    ('decision.py', 'check_change', 'the altitude trigger fired on {}: an --a', 'decision:altitude'),
+    ('decision.py', 'check_change', 'the question proposes a change on {}: gi', 'decision:change'),
     (
         "decision.py",
         "check_grounding",
@@ -1556,7 +1565,7 @@ class TestGateIds(unittest.TestCase):
         table = set(re.findall(rf"^\| `({self.ID})` \|", section, re.MULTILINE))
         self.assertEqual(sorted(code - table), [], "in code, not in the docs table")
         self.assertEqual(sorted(table - code), [], "in the docs table, not in code")
-        self.assertEqual(len(code), 72)  # 51, plus V12b's new id, V12c's predict-gate:anchor and stop:seal, less decision:questions-ref (R0), plus dispatch:role-table (R0.1 S6), plus R1's 12 (unattended mode, assumed answers, spend:headroom), plus R1 fix1's 4 (unattended-on, unattended-config, assumed-agreed, assumed-blind), plus 0.7.2's assumed-category and categories-config
+        self.assertEqual(len(code), 75)  # 51, plus V12b's new id, V12c's predict-gate:anchor and stop:seal, less decision:questions-ref (R0), plus dispatch:role-table (R0.1 S6), plus R1's 12 (unattended mode, assumed answers, spend:headroom), plus R1 fix1's 4 (unattended-on, unattended-config, assumed-agreed, assumed-blind), plus 0.7.2's assumed-category and categories-config
 
     def test_no_refusal_in_decision_or_spend_is_without_a_gate(self):
         """Every fail() outside resolve_project passes a gate id, so a refusal added without one fails here."""
@@ -1580,7 +1589,7 @@ class TestGateIds(unittest.TestCase):
                         bare.append(f"{name}:{call.lineno}")
             with self.subTest(file=name):
                 self.assertEqual(bare, [])
-                self.assertEqual(found, {"decision.py": 51, "spend.py": 20}[name])
+                self.assertEqual(found, {"decision.py": 60, "spend.py": 20}[name])
 
     def test_each_refusal_site_carries_its_own_gate_id(self):
         """Each site, found by its function and message, names the gate it is documented with. A site that
