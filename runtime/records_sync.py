@@ -338,18 +338,24 @@ def sync(records) -> Result:
                 fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except OSError:
                 return Result("skipped", "bakehouse sync: another sync of these records is running; skipped")
-        with writer_lock(records):
-            _, err = untrack_register(records)
-        if err:
-            return failed(records, f"failed: could not stop committing {REGISTER}: {detail(err)}")
-        up = upstream(records)
-        if up is None:
-            return Result("none", None)
-        text, even = exchange(records, *up)
-        if text:
-            return failed(records, text, even)
-        (git_dir(records) / FAILURE).unlink(missing_ok=True)
-        return Result("level", f"bakehouse sync: the records are level with {up[0]}/{up[1]}")
+        return sync_held(records)
+
+
+def sync_held(records) -> Result:
+    """sync's steps 2 to 4, for a caller that holds the sync lock already (sync, and bakehouse reserve, which holds it
+    from its sync to its last push)."""
+    with writer_lock(records):
+        _, err = untrack_register(records)
+    if err:
+        return failed(records, f"failed: could not stop committing {REGISTER}: {detail(err)}")
+    up = upstream(records)
+    if up is None:
+        return Result("none", None)
+    text, even = exchange(records, *up)
+    if text:
+        return failed(records, text, even)
+    (git_dir(records) / FAILURE).unlink(missing_ok=True)
+    return Result("level", f"bakehouse sync: the records are level with {up[0]}/{up[1]}")
 
 
 def quiet(records) -> str | None:

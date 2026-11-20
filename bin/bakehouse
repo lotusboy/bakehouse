@@ -8,6 +8,8 @@
                                   branch (runtime/bakehouse_record.py)
   bakehouse sync [--repo <folder>]   fetch, merge and push the records branch, in records format 2
                                   (runtime/records_sync.py)
+  bakehouse reserve [--start] [--repo <folder>]   print the next free work-order id and record it on the records
+                                  branch; --start, once per project, records the floor (runtime/reserve.py)
   bakehouse run <script> [args]   run runtime/<script> with the args: the stable way to name a plugin script,
                                   since the plugin folder changes on every update
 """
@@ -18,7 +20,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "runtime"))
-COMMANDS = {"record": "bakehouse_record", "sync": "records_sync", "setup": "bakehouse_setup",
+COMMANDS = {"record": "bakehouse_record", "sync": "records_sync", "reserve": "reserve", "setup": "bakehouse_setup",
             "status": "bakehouse_status"}
 
 

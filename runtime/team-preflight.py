@@ -30,7 +30,10 @@ path the `mutation` block names, exists in the checkout, and the main clone has 
 names; 4 every pointer finds its key (prose gates are listed, not failed), and a generic-script signal is valid (a
 missing script is a note, except for `refactor`, which runs the signal); 5 every
 role the job dispatches resolves; 6 for a job when owned is false, an unconsumed approval of this
-exact scope exists. `startup` runs checks 1-4 and exits 0 when the repository has no binding.
+exact scope exists; 7 for `change` when reservations are on (`tracker.reserve`, records format 2; runtime/reserve.py),
+the work order has a reservation on the records branch or is at or under the floor, a reservation by another writer
+being a note (check 2 checks `tracker.reserve`'s shape for every job). `startup` runs checks 1-4 and exits 0 when
+the repository has no binding.
 
 Prints one line per failure. Exits 1 on any failure, 0 otherwise.
 """
@@ -45,6 +48,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import locator  # noqa: E402
+import reserve  # noqa: E402
 import team_roles  # noqa: E402
 
 _gate = importlib.util.spec_from_file_location("predict_gate", Path(__file__).resolve().with_name("predict-gate.py"))
@@ -148,6 +152,8 @@ def check_fields(b, job):
                      f"predicted-moves gate reads; name {predict_gate.PREDICTION_NAMES[0]} (a prose "
                      "prediction may sit beside it)")
     fails += [f"check 2: {e}" for e in records_check.binding_errors(b)]
+    if why := reserve.prefix_problem(b):
+        fails.append(f"check 2: {why}")
     try:
         locator.runs_mode(b)
     except locator.BadRuns as e:
@@ -476,6 +482,10 @@ def main(argv):
         notes += n5
         if b.get("owned") is False:
             fails += check_approval(b, job, arg, bpath.parent / "approvals.json")
+    if job == "change":
+        f7, n7 = reserve.preflight(repo, b, arg)
+        fails += f7
+        notes += n7
 
     for n in notes:
         print(f"note {n}")
