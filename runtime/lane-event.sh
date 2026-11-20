@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Append ONE lane event to <records>/ops/lanes.jsonl: the record of parallel work inside one
+# Append ONE lane event to <records>/ops/lanes.jsonl (in records format 2, this writer's
+# <records>/ops/lanes/<writer>.jsonl): the record of parallel work inside one
 # project (Lanes v0). One JSON object per line, a stable shape, so a later stats recorder or monitor
 # can read the ledger without knowing who wrote it. Unknown fields are left out, never guessed.
 #
@@ -16,7 +17,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 [ $# -ge 1 ] || { echo "usage: lane-event.sh <kind> [key=value ...]" >&2; exit 2; }
 REPO="$(git -C "${OPS_REPO:-$PWD}" rev-parse --show-toplevel 2>/dev/null)" \
   || { echo "lane-event: not inside a git repository" >&2; exit 1; }
-OUT="$(env -u CLAUDE_PROJECT_DIR python3 "$HERE/locator.py" lanes_ledger "$REPO")" || {
+OUT="$(env -u CLAUDE_PROJECT_DIR python3 "${HERE}/locator.py" --write lanes_ledger "${REPO}")" || {
   [ $? -eq 3 ] && echo "lane-event: $REPO has no team (no .team/binding.json)" >&2
   exit 1; }
 mkdir -p "$(dirname "$OUT")"

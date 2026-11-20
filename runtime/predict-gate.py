@@ -665,14 +665,47 @@ def record_folders(repo: Path, b: dict, wo: str, reviews=None) -> tuple[str, lis
     return f"{reviews.rstrip('/')}/{pattern}", found
 
 
-def closed_hashes(ledger: Path | None, wo: str) -> dict:
-    """sha256 -> work order, for every prediction and measured file an earlier close of ANOTHER work
-    order recorded."""
-    out = {}
+def ledger_paths(ledger) -> list:
+    """The ops ledger's files: ledger is one file, a list of them in read order (locator.ledger_files), or None."""
+    return [] if ledger is None else list(ledger) if isinstance(ledger, (list, tuple)) else [ledger]
+
+
+def ledger_lines(ledger) -> list:
+    """Every text line of the ledger's files, in read order; a file that cannot be read gives none."""
+    lines = []
+    for f in ledger_paths(ledger):
+        try:
+            lines += f.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            pass
+    return lines
+
+
+def write_ledger(project) -> Path:
+    """The ops ledger file this writer appends to (locator.writer_file): BadInput when none can be written."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import locator
     try:
-        lines = ledger.read_text(encoding="utf-8").splitlines() if ledger else []
-    except OSError:
-        lines = []
+        return project.write_file("ops_ledger")
+    except locator.SetupNeeded as e:
+        raise BadInput(str(e))
+
+
+def read_ledger(project) -> list:
+    """The ops ledger's files in read order (locator.ledger_files); BadInput when its format cannot be read."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import locator
+    try:
+        return project.read_files("ops_ledger")
+    except locator.SetupNeeded as e:
+        raise BadInput(str(e))
+
+
+def closed_hashes(ledger, wo: str) -> dict:
+    """sha256 -> work order, for every prediction and measured file an earlier close of ANOTHER work
+    order recorded. ledger: one file, or the ledger's files in read order."""
+    out = {}
+    lines = ledger_lines(ledger)
     for line in lines:
         try:
             ev = json.loads(line)
@@ -807,14 +840,13 @@ def code_order(repo: Path, roots: list, form, wo: str, folders: list, rec: Path 
     return out
 
 
-def merged_check(repo: Path, ledger: Path | None, wo: str) -> tuple[list, list, list]:
+def merged_check(repo: Path, ledger, wo: str) -> tuple[list, list, list]:
     """Step 10: (refusals, matched files, notes) for the record at HEAD against the latest
     work-order-closed event of the work order. Its sha256 values only. repo: the checkout that holds the
-    record (the records worktree in records mode), as the close hashed its paths there."""
-    try:
-        lines = ledger.read_text(encoding="utf-8").splitlines() if ledger else []
-    except OSError:
-        lines = []
+    record (the records worktree in records mode), as the close hashed its paths there. ledger: one file, or the
+    ledger's files in read order."""
+    lines = ledger_lines(ledger)
+    ledger = (ledger_paths(ledger) or [None])[0]  # named by its first file, the ledger itself
     evs = []
     for line in lines:
         try:
@@ -852,31 +884,35 @@ def ledger_refusals(ledger: Path | None, wo: str, project=None) -> list:
     ledger file that is gone reads as empty, so its committed lines refuse. The refusals name the ledger by its
     path in the project's records worktree, as records-check does, so a refusal's id does not change with the
     spelling of the ledger's path (a symbolic link); a ledger outside it, by its file name under a prefix that
-    says so (locator.ledger_name), never a machine path."""
-    if ledger is None:
-        return []
+    says so (locator.ledger_name), never a machine path. ledger: one file, or the ledger's files in read order, each
+    judged on its own (each writer file is its own chain)."""
     import locator
     ol = ledger_module()
     out = []
-    name = locator.ledger_name(ledger, project)
-    whole, text = ol.verify(ledger) if ledger.is_file() else (True, "")
-    if not whole:
-        out.append(f"the ops ledger {name} is BROKEN, and close did not write it: "
-                   + " ".join(x.removeprefix("Chain: ") for x in text.split("\n"))
-                   + f" The owner decides its repair, through a decision (decision.sh ask --task {wo} "
-                   "--approves <option>); close judges nothing on it until verify-chain is whole")
-    blob = ol.committed(ledger)
-    if blob is not None and not (ledger.read_bytes() if ledger.is_file() else b"").startswith(blob):
-        out.append(f"the ledger {name} differs from its last commit in lines that commit holds: a committed "
-                   "line was edited, moved or removed")
+    for ledger in ledger_paths(ledger):
+        name = locator.ledger_name(ledger, project)
+        whole, text = ol.verify(ledger) if ledger.is_file() else (True, "")
+        if not whole:
+            out.append(f"the ops ledger {name} is BROKEN, and close did not write it: "
+                       + " ".join(x.removeprefix("Chain: ") for x in text.split("\n"))
+                       + f" The owner decides its repair, through a decision (decision.sh ask --task {wo} "
+                       "--approves <option>); close judges nothing on it until verify-chain is whole")
+        blob = ol.committed(ledger)
+        if blob is not None and not (ledger.read_bytes() if ledger.is_file() else b"").startswith(blob):
+            out.append(f"the ledger {name} differs from its last commit in lines that commit holds: a committed "
+                       "line was edited, moved or removed")
     return out
 
 
-def sealed_scan(ledger: Path) -> dict:
+def sealed_scan(ledger) -> dict:
     """Everything sealed_state reads from one ledger, parsed once: HEAD's ledger events, every Sealed-line
     trailer whose line HEAD's ledger no longer holds (with that line, read from its commit), and the
     ledger file's lines no commit holds. A caller that judges many work orders (records-check) makes it once
-    per run, so each work order only filters it."""
+    per run, so each work order only filters it. Given the ledger's files in read order, each file is scanned on
+    its own (its own anchors) and the scans are joined in that order."""
+    if isinstance(ledger, (list, tuple)):
+        scans = [sealed_scan(f) for f in ledger]
+        return {k: [x for sc in scans for x in sc[k]] for k in ("head", "removed", "loose")}
     ol = ledger_module()
     blob = ol.committed(ledger)
     head_lines = ol.lines_of(blob or b"")
@@ -896,14 +932,15 @@ def sealed_scan(ledger: Path) -> dict:
             "loose": [ol.parse(x) for x in ol.lines_of(raw) if x not in held]}
 
 
-def sealed_state(ledger: Path | None, wo: str, scan: dict | None = None) -> tuple[bool, list, list]:
+def sealed_state(ledger, wo: str, scan: dict | None = None) -> tuple[bool, list, list]:
     """(sealed, the work order's sealed events in the ledger at HEAD, refusals). One answer for close and
     records-check. Sealed is a fact in git, by any writer: the ledger at HEAD
     holds a sealed, revised or retired line of the work order, or a Sealed-line trailer in the ledger's
     history names one (read from HEAD's ledger, or, when HEAD no longer holds it, from that commit's own;
     then it refuses as removed). An event of the work order in the ledger file that no commit holds yet
-    also counts, and refuses until a new seal anchors; deleting lines never unseals."""
-    if ledger is None:
+    also counts, and refuses until a new seal anchors; deleting lines never unseals. ledger: one file, or the
+    ledger's files in read order (sealed_scan)."""
+    if not ledger_paths(ledger):
         return False, [], []
     ol = ledger_module()
 
@@ -1301,10 +1338,12 @@ def run_close(wo: str, repo_arg: str | None, binding_arg: str | None, merged: bo
         raise BadInput(f"{wo!r} does not match the binding's tracker id form {form!r}")
     if git(repo, "rev-parse", "--verify", "-q", "HEAD", check=False).returncode != 0:
         raise BadInput(f"{repo} has no commit: close reads the record from git")
-    ledger = project.ops_ledger if project else None
-    earlier = closed_hashes(ledger, wo)
+    # read: the ledger's files in read order (locator.ledger_files); ledger: the file this close writes to
+    ledgers = read_ledger(project) if project else None
+    ledger = write_ledger(project) if project else None
+    earlier = closed_hashes(ledgers, wo)
     decided, decision_ledger = decisions(project)
-    sealed, seal_events, seal_refused = (False, [], []) if merged else sealed_state(ledger, wo)
+    sealed, seal_events, seal_refused = (False, [], []) if merged else sealed_state(ledgers, wo)
     # the record is read in rec (the records worktree in records mode, else the repo); the code always in repo
     rec, reviews, mode = runs_where(project, b, repo)
     if mode == "records" and git(rec, "rev-parse", "--verify", "-q", "HEAD", check=False).returncode != 0:
@@ -1314,7 +1353,7 @@ def run_close(wo: str, repo_arg: str | None, binding_arg: str | None, merged: bo
         pattern = f"{rec}/{pattern}"
     refused, passed, notes = [], [], []
     if not merged:  # every close, sealed or not: the ledger reads whole and matches its commit
-        refused += ledger_refusals(ledger, wo, project)
+        refused += ledger_refusals(ledgers, wo, project)
 
     def rel(p: Path) -> str:
         return p.relative_to(rec).as_posix()
@@ -1337,7 +1376,7 @@ def run_close(wo: str, repo_arg: str | None, binding_arg: str | None, merged: bo
         return True
 
     if merged:
-        refused, passed, notes = merged_check(rec, ledger, wo)
+        refused, passed, notes = merged_check(rec, ledgers, wo)
     elif not folders:
         refused.append(f"no record folder matches {pattern} (with {{date}} as YYYY-MM-DD)")
     for folder in [] if merged else folders:
@@ -1780,6 +1819,21 @@ def main_follows_note(project, b: dict, seal_events: list, roots) -> str | None:
             f"measured together at the next work order's baseline, once {branch} is merged into this branch")
 
 
+def in_read_order(project, ledger: Path, make):
+    """make for ops_ledger.append to the writer's file ledger, given every ops ledger event in read order: each
+    other file's events as they are now, and the writer's own file's as append reads them under its lock. In
+    format 1 the one file is the writer's, so make gets exactly what append read, as before."""
+    files = read_ledger(project)
+    at = next((i for i, f in enumerate(files) if f.resolve() == ledger.resolve()), len(files))
+    ol = ledger_module()
+
+    def events(group):
+        return [ol.parse(x) for f in group for x in ol.lines_of(f.read_bytes() if f.is_file() else b"")]
+
+    before, after = events(files[:at]), events(files[at + 1:])
+    return lambda own: make(before + own + after)
+
+
 def run_seal(cmd: str, wo: str, rnd: str, file: str, repo_arg: str | None, report: str | None = None,
              decision_id: str | None = None) -> int:
     """seal: one sealed event for a prediction, baseline or measured file. revise: a prediction changed
@@ -1787,7 +1841,7 @@ def run_seal(cmd: str, wo: str, rnd: str, file: str, repo_arg: str | None, repor
     the ledger lock; the checks that read the ledger run under the lock too."""
     path = Path(file).absolute()
     repo, rel, project, binding, code = seal_target(path, repo_arg, wo)
-    ledger = project.ops_ledger
+    ledger = write_ledger(project)
     data = path.read_bytes()
     digest = sha256(data)
     if cmd == "retire":
@@ -1862,7 +1916,7 @@ def run_seal(cmd: str, wo: str, rnd: str, file: str, repo_arg: str | None, repor
         unanchored.append(ledger_module().anchor(
             ledger, line, f"ops ledger: {ev['kind']} {wo} round {rnd} {ev['fileKind']} (predict-gate.sh {cmd})"))
 
-    ev = ledger_module().append(ledger, make, start=True, then=anchor)
+    ev = ledger_module().append(ledger, in_read_order(project, ledger, make), start=True, then=anchor)
     print(f"{ev['kind'].capitalize()}: {wo} round {rnd}, {ev['fileKind']} {rel}, sha256:{digest[:12]}, "
           f"in {ledger}.")
     if unanchored[0]:
@@ -1890,7 +1944,7 @@ def run_seal_code(wo: str, rnd: str, repo_arg: str | None, commit_args: list) ->
     if top.returncode != 0:
         raise BadInput(f"{os.getcwd()} is not inside a git repository")
     repo, _, project, binding, _ = seal_target(Path(top.stdout.strip()), repo_arg, wo, folder=True)
-    ledger = project.ops_ledger
+    ledger = write_ledger(project)
     roots = code_roots(binding)
     if not roots:
         raise BadInput(f"{project.binding} names no signal.codeRoots or records.codeRoots, so no code commit can be "
@@ -1922,7 +1976,7 @@ def run_seal_code(wo: str, rnd: str, repo_arg: str | None, commit_args: list) ->
         unanchored.append(ledger_module().anchor(
             ledger, line, f"ops ledger: sealed {wo} round {rnd} code commit {commit[:8]} (predict-gate.sh seal-code)"))
 
-    ledger_module().append(ledger, make, start=True, then=anchor)
+    ledger_module().append(ledger, in_read_order(project, ledger, make), start=True, then=anchor)
     print(f"Sealed: {wo} round {rnd}, code commit {commit[:8]}, in {ledger}.")
     if unanchored[0]:
         print(f"ANCHOR REFUSED: the code seal is written to the ledger but is not in a commit ({unanchored[0]}). "
@@ -1942,7 +1996,17 @@ def run_verify_chain(repo_arg: str | None, ledger_arg: str | None) -> int:
         project = project_of(repo_arg or ".")
         if project is None:
             raise BadInput(f"{repo_arg or os.getcwd()} has no team (no .team/binding.json): give --repo or --ledger")
-        ledger = project.ops_ledger
+        files = read_ledger(project)
+        import locator
+        if locator.records_format(project.records) == locator.FORMAT:  # each writer file is its own chain
+            have = [f for f in files if f.is_file()]
+            if not have:
+                raise BadInput(f"no ledger at {files[0]}")
+            results = [(locator.ledger_name(f, project), *ledger_module().verify(f)) for f in have]
+            for name, _, text in results:
+                print("\n".join(f"{name}: {x}" for x in text.split("\n")))
+            return 0 if all(ok for _, ok, _ in results) else 1
+        ledger = files[0]
     if not ledger.is_file():
         raise BadInput(f"no ledger at {ledger}")
     ok, text = ledger_module().verify(ledger)

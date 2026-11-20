@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # How far a repository's ops ledger has drifted behind the work, in commits. Reads the ledger in the
-# project's team records (<records>/ops/events.jsonl; see ops-event.sh), never a file in the
+# project's team records (<records>/ops/events.jsonl, and in records format 2 each writer's file under
+# <records>/ops/events/; see ops-event.sh), never a file in the
 # repository.
 #
 # A ledger once stopped being written and nobody noticed for three days; by then 108 of the period's
@@ -18,14 +19,17 @@ THRESHOLD="${1:-5}"
 REPO="$(git -C "${OPS_REPO:-$PWD}" rev-parse --show-toplevel 2>/dev/null)" \
   || { echo "ops-gap: ${OPS_REPO:-$PWD} is not inside a git repository" >&2; exit 1; }
 locate() { env -u CLAUDE_PROJECT_DIR python3 "$HERE/locator.py" "$1" "$REPO"; }
-LEDGER="$(locate ops_ledger)" || {
-  [ $? -eq 3 ] && echo "ops-gap: $REPO has no team (no .team/binding.json)" >&2
+# The ledger's files in read order, one per line: the ledger itself, then in records format 2 each writer's file.
+FILES="$(env -u CLAUDE_PROJECT_DIR python3 "${HERE}/locator.py" --read ops_ledger "${REPO}")" || {
+  [ $? -eq 3 ] && echo "ops-gap: ${REPO} has no team (no .team/binding.json)" >&2
   exit 1; }
-[ -f "$LEDGER" ] || { echo "ops-gap: no ledger at $LEDGER" >&2; exit 1; }
+LEDGER="$(printf '%s\n' "${FILES}" | head -n 1)"
+python3 -c 'import os, sys; sys.exit(0 if any(os.path.isfile(f) for f in sys.argv[1].splitlines()) else 1)' \
+  "${FILES}" || { echo "ops-gap: no ledger at ${LEDGER}" >&2; exit 1; }
 
-LAST_TS="$(python3 - "$LEDGER" <<'PY'
-import json, sys
-rows = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
+LAST_TS="$(python3 - "${FILES}" <<'PY'
+import json, os, sys
+rows = [json.loads(l) for f in sys.argv[1].splitlines() if os.path.isfile(f) for l in open(f) if l.strip()]
 print(max(r["ts"] for r in rows) if rows else "")
 PY
 )"

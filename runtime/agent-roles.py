@@ -894,15 +894,16 @@ def unsealed_moves(folders, where, named, wo=None):
         gate = predict_gate()
         led, why = None, None
         for at in lookup_paths(where, named) if where else []:
-            led, why = team_roles.locate("ops_ledger", at, log, env=NAMED_ENV, owner=named)
+            led, why = team_roles.locate("records", at, log, env=NAMED_ENV, owner=named)
             if led or why:
                 break
         if not led:
             log(f"SEAL check skipped: no project for {where}" + (f" ({why})" if why else ""))
             return []
         ol = gate.ledger_module()
-        led = Path(led)
-        events = list(map(ol.parse, ol.lines_of(led.read_bytes() if led.is_file() else b"")))
+        # the ops ledger's files in read order (locator.ledger_files): the ledger itself, then each writer's file
+        events = [ol.parse(x) for f in locator.ledger_files(Path(led), "ops_ledger")
+                  for x in ol.lines_of(f.read_bytes() if f.is_file() else b"")]
         sealed = {e.get("sha256") for e in events if isinstance(e, dict) and e.get("kind") in ("sealed", "revised")}
         out = []
         for p in [p for f in folders for p in (sorted(f.iterdir()) if f.is_dir() else [])

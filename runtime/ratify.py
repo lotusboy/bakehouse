@@ -311,13 +311,15 @@ def resolve_project(repo):
 
 
 def latest(project):
-    path = project.ratify_ledger
+    """id -> its latest row, from the ledger's files in read order (locator.ledger_files): the ledger itself, then
+    in records format 2 each writer's file."""
     rows = {}
-    if path.is_file():
-        for line in path.read_text().splitlines():
-            if line.strip():
-                r = json.loads(line)
-                rows[r["id"]] = r
+    for path in project.read_files("ratify_ledger"):
+        if path.is_file():
+            for line in path.read_text().splitlines():
+                if line.strip():
+                    r = json.loads(line)
+                    rows[r["id"]] = r
     return rows
 
 
@@ -336,7 +338,10 @@ def cmd_record(a):
         if by_id[i]["verdict"] != "held":
             fail(f"--owner-approved {i}: its verdict is {by_id[i]['verdict']}; the owner approves held entries "
                  "only. A rejected entry goes back for a fix and a new round.")
-    path = project.ratify_ledger
+    try:  # the ledger itself, or in records format 2 this writer's own file (locator.writer_file)
+        path = project.write_file("ratify_ledger")
+    except locator.SetupNeeded as e:
+        fail(str(e))
     path.parent.mkdir(parents=True, exist_ok=True)
     evidence = str(Path(a.agreement).resolve())
     counts = {}
@@ -388,7 +393,7 @@ def cmd_check(a):
 
 def cmd_status(a):
     project = resolve_project(a.repo)
-    if not project.ratify_ledger.is_file():
+    if not any(f.is_file() for f in project.read_files("ratify_ledger")):
         print("no ratification ledgers found")
         return 0
     rows = latest(project).values()

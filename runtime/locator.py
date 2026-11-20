@@ -12,10 +12,17 @@ Every hook and script asks this module, so path identity is computed once (desig
 5. No repo, or no binding: the repo has no team, and the caller does nothing. Inside the records
    worktree itself (on the records branch, with no `.team/binding.json` at its top) the answer is the same.
 
+Ledgers (format 2, 0.8.0): once `bakehouse setup migrate` has written `FORMAT` at the records root, each of the five
+ledgers is read from its legacy file (frozen: never appended again) and then from one file per writer, in the
+folder named like the legacy file without `.jsonl` (`ops/events/<writer>.jsonl`, ...). A tool appends only to
+its own writer's file; the writer id is the records worktree's git config `bakehouse.writer`. ledger_files is the
+one read order, writer_file the one write path. With no FORMAT (format 1) both are the legacy file, as before.
+
 There is no registry and no text matching of paths. git gives the repo's real path; the records path
 is compared after resolving both sides.
 
-Usage from a shell script: `python3 locator.py [--owner] <field> [folder]` prints one path. Exit 3: no team here.
+Usage from a shell script: `python3 locator.py [--owner] [--read | --write] <field> [folder]` prints one path; with
+--read, a ledger's files in read order, one per line; with --write, the file this writer appends to. Exit 3: no team here.
 Exit 4: a team, but setup is needed; the message says what to run. --owner: a folder inside a project's records
 worktree answers for that project (records_owner), as a path a brief names is judged.
 
@@ -25,6 +32,7 @@ Run folders (record folders): runs_location says where a project keeps them, fro
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -39,6 +47,25 @@ RECORDS_BRANCH = "bakehouse-records"
 
 class SetupNeeded(Exception):
     """The repo has a binding, but its records cannot be found. The message names the fix."""
+
+
+class BadFormat(SetupNeeded):
+    """The records folder's FORMAT is one this bakehouse cannot read, or a frozen legacy ledger changed after
+    migration. The message names the file and the fix."""
+
+
+# The five ledgers: the locator field and the legacy file, a path in the records worktree. In format 2 each one's
+# writer files are <the legacy file without .jsonl>/<writer>.jsonl.
+LEDGERS = {"ops_ledger": "ops/events.jsonl", "lanes_ledger": "ops/lanes.jsonl",
+           "decisions_ledger": "decisions/ledger.jsonl", "spend_ledger": "spend/ledger.jsonl",
+           "ratify_ledger": "ratifications/ledger.jsonl"}
+FORMAT_FILE = "FORMAT"
+FORMAT = 2  # the format this bakehouse writes; no FORMAT file is format 1
+FORMAT_VERSION = "0.8.0"  # the first bakehouse that reads FORMAT, written into it for an older one to name
+ABSENT = "absent"
+WRITER_KEY = "bakehouse.writer"
+WRITER = re.compile(r"[A-Za-z0-9-]{1,32}")
+MIGRATE = "bakehouse setup migrate"
 
 
 def machine_dir(env=os.environ) -> Path:
@@ -93,15 +120,15 @@ class Project:
     # Team records: the records branch (design 05 §7.1).
     @property
     def ops_ledger(self) -> Path:
-        return self.records / "ops" / "events.jsonl"
+        return self.records / LEDGERS["ops_ledger"]
 
     @property
     def lanes_ledger(self) -> Path:
-        return self.records / "ops" / "lanes.jsonl"
+        return self.records / LEDGERS["lanes_ledger"]
 
     @property
     def decisions_ledger(self) -> Path:
-        return self.records / "decisions" / "ledger.jsonl"
+        return self.records / LEDGERS["decisions_ledger"]
 
     @property
     def decisions_view(self) -> Path:
@@ -109,11 +136,11 @@ class Project:
 
     @property
     def spend_ledger(self) -> Path:
-        return self.records / "spend" / "ledger.jsonl"
+        return self.records / LEDGERS["spend_ledger"]
 
     @property
     def ratify_ledger(self) -> Path:
-        return self.records / "ratifications" / "ledger.jsonl"
+        return self.records / LEDGERS["ratify_ledger"]
 
     @property
     def tool_lessons(self) -> Path:
@@ -126,6 +153,13 @@ class Project:
     @property
     def driver_register(self) -> Path:
         return self.records / "registers" / "drivers.json"
+
+    # A ledger's files (format 2): ledger_files and writer_file, below.
+    def read_files(self, field: str) -> list:
+        return ledger_files(self.records, field)
+
+    def write_file(self, field: str) -> Path:
+        return writer_file(self.records, field)
 
 
 FIELDS = sorted(n for n, v in vars(Project).items() if isinstance(v, property)) + ["root", "team", "records"]
@@ -212,7 +246,94 @@ def find(folder=None, env=os.environ) -> Project | None:
             raise SetupNeeded(f"{top}: the records folder {records} is a worktree of {common.parent}, and {why}: run "
                               "`bakehouse setup --pointer <main clone>` in a lane clone, or `bakehouse setup` in the "
                               "main clone")
+    records_format(records)  # BadFormat: an unknown FORMAT, or a frozen ledger that changed
     return Project(root=top, team=team, records=records)
+
+
+def file_sha(path: Path) -> str:
+    """A file's sha256, or ABSENT when it does not exist: what FORMAT records for each frozen ledger."""
+    try:
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    except FileNotFoundError:
+        return ABSENT
+
+
+def records_format(records) -> int:
+    """The records folder's format: 1 with no FORMAT file (today's single files), else 2. BadFormat: a FORMAT this
+    bakehouse cannot read (naming the bakehouse version it says it needs), or a frozen legacy ledger whose sha256 is
+    not the one FORMAT records (naming it: an older bakehouse may still be writing it)."""
+    path = Path(records) / FORMAT_FILE
+    if not os.path.lexists(path):
+        return 1
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        raise BadFormat(f"{path} cannot be read as a records format ({e}): restore it from git "
+                        f"(`git -C {records} checkout -- {FORMAT_FILE}`)")
+    fmt = data.get("format") if isinstance(data, dict) else None
+    if fmt != FORMAT:
+        need = data.get("bakehouse") if isinstance(data, dict) else None
+        raise BadFormat(f"{path} says records format {fmt!r}, which this bakehouse does not read (it reads format 1, "
+                        f"no FORMAT file, and format {FORMAT}): it needs bakehouse "
+                        f"{need if isinstance(need, str) else 'of a later version'}; update bakehouse on this machine")
+    frozen = data.get("frozen")
+    if not isinstance(frozen, dict) or set(frozen) != set(LEDGERS.values()):
+        raise BadFormat(f"{path} does not list the five frozen ledgers ({', '.join(sorted(LEDGERS.values()))}): "
+                        f"restore it from git (`git -C {records} checkout -- {FORMAT_FILE}`)")
+    for rel in sorted(frozen):
+        got = file_sha(Path(records) / rel)
+        if got != frozen[rel]:
+            raise BadFormat(f"the frozen ledger {rel} in {records} is not the file {FORMAT_FILE} froze (sha256 "
+                            f"{frozen[rel]}, now {got}): since migration only writer files are appended, so another "
+                            f"bakehouse, older than {FORMAT_VERSION}, may still be writing it. Update bakehouse on every "
+                            f"machine, then restore {rel} as {FORMAT_FILE} froze it (`git -C {records} log -- "
+                            f"{FORMAT_FILE}` names the commit) and record its new lines again with this bakehouse")
+    return FORMAT
+
+
+def writer_folder(legacy: Path) -> Path:
+    """A ledger's writer files' folder: the legacy file's path without `.jsonl` (ops/events.jsonl -> ops/events/)."""
+    return Path(legacy).with_suffix("")
+
+
+def writer_id(records) -> str | None:
+    """The records worktree's writer id (git config bakehouse.writer), or None when it has none. One per records
+    worktree: a lane clone's records worktree is its main clone's, so its lanes share the main clone's id."""
+    return _git(Path(records), "config", "--get", WRITER_KEY) or None
+
+
+def ledger_files(records, field: str) -> list:
+    """The files of the ledger `field` (a key of LEDGERS), in read order: the legacy file first (it may not exist),
+    then, in format 2, every writer file, sorted by name: those on disk and those the records worktree's HEAD holds,
+    so a deleted writer file is still read as git holds it. The one read order for every reader. BadFormat: as
+    records_format."""
+    legacy = Path(records) / LEDGERS[field]
+    if records_format(records) == 1:
+        return [legacy]
+    folder = writer_folder(legacy)
+    names = {p.name for p in folder.glob("*.jsonl")} if folder.is_dir() else set()
+    held = _git(Path(records), "ls-tree", "--name-only", "HEAD", "--", f"{writer_folder(LEDGERS[field])}/")
+    names |= {Path(x).name for x in (held or "").splitlines() if x.strip()}
+    return [legacy] + [folder / n for n in sorted(names) if n.endswith(".jsonl") and WRITER.fullmatch(n[:-6])]
+
+
+def writer_file(records, field: str) -> Path:
+    """The file this records worktree's writer appends to for the ledger `field`: the legacy file in format 1; in
+    format 2, <writer folder>/<writer id>.jsonl. SetupNeeded: format 2 and no writer id (or one that is not 1 to 32
+    letters, digits or hyphens); BadFormat: as records_format."""
+    legacy = Path(records) / LEDGERS[field]
+    if records_format(records) == 1:
+        return legacy
+    w = writer_id(records)
+    if not w:
+        raise SetupNeeded(f"the records folder {records} keeps one file per writer (records format {FORMAT}), and its "
+                          f"records worktree has no writer id (git config {WRITER_KEY}), so nothing is written: run "
+                          "`bakehouse setup` in the main clone, which sets one")
+    if not WRITER.fullmatch(w):
+        raise SetupNeeded(f"the writer id {w!r} (git config {WRITER_KEY} in {records}) is not 1 to 32 letters, digits "
+                          f"or hyphens, so nothing is written: set it with `git -C {records} config {WRITER_KEY} "
+                          "<name>`, or unset it and run `bakehouse setup` in the main clone")
+    return writer_folder(legacy) / f"{w}.jsonl"
 
 
 def main_clone_problem(top: Path, main: Path) -> str | None:
@@ -420,8 +541,11 @@ def records_owner(folder, env=os.environ) -> Project | None:
 def main(argv) -> int:
     owner = bool(argv) and argv[0] == "--owner"
     argv = argv[1:] if owner else argv
-    if not argv or argv[0] not in FIELDS:
-        print(f"usage: locator.py [--owner] <{'|'.join(FIELDS)}> [folder]", file=sys.stderr)
+    files = argv[0] if argv and argv[0] in ("--read", "--write") else None
+    argv = argv[1:] if files else argv
+    if not argv or argv[0] not in FIELDS or (files and argv[0] not in LEDGERS):
+        print(f"usage: locator.py [--owner] <{'|'.join(FIELDS)}> [folder]\n"
+              f"       locator.py [--owner] --read|--write <{'|'.join(LEDGERS)}> [folder]", file=sys.stderr)
         return 2
     try:
         p = find(argv[1] if len(argv) > 1 else None)
@@ -432,7 +556,16 @@ def main(argv) -> int:
         return SETUP_NEEDED
     if p is None:
         return NO_TEAM
-    print(getattr(p, argv[0]))
+    try:
+        if files == "--read":
+            print("\n".join(str(x) for x in p.read_files(argv[0])))
+        elif files == "--write":
+            print(p.write_file(argv[0]))
+        else:
+            print(getattr(p, argv[0]))
+    except SetupNeeded as e:
+        print(f"bakehouse: {e}", file=sys.stderr)
+        return SETUP_NEEDED
     return 0
 
 

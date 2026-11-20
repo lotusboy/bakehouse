@@ -75,8 +75,9 @@ class Unreadable(Exception):
 
 def state(project, since) -> dict:
     try:
-        events = [ops_ledger.parse(x) for x in ops_ledger.lines_of(project.ops_ledger.read_bytes())] \
-            if project.ops_ledger.is_file() else []
+        # the ledger's files in read order (locator.ledger_files): the ledger itself, then each writer's file
+        events = [ops_ledger.parse(x) for f in project.read_files("ops_ledger") if f.is_file()
+                  for x in ops_ledger.lines_of(f.read_bytes())]
         by_wo, closed = {}, []
         for ev in events:
             wo = ev.get("task")
@@ -168,7 +169,8 @@ def main(argv, root) -> int:
         print(json.dumps({"format": 1, "team": False}) if as_json else
               f"{folder or Path.cwd()}: no team here (no .team/binding.json)")
         return locator.NO_TEAM
-    for path, ops in ((project.ops_ledger, True), (project.decisions_ledger, False)):
+    for path, ops in [(f, True) for f in project.read_files("ops_ledger")] + \
+            [(f, False) for f in project.read_files("decisions_ledger")]:
         why = broken(path, ops)
         if why:
             print(f"bakehouse status: the ledger {path} is BROKEN: {why}", file=sys.stderr)

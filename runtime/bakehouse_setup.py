@@ -1,8 +1,9 @@
 """`bakehouse setup`: make a clone ready for its team (design 05 §4.5, §4.6, §4.8, §10.1 item 8). Standard
 library only. Run through bin/bakehouse.
 
-  bakehouse setup [--pre-commit] [--no-remote-check]      in the main clone
-  bakehouse setup --pointer <main clone> [--pre-commit]   in a lane clone
+  bakehouse setup [--writer <name>] [--pre-commit] [--no-remote-check]   in the main clone
+  bakehouse setup --pointer <main clone> [--pre-commit]                  in a lane clone
+  bakehouse setup migrate [--writer <name>]   once per project: one records file per writer (records format 2)
 
 In the main clone it makes the records worktree in the sibling folder `<repo>.bakehouse-records`, on the
 orphan branch `bakehouse-records` (checked out instead when the branch already exists, here or on origin),
@@ -16,12 +17,19 @@ post-commit drift report, and the pre-commit gate only with --pre-commit (as Per
 The launcher holds one target line naming the plugin root. setup writes it; the plugin's SessionStart
 hook moves the target when the plugin folder changes. The hooks never name the plugin folder, which
 changes on every update.
+
+The writer id: in the main clone setup also sets the records worktree's git config `bakehouse.writer`, when it is
+unset, to --writer <name> (1 to 32 letters, digits or hyphens), else `w` and 8 random hex characters. It names the
+records worktree, so every lane clone that points at it shares it. `bakehouse setup migrate` freezes the five
+legacy ledgers in place and writes `FORMAT` (locator.records_format; docs/PROJECT-TEAM.md, "One records file per
+writer"), committed by path in the records worktree only; from then on each tool appends to its writer's own file.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import secrets
 import shlex
 import subprocess
 import tempfile
@@ -33,6 +41,8 @@ BRANCH = "bakehouse-records"
 MARKER = "# installed-by: bakehouse"
 USAGE = """\
 usage: bakehouse setup [--pointer <main clone>] [--pre-commit] [--no-remote-check]
+       bakehouse setup [--writer <name>] [--pre-commit] [--no-remote-check]   (main clone)
+       bakehouse setup migrate [--writer <name>]
   --pointer <main clone>  in a lane clone (any clone but the main one). setup copies the main clone's
                      records pointer and makes no records worktree.
   --pre-commit       also install the pre-commit hook, the predict-gate commit check. Without it, setup
@@ -41,6 +51,11 @@ usage: bakehouse setup [--pointer <main clone>] [--pre-commit] [--no-remote-chec
                      bakehouse-records branch. setup then makes a new orphan bakehouse-records branch here without
                      asking origin (for a remote that needs a login setup cannot give). Without it, setup asks
                      origin first.
+  --writer <name>    main clone only. The writer id of this clone's records worktree (1 to 32 letters, digits or
+                     hyphens), set when it has none. Without it, setup sets `w` and 8 random hex characters.
+  migrate            move the project's records to one file per writer (records format 2): freeze the five
+                     legacy ledgers, write and commit FORMAT in the records worktree, and set the writer id when it
+                     is unset. Every machine runs bakehouse 0.8.0 or later first. A second run changes nothing.
   --help             print this text and exit 0. setup changes nothing."""
 GITIGNORE = """\
 # The ledger lock files (ops_ledger.lock_path, decision.locked): never committed.
@@ -369,9 +384,83 @@ def make_records(top: Path, remote_check=True) -> Path | None:
     return folder
 
 
-def setup_main(top: Path, root, env, pre_commit, remote_check=True) -> int:
+def ensure_writer(records: Path, given: str | None) -> bool:
+    """Set the records worktree's writer id (git config bakehouse.writer) when it has none: given, else `w` and 8
+    random hex characters. False (after saying why) when given differs from the one it has."""
+    have = locator.writer_id(records)
+    if have and given and have != given:
+        say(f"the records worktree {records} already has the writer id {have} (git config {locator.WRITER_KEY}), "
+            f"not {given}: the id names the records worktree, so setup does not change it. Refused, nothing changed")
+        return False
+    if have:
+        say(f"writer id: {have} ({locator.WRITER_KEY} in {records})")
+        return True
+    w = given or f"w{secrets.token_hex(4)}"
+    p = git(records, "config", locator.WRITER_KEY, w)
+    if p.returncode:
+        say(f"could not set the writer id in {records}:\n{(p.stderr or p.stdout).strip()}")
+        return False
+    say(f"writer id: {w} ({locator.WRITER_KEY} in {records}, set now)")
+    return True
+
+
+def migrate(top: Path, env, writer: str | None) -> int:
+    """`bakehouse setup migrate`: records format 2. Writes FORMAT (the format, the bakehouse version that reads it,
+    each legacy ledger's sha256 or "absent"), commits it by path in the records worktree only, and sets the writer
+    id when unset. A second run changes nothing and says so. Refused: no project here, a records worktree with
+    uncommitted changes to tracked files, or a writer id given that differs from the one set."""
     try:
         project = locator.find(top, env)
+    except locator.SetupNeeded as e:
+        say(f"{e}. Nothing migrated.")
+        return 1
+    if project is None:
+        say(f"{top} has no team: no .team/binding.json, and no bakehouse.sidecar in its git config. Nothing migrated.")
+        return 1
+    rec = project.records
+    if locator.records_format(rec) == locator.FORMAT:
+        if not ensure_writer(rec, writer):
+            return 1
+        say(f"the records in {rec} are already in records format {locator.FORMAT} ({locator.FORMAT_FILE} is there): "
+            "nothing to migrate, nothing changed")
+        return 0
+    dirty = git(rec, "status", "--porcelain", "--untracked-files=no").stdout.splitlines()
+    if dirty:
+        say(f"the records worktree {rec} has uncommitted changes to tracked files ({', '.join(x[3:] for x in dirty)}), "
+            "and migration freezes the ledgers as git holds them. Refused, nothing changed. Commit them first "
+            f"(`git -C {rec} add -- <file> && git -C {rec} commit -m records -- <file>`), then run "
+            f"`{locator.MIGRATE}` again.")
+        return 1
+    if not ensure_writer(rec, writer):
+        return 1
+    frozen = {rel: locator.file_sha(rec / rel) for rel in sorted(locator.LEDGERS.values())}
+    path = rec / locator.FORMAT_FILE
+    path.write_text(json.dumps({"format": locator.FORMAT, "bakehouse": locator.FORMAT_VERSION,
+                                "about": "One records file per writer (docs/PROJECT-TEAM.md). The frozen ledgers are "
+                                         "never appended again; each tool appends to <ledger without .jsonl>/"
+                                         "<writer>.jsonl.",
+                                "frozen": frozen}, indent=2) + "\n")
+    p = git(rec, "add", "--", locator.FORMAT_FILE)
+    if p.returncode == 0:
+        p = git(rec, "commit", "-q", "-m", f"bakehouse records: format {locator.FORMAT}, one records file per writer",
+                "--", locator.FORMAT_FILE)
+    if p.returncode:
+        git(rec, "reset", "-q", "--", locator.FORMAT_FILE)
+        path.unlink()
+        say(f"could not commit {path}:\n{(p.stderr or p.stdout).strip()}\nNothing migrated.")
+        return 1
+    say(f"{path} written and committed: records format {locator.FORMAT}. The five legacy ledgers are frozen ("
+        + ", ".join(f"{rel} {'absent' if h == locator.ABSENT else h[:12]}" for rel, h in frozen.items())
+        + "); each tool now appends to its writer's own file")
+    return 0
+
+
+def setup_main(top: Path, root, env, pre_commit, remote_check=True, writer=None) -> int:
+    try:
+        project = locator.find(top, env)
+    except locator.BadFormat as e:  # the records are there, in a format or state this bakehouse refuses
+        say(f"{e}. Nothing set up.")
+        return 1
     except locator.SetupNeeded:
         project = None
     else:
@@ -381,6 +470,8 @@ def setup_main(top: Path, root, env, pre_commit, remote_check=True) -> int:
             return 1
     if project is not None:
         say(f"already set up: records at {project.records}. Installing the hooks again.")
+        if not ensure_writer(project.records, writer):
+            return 1
         return finish(project, root, env, pre_commit)
     main_clone = origin_main_clone(top)
     if main_clone is not None:
@@ -397,6 +488,8 @@ def setup_main(top: Path, root, env, pre_commit, remote_check=True) -> int:
         return 1
     git(top, "config", "bakehouse.records", str(folder))
     say(f"bakehouse.records = {folder}")
+    if not ensure_writer(folder, writer):
+        return 1
     return finish(locator.find(top, env), root, env, pre_commit)
 
 
@@ -430,10 +523,26 @@ def main(argv, root) -> int:
         print(USAGE)
         return 0
     env ={k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"}
+    writer, argv = None, list(argv)
+    if "--writer" in argv:
+        i = argv.index("--writer")
+        if i + 1 >= len(argv) or not locator.WRITER.fullmatch(argv[i + 1]) or argv.count("--writer") > 1:
+            say("--writer takes one name of 1 to 32 letters, digits or hyphens")
+            print(USAGE)
+            return 2
+        writer = argv[i + 1]
+        del argv[i:i + 2]
+    if argv[:1] == ["migrate"]:
+        top = locator.toplevel(Path.cwd())
+        if len(argv) > 1 or top is None:
+            print(USAGE if len(argv) > 1 else f"bakehouse setup: {Path.cwd()} is not inside a git repository")
+            return 2 if len(argv) > 1 else 1
+        return migrate(top, env, writer)
     pre_commit = "--pre-commit" in argv
     remote_check = "--no-remote-check" not in argv
     argv = [a for a in argv if a not in ("--pre-commit", "--no-remote-check")]
-    if (argv and not (len(argv) == 2 and argv[0] == "--pointer")) or (argv and not remote_check):
+    if (argv and not (len(argv) == 2 and argv[0] == "--pointer")) or (argv and not remote_check) \
+            or (argv and writer):
         print(USAGE)
         return 2
     top = locator.toplevel(Path.cwd())
@@ -447,4 +556,4 @@ def main(argv, root) -> int:
         return 1
     if argv:
         return setup_pointer(top, argv[1], root, env, pre_commit)
-    return setup_main(top, root, env, pre_commit, remote_check)
+    return setup_main(top, root, env, pre_commit, remote_check, writer)

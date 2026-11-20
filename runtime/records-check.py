@@ -769,14 +769,11 @@ def check_folder(files, job, read: Reader, gates: set = frozenset(), rows: dict 
 
 # ---------- rule (a): the close ----------
 
-def closes(ledger: Path) -> dict:
-    """{task: [every event of that task, in ledger order]}."""
+def closes(ledger) -> dict:
+    """{task: [every event of that task, in ledger order]}. ledger: one file, or the ledger's files in read order
+    (locator.ledger_files)."""
     out = defaultdict(list)
-    try:
-        lines = ledger.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return {}
-    for line in lines:
+    for line in pg.ledger_lines(ledger):
         try:
             ev = json.loads(line)
         except ValueError:
@@ -1145,7 +1142,7 @@ def build(binding: dict, ledger: Path | None, repo: Path, a, contracts: dict, pr
                   "binding's 'records'. Rewritten on every run; it holds no decision.",
         "computed": {
             "since": since.isoformat(), "ref": ref, "codeRoots": list(roots),
-            "reviews": reviews + "/", "ledger": shown_ledger(ledger, project) if owned else None,
+            "reviews": reviews + "/", "ledger": shown_ledger(pg.ledger_paths(ledger)[0], project) if owned else None,
             "owned": owned,
             "uncredited": len(uncredited), "workOrders": len(wos), "warnings": warnings,
             "openFlags": sum(1 for f in flags if f["state"] == "open"),
@@ -1267,7 +1264,8 @@ def main(argv=None) -> int:
             if project is None:
                 raise BadInput(f"{repo} has no team, so no records folder: pass --register with a full path")
             register = project.records / "registers" / register
-        ledger = Path(a.ledger) if a.ledger else project.ops_ledger if project else None
+        # the ledger's files in read order (locator.ledger_files): the ledger itself, then each writer's file
+        ledger = Path(a.ledger) if a.ledger else pg.read_ledger(project) if project else None
         reg = build(binding, ledger, repo, a, load_contracts(), project)
     except BadInput as e:
         print(f"records-check: bad input: {e}", file=sys.stderr)

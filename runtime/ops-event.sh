@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Append ONE team-operations event to the ops ledger of the repository you are in. The ledger is the
 # owner's working file, so it lives in the project's team records, never in the repository:
-#   <records>/ops/events.jsonl   (rules in .team/OPERATIONS.md)
+#   <records>/ops/events.jsonl   (rules in .team/OPERATIONS.md); in records format 2, this writer's
+#   <records>/ops/events/<writer>.jsonl (docs/PROJECT-TEAM.md, "One records file per writer")
 # The project is found from the repository root through runtime/locator.py.
 # THE canonical writer: a hand-typed line in a different shape is a silent gap in any report built
 # from the ledger. Fields are positional; anything you do not know is left empty, never guessed.
@@ -50,7 +51,8 @@ BINDING="$(locate binding)" || {
 python3 -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1])).get("owned") is True else 1)' \
   "$BINDING" 2>/dev/null \
   || { echo "ops-event: $BINDING does not say \"owned\": true: this repository keeps no ledger" >&2; exit 1; }
-OUT="$(locate ops_ledger)" || exit 1
+# The file this writer appends to: the ledger itself, or in records format 2 this writer's own file (locator.py).
+OUT="$(env -u CLAUDE_PROJECT_DIR python3 "${HERE}/locator.py" --write ops_ledger "${REPO}")" || exit 1
 mkdir -p "$(dirname "$OUT")"
 KIND="${1:?kind}"; TASK="${2:?task}"; PURPOSE="${3:?purpose}"
 MODEL="${4:--}"; EFFORT="${5:--}"; COUNT="${6:--}"; TOKENS="${7:--}"; DUR="${8:--}"; OUTCOME="${9:--}"; NOTE="${10:-}"

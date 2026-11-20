@@ -94,11 +94,14 @@ def backfill():
 
 # ---------- project, config, ledger ----------
 
-def resolve_project(repo):
-    """The project of --repo, else of the current folder (runtime/locator.py)."""
+def resolve_project(repo, write=False):
+    """The project of --repo, else of the current folder (runtime/locator.py). write: the command appends to the
+    ledger, so its records must name a file to append to (locator.writer_file: in records format 2, a writer id)."""
     env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"} if repo else os.environ
     try:
         project = locator.find(repo, env)
+        if write and project is not None:
+            project.write_file("decisions_ledger")
     except locator.SetupNeeded as e:
         fail(str(e))
     if project is None:
@@ -144,16 +147,18 @@ def categories(project):
 
 
 def read_events(project):
-    p = project.decisions_ledger
-    if not p.exists():
-        return []
+    """Every event, from the ledger's files in read order (locator.ledger_files): the ledger itself, then in
+    records format 2 each writer's file."""
     rows = []
-    for n, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
-        if line.strip():
-            try:
-                rows.append(json.loads(line))
-            except json.JSONDecodeError:
-                print(f"decision: {p} line {n} is not JSON; skipped", file=sys.stderr)
+    for p in project.read_files("decisions_ledger"):
+        if not p.exists():
+            continue
+        for n, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
+            if line.strip():
+                try:
+                    rows.append(json.loads(line))
+                except json.JSONDecodeError:
+                    print(f"decision: {p} line {n} is not JSON; skipped", file=sys.stderr)
     return rows
 
 
@@ -197,8 +202,8 @@ def append(project, event):
 
 
 def _append(project, event):
-    p = project.decisions_ledger
-    p.parent.mkdir(exist_ok=True)
+    p = project.write_file("decisions_ledger")  # the ledger, or this writer's own file; resolve_project(write=True) checked it
+    p.parent.mkdir(parents=True, exist_ok=True)
     with p.open("a", encoding="utf-8") as f:
         f.write(json.dumps(event, ensure_ascii=False) + "\n")
     print(json.dumps(event, ensure_ascii=False), file=sys.stderr)
@@ -225,7 +230,7 @@ def fold(events):
 # ---------- record ----------
 
 def cmd_ask(a):
-    project = resolve_project(a.repo)
+    project = resolve_project(a.repo, write=True)
     loose = backfill()
     if not a.category.strip():
         fail("--category is empty", "decision:category")
@@ -381,7 +386,7 @@ def norm(s):
 
 
 def cmd_answer(a):
-    project = resolve_project(a.repo)
+    project = resolve_project(a.repo, write=True)
     d = fold(read_events(project)).get(a.id)
     if not d:
         fail(f"no decision {a.id} in {name_of(project)}", "decision:unknown-id")
@@ -446,7 +451,7 @@ def unattended(project, events=None):
 def cmd_unattended(a):
     """Start is refused unless the project turns the mode on, and while it is on. Stop is always taken: it is
     the safe direction."""
-    project = resolve_project(a.repo)
+    project = resolve_project(a.repo, write=True)
     ev = {"kind": "unattended", "action": a.action, "ts": stamp(), "stream": name_of(project)}
     if a.action == "start":
         if unattended_settings(project).get("enabled") is not True:
@@ -514,7 +519,7 @@ def answer_assumed(project, a, d):
 
 
 def cmd_outcome(a):
-    project = resolve_project(a.repo)
+    project = resolve_project(a.repo, write=True)
     if a.id not in fold(read_events(project)):
         fail(f"no decision {a.id} in {name_of(project)}", "decision:unknown-id")
     if not a.by.strip():

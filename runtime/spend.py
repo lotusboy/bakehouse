@@ -73,11 +73,14 @@ def stamp():
     return os.environ.get("SPEND_TS") or datetime.datetime.now().astimezone().isoformat(timespec="seconds")
 
 
-def resolve_project(repo):
-    """The project of --repo, else of the current folder (runtime/locator.py)."""
+def resolve_project(repo, write=False):
+    """The project of --repo, else of the current folder (runtime/locator.py). write: the command appends to the
+    ledger, so its records must name a file to append to (locator.writer_file: in records format 2, a writer id)."""
     env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"} if repo else os.environ
     try:
         project = locator.find(repo, env)
+        if write and project is not None:
+            project.write_file("spend_ledger")
     except locator.SetupNeeded as e:
         fail(str(e))
     if project is None:
@@ -93,22 +96,24 @@ def name_of(project):
 
 
 def read_events(project):
-    p = project.spend_ledger
-    if not p.exists():
-        return []
+    """Every event, from the ledger's files in read order (locator.ledger_files): the ledger itself, then in
+    records format 2 each writer's file."""
     rows = []
-    for n, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
-        if line.strip():
-            try:
-                rows.append(json.loads(line))
-            except json.JSONDecodeError:
-                print(f"spend: {p} line {n} is not JSON; skipped", file=sys.stderr)
+    for p in project.read_files("spend_ledger"):
+        if not p.exists():
+            continue
+        for n, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
+            if line.strip():
+                try:
+                    rows.append(json.loads(line))
+                except json.JSONDecodeError:
+                    print(f"spend: {p} line {n} is not JSON; skipped", file=sys.stderr)
     return rows
 
 
 def append(project, event):
-    p = project.spend_ledger
-    p.parent.mkdir(exist_ok=True)
+    p = project.write_file("spend_ledger")  # the ledger, or this writer's own file; resolve_project(write=True) checked it
+    p.parent.mkdir(parents=True, exist_ok=True)
     with p.open("a", encoding="utf-8") as f:
         f.write(json.dumps(event, ensure_ascii=False) + "\n")
 
@@ -174,7 +179,7 @@ def bar(frac, width=20):
 # ---------- commands ----------
 
 def cmd_wave(a):
-    project = resolve_project(a.repo)
+    project = resolve_project(a.repo, write=True)
     label = name_of(project)
     ev = read_events(project)
     known = waves(ev)
@@ -244,7 +249,7 @@ def mirror_to_ops(project, a):
 
 
 def cmd_record(a):
-    project = resolve_project(a.repo)
+    project = resolve_project(a.repo, write=True)
     label = name_of(project)
     ev = read_events(project)
     if os.environ.get("SPEND_TS") and not a.note:
