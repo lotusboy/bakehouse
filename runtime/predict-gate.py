@@ -1813,10 +1813,6 @@ def run_seal(cmd: str, wo: str, rnd: str, file: str, repo_arg: str | None, repor
         if why:
             raise BadInput(why)
         extra["decision"] = decision_id
-    if cmd == "seal" and fkind == "baseline" and rnd == "first":  # reads git, not the record: not in seal_refusal
-        why = main_follows_refusal(project, binding, code)
-        if why:
-            raise BadInput(why)
     if fkind == "measured":
         fields, rc = measured_fields(path, repo, report, code)
         extra.update(fields)
@@ -1831,6 +1827,12 @@ def run_seal(cmd: str, wo: str, rnd: str, file: str, repo_arg: str | None, repor
         live = [e for e in mine if e.get("kind") != "retired" and not retire_of(e, mine)]
         if cmd == "seal" and (why := seal_refusal(path, rel, wo, rnd, fk, digest, events)):
             raise BadInput(why[0])
+        # reads git, not the record: not in seal_refusal. A seal again of a first baseline's same bytes is not
+        # checked again: the first seal was, and a merge now would change the baseline, which is never sealed
+        if cmd == "seal" and fk == "baseline" and rnd == "first" and not any(
+                e.get("fileKind") == "baseline" and e.get("round") == "first" and e.get("sha256") == digest
+                for e in live) and (why := main_follows_refusal(project, binding, code)):
+            raise BadInput(why)
         if cmd == "revise":
             same_round = [e for e in mine if e.get("round") == rnd and e.get("fileKind") == "prediction"]
             if not same_round:

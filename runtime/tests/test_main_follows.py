@@ -125,6 +125,17 @@ class MainFollows(unittest.TestCase):
         rc, out = self.baseline()
         self.assertEqual(rc, 0, out)
 
+    def test_2b_a_same_bytes_reseal_after_main_moved_passes(self):
+        # the first seal was checked; a seal again of the same bytes (as ANCHOR REFUSED asks) is not checked again,
+        # since a merge then would change the baseline, and a changed baseline is never sealed
+        rc, out = self.baseline()
+        self.assertEqual(rc, 0, out)
+        self.on_main("engine change", {"src/engine.py": "e = 1\n"})
+        rc, out = self.seal("first", "moves.baseline.json")
+        self.assertEqual(rc, 0, out)
+        self.assertEqual([e["fileKind"] for e in self.sealed() if e["kind"] == "sealed"],
+                         ["prediction", "baseline", "baseline"])
+
     def test_3_a_lane_clone_reads_the_main_clones_tip_not_its_own_stale_copies(self):
         lane = self.t / "lane"
         self.git(self.t, "clone", "-q", "-b", "prod", str(self.repo), str(lane))
