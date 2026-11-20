@@ -71,17 +71,17 @@ class Start(Base):
         self.two()
         for repo in (self.repo, self.b):
             self.reserve_on(repo)
-        (self.repo / "T.md").write_text("| W-1 | one |\n| W-3 | three |\n")
+        (self.repo / "T.md").write_text("| W-1 | one |\n| W-3 | three |\nXW-99 is not an id: no whole token\n")
         self.g(self.repo, "commit", "-q", "-m", "tracker rows", "--", "T.md")
-        self.branch(self.repo, "f/local", "| W-1 | one |\n| W-9 | nine, on an unmerged local branch |\n")
+        self.branch(self.repo, "f/local", "| W-1 | one |\n| W-14 | fourteen, on an unmerged local branch |\n")
         # B's branch reaches origin only: A sees it after --start's fetch, as a remote-tracking branch
         self.branch(self.b, "f/remote", "| W-1 | one |\n| W-12b | twelve b, with a letter after the number |\n")
         self.g(self.b, "push", "-q", "origin", "f/remote")
         self.assertEqual(self.g(self.repo, "rev-parse", "-q", "--verify", "refs/remotes/origin/f/remote", ok=False), "")
         p = self.reserve(self.repo, "--start")
-        self.assertIn("W-12", p.stdout)
+        self.assertIn("W-14", p.stdout)
         floor = json.loads((self.records / "reservations" / "FLOOR").read_text())
-        self.assertEqual((floor["floor"], floor["writer"]), (12, "alpha"))
+        self.assertEqual((floor["floor"], floor["writer"]), (14, "alpha"))
         self.assertEqual(self.rgit("log", "-1", "--format=", "--name-only"), "reservations/FLOOR")
         self.assertEqual(self.tip(), self.rgit("rev-parse", "HEAD"))  # and pushed
         self.assertEqual(self.rgit("status", "--porcelain", "--", "reservations"), "")
@@ -93,7 +93,25 @@ class Start(Base):
         p = self.reserve(self.b, "--start")
         self.assertIn("nothing changed", p.stdout)
         self.assertEqual(self.tip(), head)
-        self.assertEqual(self.reserve(self.repo).stdout.strip(), "W-13")
+        self.assertEqual(self.reserve(self.repo).stdout.strip(), "W-15")
+        self.assertEqual(self.g(self.repo, "rev-parse", "-q", "--verify", "refs/remotes/origin/f/remote", ok=False) != "",
+                         True)  # read from the fetch, and lower than the local branch's: the floor stayed W-14
+
+    def test_a_later_start_on_another_machine_raises_the_floor(self):
+        self.started(floor_rows="| W-3 | three |\n")
+        self.branch(self.b, "f/unpushed", "| W-20 | twenty, only on B, not pushed |\n")
+        p = self.reserve(self.b, "--start")
+        self.assertIn("raised from W-3", p.stdout)
+        self.assertEqual(self.reserve(self.repo).stdout.strip(), "W-21")
+
+    def test_start_names_a_remote_it_cannot_fetch(self):
+        self.two()
+        self.reserve_on(self.repo)
+        self.g(self.repo, "remote", "add", "old", str(self.repo.parent / "gone.git"))
+        p = self.reserve(self.repo, "--start", rc=1)
+        self.assertIn("fetch to old", p.stderr)
+        self.assertIn("remote remove old", p.stderr)
+        self.assertFalse((self.records / "reservations").exists())
 
 
     def test_start_refuses_when_no_branch_holds_the_tracker_file(self):
@@ -200,9 +218,10 @@ class Refused(Base):
 
 
 class Drop(Base):
-    """The losing commit is taken back only when it is the tip and holds only its reservation file."""
+    """The losing commit is taken back: at the tip, HEAD moves to its parent; under a later commit (a seal in another
+    lane), a new commit deletes the file by path; any other shape stops, naming the repair."""
 
-    def test_a_commit_that_is_not_the_tip_or_holds_more_is_not_taken_back(self):
+    def test_take_back_at_the_tip_under_a_later_commit_and_any_other_shape(self):
         sys.path.insert(0, str(trs.RUNTIME))
         import reserve
         self.origin_setup()
@@ -210,21 +229,34 @@ class Drop(Base):
         sha = self.rgit("rev-parse", "HEAD")
         self.local_commit(self.records, "notes/after.txt", "a seal's commit, after it\n")
         head = self.rgit("rev-parse", "HEAD")
-        with self.assertRaises(reserve.Refused) as e:
-            reserve.drop(self.records, "reservations/W-9", sha)
-        self.assertIn("not the records branch's tip", str(e.exception))
+        reserve.drop(self.records, "reservations/W-9", sha)
+        self.assertEqual(self.rgit("rev-parse", "HEAD~1"), head)
+        self.assertEqual(self.rgit("log", "-1", "--format=", "--name-status"), "D\treservations/W-9")
+        self.assertFalse((self.records / "reservations" / "W-9").exists())
+        (self.records / "reservations").mkdir(exist_ok=True)
         (self.records / "reservations" / "W-8").write_text("{}\n")
         (self.records / "notes" / "more.txt").write_text("more\n")
         self.g(self.records, "add", "--", "reservations/W-8", "notes/more.txt")
         self.g(self.records, "commit", "-q", "-m", "two files")
         two = self.rgit("rev-parse", "HEAD")
-        with self.assertRaises(reserve.Refused):
+        with self.assertRaises(reserve.Refused) as e:
             reserve.drop(self.records, "reservations/W-8", two)
-        self.assertEqual(self.rgit("rev-parse", "HEAD~1"), head)
-        self.assertEqual(self.rgit("rev-parse", "HEAD"), two)
+        self.assertIn(f"revert --no-edit {two}", str(e.exception))
+        # a root commit (no parent) holding only reservations/W-6: not this branch's tip, so never taken back
+        env = dict(self.env, GIT_INDEX_FILE=str(self.repo.parent / "root.index"))
+        def g(*a, inp=None):
+            return subprocess.run(["git", "-C", str(self.records), *a], capture_output=True, text=True, env=env,
+                                  input=inp, check=True).stdout.strip()
+        blob = g("hash-object", "-w", "--stdin", inp="{}\n")
+        g("update-index", "--add", "--cacheinfo", f"100644,{blob},reservations/W-6")
+        root = g("commit-tree", g("write-tree"), "-m", "a root commit")
+        with self.assertRaises(reserve.Refused):
+            reserve.drop(self.records, "reservations/W-6", root)
+        merged = two
+        self.assertEqual(self.rgit("rev-parse", "HEAD"), merged)
         self.local_commit(self.records, "reservations/W-7", "{}\n")
         reserve.drop(self.records, "reservations/W-7", self.rgit("rev-parse", "HEAD"))
-        self.assertEqual(self.rgit("rev-parse", "HEAD"), two)
+        self.assertEqual(self.rgit("rev-parse", "HEAD"), merged)
         self.assertFalse((self.records / "reservations" / "W-7").exists())
         self.assertEqual(self.rgit("status", "--porcelain", "--", "reservations"), "")
 
@@ -244,6 +276,112 @@ class Lock(Base):
             self.assertEqual(self.held(self.records), ["FLOOR"])
         out, err = p.communicate(timeout=30)
         self.assertEqual((p.returncode, out.strip()), (0, "W-4"), err)
+
+
+class FixRound(Base):
+    """The R2 fix round: a raise racing a reserve, a seal during a refused push, a kill during the push, a declined
+    push, a push that fails for another reason, and wrong token settings."""
+
+    def hook(self, repo, body):
+        h = Path(self.g(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")) / "hooks" / "pre-push"
+        h.write_text("#!/bin/sh\nunset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE\n" + body)
+        h.chmod(0o755)
+        return h
+
+    def once(self, flag, then):
+        """A hook body: on the first push that adds a reservation, run `then` before the push goes on."""
+        return (f"[ -e '{flag}' ] && exit 0\nwhile read -r lref lsha rref rsha; do\n"
+                f"  git -C '{self.brec}' diff --name-only \"${{rsha}}\" \"${{lsha}}\" -- reservations/ | grep -q 'W-' "
+                f"|| continue\n  : > '{flag}'\n{then}done\nexit 0\n")
+
+    def test_a_raise_racing_a_reserve_never_hands_out_an_id_under_the_new_floor(self):
+        self.started()
+        self.branch(self.repo, "f/high", "| W-30 | thirty |\n")
+        self.hook(self.b, self.once(self.repo.parent / "f", f"  '{sys.executable}' '{trs.twf.BAKEHOUSE}' reserve "
+                                    f"--start --repo '{self.repo}' >/dev/null 2>&1\n"))
+        self.assertEqual(self.reserve(self.b).stdout.strip(), "W-31")
+        self.assertEqual(self.held(self.origin, "refs/heads/bakehouse-records"), ["FLOOR", "W-31"])
+
+    def test_a_seal_in_another_lane_during_a_refused_push_is_taken_back_by_a_commit(self):
+        self.started()
+        then = (f"  '{sys.executable}' '{trs.twf.BAKEHOUSE}' reserve --repo '{self.repo}' >/dev/null 2>&1\n"
+                f"  mkdir -p '{self.brec}/notes'; echo seal > '{self.brec}/notes/s.txt'\n"
+                f"  git -C '{self.brec}' add -- notes/s.txt && git -C '{self.brec}' commit -q -m seal -- notes/s.txt\n")
+        self.hook(self.b, self.once(self.repo.parent / "f", then))
+        self.assertEqual(self.reserve(self.b).stdout.strip(), "W-5")
+        self.assertEqual(json.loads(self.g(self.brec, "show", "HEAD:reservations/W-4"))["writer"], "alpha")
+        self.assertIn("level with", self.sync(self.b))
+        self.assertEqual(self.g(self.brec, "status", "--porcelain", "--", "reservations"), "")
+
+    def test_a_kill_during_the_push_leaves_the_next_reserve_and_sync_clean(self):
+        self.started()
+        # on the reservation's push: kill reserve itself (the push's parent), and stop the push
+        h = self.hook(self.repo, "while read -r a b c d; do\n"
+                      f"  git -C '{self.records}' diff --name-only \"${{d}}\" \"${{b}}\" -- reservations/ | grep -q 'W-' "
+                      "|| continue\n  kill -9 \"$(ps -o ppid= -p \"${PPID}\" | tr -d ' ')\"; sleep 1; exit 1\n"
+                      "done\nexit 0\n")
+        p = self.bakehouse("reserve", "--repo", self.repo)
+        self.assertEqual((p.returncode, p.stdout), (-9, ""), p.stderr)
+        self.assertEqual(self.held(self.records), ["FLOOR", "W-4"])  # the commit was left, unpushed
+        h.unlink()
+        self.assertEqual(self.reserve(self.repo).stdout.strip(), "W-4")
+        self.assertIn("level with", self.sync(self.repo))
+        self.assertEqual(self.held(self.origin, "refs/heads/bakehouse-records"), ["FLOOR", "W-4"])
+        self.assertEqual(self.rgit("status", "--porcelain", "--", "reservations"), "")
+
+    def test_an_interrupt_during_the_push_takes_the_commit_back(self):
+        self.started()
+        self.hook(self.repo, "while read -r a b c d; do\n"
+                  f"  git -C '{self.records}' diff --name-only \"${{d}}\" \"${{b}}\" -- reservations/ | grep -q 'W-' "
+                  "|| continue\n  kill -INT \"$(ps -o ppid= -p \"${PPID}\" | tr -d ' ')\"; sleep 1; exit 1\n"
+                  "done\nexit 0\n")
+        head = self.rgit("rev-parse", "HEAD")
+        p = self.bakehouse("reserve", "--repo", self.repo)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("KeyboardInterrupt", p.stderr)
+        self.assertEqual((self.rgit("rev-parse", "HEAD"), self.held(self.records)), (head, ["FLOOR"]))
+
+    def test_a_declined_push_is_not_retried_and_leaves_nothing(self):
+        self.started()
+        count = self.repo.parent / "declined"
+        h = self.origin / "hooks" / "pre-receive"
+        h.write_text(f"#!/bin/sh\necho x >> '{count}'\necho 'protected branch' >&2\nexit 1\n")
+        h.chmod(0o755)
+        head = self.rgit("rev-parse", "HEAD")
+        p = self.reserve(self.repo, rc=1)
+        self.assertIn("declined, not raced", p.stderr)
+        self.assertEqual(len(count.read_text().split()), 1)  # reserve's one push (the sync's had nothing): no retry
+        self.assertEqual((self.rgit("rev-parse", "HEAD"), self.held(self.records)), (head, ["FLOOR"]))
+
+    def test_a_push_failing_for_another_reason_takes_the_commit_back(self):
+        self.started()
+        self.hook(self.repo, "while read -r a b c d; do [ \"${b}\" != \"${d}\" ] && exit 1; done\nexit 0\n")
+        head = self.rgit("rev-parse", "HEAD")
+        p = self.reserve(self.repo, rc=1)
+        self.assertIn("Nothing is reserved", p.stderr)
+        self.assertEqual((self.rgit("rev-parse", "HEAD"), self.held(self.records)), (head, ["FLOOR"]))
+        self.assertEqual(self.rgit("status", "--porcelain", "--", "reservations"), "")
+
+    def test_the_push_runs_with_the_sync_lock_held_and_never_prompts(self):
+        self.started()
+        lock = Path(self.rgit("rev-parse", "--absolute-git-dir")) / trs.records_sync.LOCK
+        seen = self.repo.parent / "seen"
+        probe = ("import fcntl, sys\nf = open(sys.argv[1], 'a')\ntry:\n    fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)\n"
+                 "    print('free')\nexcept OSError:\n    print('held')\n")
+        (self.repo.parent / "probe.py").write_text(probe)
+        self.hook(self.repo, "while read -r a b c d; do [ \"${b}\" != \"${d}\" ] || continue\n"
+                  f"  git -C '{self.records}' diff --name-only \"${{d}}\" \"${{b}}\" -- reservations/ | grep -q 'W-' || continue\n"
+                  f"  '{sys.executable}' '{self.repo.parent / 'probe.py'}' '{lock}' >> '{seen}'\n"
+                  f"  echo \"prompt=${{GIT_TERMINAL_PROMPT}}\" >> '{seen}'\ndone\nexit 0\n")
+        self.assertEqual(self.reserve(self.repo).stdout.strip(), "W-4")
+        self.assertEqual(seen.read_text().split(), ["held", "prompt=0"])
+
+    def test_wrong_token_settings_refuse_naming_them(self):
+        self.started()
+        self.rgit("config", "bakehouse.tokenFile", str(self.repo.parent / "token.env"))
+        p = self.reserve(self.repo, rc=1)
+        self.assertIn("token settings are wrong", p.stderr)
+        self.assertEqual(self.held(self.records), ["FLOOR"])
 
 
 class Offline(Base):
@@ -392,6 +530,14 @@ class Preflight(ttp.Fixture):
                 code, out = self.pre("health")
                 self.assertEqual(code, 1, out)
                 self.assertIn("FAIL check 2: field 'tracker.reserve'", out)
+
+    def test_a_prefix_the_tracker_id_does_not_match_fails_check_2(self):
+        self.records()
+        self.owned(records={"codeRoots": ["docs/"]},
+                   tracker={"file": "docs/TRACKER.md", "id": "^T[0-9]+$", "reserve": {"prefix": "A"}})
+        code, out = self.pre("health")
+        self.assertEqual(code, 1, out)
+        self.assertIn("do not match tracker.id", out)
 
     def test_off_no_reserve_field_or_format_1_changes_nothing(self):
         for fmt, field in ((2, False), (1, True)):

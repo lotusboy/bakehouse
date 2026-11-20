@@ -47,6 +47,8 @@ TRIES = 5
 PREFIX = re.compile(r"[A-Za-z][A-Za-z_-]{0,15}")
 USAGE = "usage: bakehouse reserve [--start] [--repo <folder>]"
 START = "bakehouse reserve --start"
+# a push refused because the remote moved (a race); any other refusal (a hook, a protected branch) is declined
+RACED = ("non-fast-forward", "fetch first", "incorrect old value", "cannot lock ref")
 
 
 class Refused(Exception):
@@ -61,7 +63,15 @@ def prefix_problem(binding: dict) -> str | None:
     v = tracker["reserve"]
     if isinstance(v, dict) and not set(v) - {"prefix", "_about"} and isinstance(v.get("prefix"), str) \
             and PREFIX.fullmatch(v["prefix"]):
-        return None
+        form = tracker.get("id")
+        try:
+            ok = not isinstance(form, str) or re.fullmatch(form, f"{v['prefix']}1") is not None
+        except re.error:
+            ok = True  # a tracker.id that does not compile is reported on its own
+        if ok:
+            return None
+        return (f"field 'tracker.reserve' = {json.dumps(v)} hands out ids such as {v['prefix']}1, which do not match "
+                f"tracker.id {json.dumps(form)}: make the prefix the start of the tracker's id form")
     return (f"field 'tracker.reserve' = {json.dumps(v)} is not {{\"prefix\": \"<prefix>\"}}: an id is the prefix and a "
             "number, so the prefix is 1 to 16 letters, hyphens or underscores, starting with a letter; for example "
             '{"prefix": "A"}')
@@ -188,16 +198,20 @@ def synced(records) -> tuple[str, str]:
         raise Refused(f"an id needs the remote, and the records branch has none (no upstream, and origin does not hold "
                       f"{rs.BRANCH}): publish it once with `git -C {records} push -u origin {rs.BRANCH}`; nothing is "
                       "reserved")
+    if r.state != "level" and ("token settings" in (r.line or "") or "token file" in (r.line or "")):
+        raise Refused(f"the records token settings are wrong: {r.line}. Fix them first (`bakehouse setup --token-file "
+                      "<path> --token-key <NAME> --token-user <name>`); nothing is reserved")
     if r.state != "level":
         raise Refused(f"an id needs the remote, and the sync could not reach it: {r.line}. Nothing is reserved")
     return rs.upstream(records)
 
 
-def network(records):
-    """The git runner for this reserve's network steps: no prompts, the user's token, one bound of rs.BOUND seconds."""
+def network(records, token: bool = True):
+    """A git runner for network steps: no prompts, one bound of rs.BOUND seconds; with token, the user's records token
+    (only for the records remote's URL)."""
     deadline = time.monotonic() + rs.BOUND
     env = rs.network_env(records)
-    helper, extra, _ = rs.token(records)  # a token problem is the sync's to report
+    helper, extra, _ = rs.token(records) if token else ([], {}, None)  # a token problem is the sync's to report
     env.update(extra)
 
     def net(where, *args):
@@ -222,57 +236,106 @@ def commit(records, path: str, data: dict, message: str) -> str:
             p = git(records, *args)
             if p.returncode:
                 git(records, "reset", "-q", "--", path)
-                f.unlink(missing_ok=True)
+                git(records, "checkout", "-q", "HEAD", "--", path)
+                if git(records, "cat-file", "-e", f"HEAD:{path}").returncode:
+                    f.unlink(missing_ok=True)
                 raise Refused(f"could not commit {path} in {records}: {rs.detail(p.stderr or p.stdout)}; nothing is "
                               "reserved")
         return git(records, "rev-parse", "HEAD").stdout.strip()
 
 
 def drop(records, path: str, sha: str) -> None:
-    """Take back the commit sha that commit made: it must be the records branch's tip, with one parent, and hold only
-    path; else Refused, naming it. HEAD moves to its parent; path leaves the index and the disk."""
+    """Take back the commit sha that commit made. It must have one parent and hold only path; else Refused, naming the
+    repair. At the tip: HEAD moves to its parent. Not at the tip (a seal in another lane came after it): a new commit,
+    by path, puts path back as the parent had it (absent: deleted). Under the writer lock."""
     with rs.writer_lock(records):
         tip = git(records, "rev-parse", "HEAD").stdout.strip()
         parents = git(records, "rev-list", "--parents", "-n", "1", sha).stdout.split()[1:]
         files = git(records, "diff-tree", "--no-commit-id", "--name-only", "-r", "--root", sha).stdout.split()
-        if tip != sha or len(parents) != 1 or files != [path]:
-            raise Refused(f"stopped: the commit {sha[:12]} of {path} must be taken back, and it is not the records "
-                          f"branch's tip holding only that file (the tip is {tip[:12]}). Nothing was changed. Take it "
-                          f"back by hand in {records} before the next sync, or that sync conflicts on {path}")
-        p = git(records, "update-ref", "-m", f"bakehouse reserve: take back {path}", f"refs/heads/{rs.BRANCH}",
-                parents[0], sha)
-        if p.returncode:
-            raise Refused(f"stopped: could not take back the commit {sha[:12]} of {path}: {rs.detail(p.stderr)}")
-        git(records, "reset", "-q", "--", path)
-        (Path(records) / path).unlink(missing_ok=True)
+        if len(parents) != 1 or files != [path]:
+            raise Refused(f"stopped: the commit {sha[:12]} of {path} must be taken back, and it does not have one "
+                          f"parent holding only that file. Nothing was changed. Take it back by hand before the next "
+                          f"sync, or that sync conflicts on {path}: `git -C {records} revert --no-edit {sha}`")
+        held = git(records, "cat-file", "-e", f"{parents[0]}:{path}").returncode == 0
+        if tip == sha:
+            p = git(records, "update-ref", "-m", f"bakehouse reserve: take back {path}", f"refs/heads/{rs.BRANCH}",
+                    parents[0], sha)
+            if p.returncode:
+                raise Refused(f"stopped: could not take back the commit {sha[:12]} of {path}: {rs.detail(p.stderr)}")
+            git(records, "reset", "-q", "--", path)
+            if held:
+                git(records, "checkout", "-q", "HEAD", "--", path)
+            else:
+                (Path(records) / path).unlink(missing_ok=True)
+            return
+        steps = (("checkout", "-q", parents[0], "--", path) if held else ("rm", "-q", "--", path),
+                 (*rs.LOCAL, "commit", "-q", "-m", f"records: take back {path} (bakehouse reserve)", "--only", "--",
+                  path))
+        for args in steps:
+            p = git(records, *args)
+            if p.returncode:
+                raise Refused(f"stopped: could not take back the commit {sha[:12]} of {path} ({rs.detail(p.stderr)}). "
+                              f"Take it back by hand before the next sync: `git -C {records} revert --no-edit {sha}`")
 
 
-def publish(records, up, path: str, data: dict, message: str, net, tries: int) -> tuple[str, int]:
-    """Commit path and push it, at most `tries` pushes. ("pushed" | "taken", pushes used): taken when the remote holds
-    path from another writer (the local commit is dropped and the remote merged). Refused for any other failure, with
-    the commit dropped."""
+def stale(records, up, writer: str) -> None:
+    """Take back this writer's reservation commits that are not on the upstream (a reserve stopped between its commit
+    and its push), newest first, before the sync could push them."""
+    ref = rs.tracking(*up)
+    if git(records, "rev-parse", "-q", "--verify", ref).returncode:
+        return
+    for sha in git(records, "log", "--format=%H", f"{ref}..HEAD", "--", f"{FOLDER}/").stdout.split():
+        files = git(records, "diff-tree", "--no-commit-id", "--name-only", "-r", "--root", sha).stdout.split()
+        if len(files) != 1 or not files[0].startswith(f"{FOLDER}/"):
+            continue
+        try:
+            data = json.loads(git(records, "show", f"{sha}:{files[0]}").stdout)
+        except ValueError:
+            continue
+        msg = git(records, "log", "-1", "--format=%s", sha).stdout
+        if isinstance(data, dict) and data.get("writer") == writer and not msg.startswith("records: take back"):
+            drop(records, files[0], sha)
+
+
+def publish(records, up, path: str, data: dict, message: str, net, tries: int, taken) -> tuple[str, int]:
+    """Commit path and push it, at most `tries` pushes. ("pushed" | "taken", pushes used): taken when taken(ref) is true
+    of the fetched remote (the local commit is taken back and the remote merged). Refused for any other failure, with
+    the commit taken back."""
     remote, branch = up
     ref = rs.tracking(remote, branch)
     used = 0
     while used < tries:
         used += 1
         sha = commit(records, path, data, message)
-        p = net(records, "push", "-q", remote, f"refs/heads/{rs.BRANCH}:refs/heads/{branch}")
+        try:
+            p = net(records, "push", "-q", remote, f"refs/heads/{rs.BRANCH}:refs/heads/{branch}")
+        except BaseException:
+            drop(records, path, sha)
+            raise
         if p.returncode == 0:
             git(records, "update-ref", ref, f"refs/heads/{rs.BRANCH}")
             return "pushed", used
+        low = (p.stderr or "").lower()
+        race = p.returncode is not None and any(w in low for w in RACED)
         text = rs.why(p, remote, "push")
-        if p.returncode is not None and text.startswith("refused"):
+        if race:
             f = net(records, "fetch", "-q", remote, f"+refs/heads/{branch}:{ref}")
             if f.returncode != 0:
-                text = rs.why(f, remote, "fetch")
+                race, text = False, rs.why(f, remote, "fetch")
         drop(records, path, sha)
-        if p.returncode is None or not text.startswith("refused"):
+        if p.returncode is None:
+            raise Refused(f"the push to {remote} had no answer within {rs.BOUND} seconds: {path} may be on the remote "
+                          "all the same (an id taken that way is burned, never handed out twice). Nothing is reserved "
+                          "here; run it again")
+        if not race:
+            if text.startswith("refused"):
+                text = (f"failed: the push to {remote} was declined, not raced (a server hook or a protected branch): "
+                        f"{rs.detail(p.stderr)}; not retried")
             raise Refused(f"an id needs the remote: {text}. Nothing is reserved")
         m = rs.merge(records, ref)
         if m:
             raise Refused(f"{m}. Nothing is reserved")
-        if git(records, "cat-file", "-e", f"{ref}:{path}").returncode == 0:
+        if taken(ref):
             return "taken", used
     raise Refused(f"the push to {remote} was refused {TRIES} times (the remote kept moving); nothing is reserved. Run "
                   "it again")
@@ -281,6 +344,9 @@ def publish(records, up, path: str, data: dict, message: str, net, tries: int) -
 def reserve(records, pfx: str, writer: str) -> str:
     """The id reserved and pushed (steps 1 to 4)."""
     with sync_lock(records):
+        up = rs.upstream(records)
+        if up:
+            stale(records, up, writer)
         up = synced(records)
         if floor_at(records) is None:
             raise Refused(f"reservations are on (tracker.reserve), and the records branch has no floor yet: run "
@@ -288,9 +354,13 @@ def reserve(records, pfx: str, writer: str) -> str:
         net, left = network(records), TRIES
         while left > 0:
             n = max([floor_at(records), *reserved_at(records, pfx)]) + 1
-            wo = f"{pfx}{n}"
-            how, used = publish(records, up, f"{FOLDER}/{wo}", {"id": wo, "writer": writer, "time": now()},
-                                f"records: reserve the work-order id {wo} (writer {writer})", net, left)
+            wo, path = f"{pfx}{n}", f"{FOLDER}/{pfx}{n}"
+
+            def taken(ref):  # another writer took the id, or a raised floor covers it
+                return git(records, "cat-file", "-e", f"{ref}:{path}").returncode == 0 or \
+                    (floor_at(records, ref) or 0) >= n
+            how, used = publish(records, up, path, {"id": wo, "writer": writer, "time": now()},
+                                f"records: reserve the work-order id {wo} (writer {writer})", net, left, taken)
             if how == "pushed":
                 return wo
             left -= used
@@ -319,21 +389,30 @@ def tracker_floor(main, tracker_file: str, pfx: str) -> tuple[int, int]:
     return best, held
 
 
+def fetch_code(records, main, up) -> None:
+    """Fetch each remote of the main clone, each with its own bound. The records token goes only to a remote whose URL
+    is the records upstream's. Refused, naming the remote that failed."""
+    url = git(records, "config", "--get", f"remote.{up[0]}.url").stdout.strip()
+    for remote in git(main, "remote").stdout.split():
+        mine = git(main, "config", "--get", f"remote.{remote}.url").stdout.strip() == url
+        p = network(records, token=mine)(main, "fetch", "-q", remote)
+        if p.returncode != 0:
+            raise Refused(f"the floor needs every remote of {main}: {rs.why(p, remote, 'fetch')}. Fetch it by hand "
+                          f"(`git -C {main} fetch {remote}`) or remove it (`git -C {main} remote remove {remote}`); "
+                          "nothing is recorded")
+
+
 def start(project, binding: dict, pfx: str, writer: str) -> str:
-    """--start: the line to print."""
+    """--start: the line to print. The first one records the floor; a later one raises it when this clone's branches
+    hold a higher id, and never lowers it."""
     records = project.records
     with sync_lock(records):
+        up = rs.upstream(records)
+        if up:
+            stale(records, up, writer)
         up = synced(records)
-        have = floor_at(records)
-        if have is not None:
-            return (f"bakehouse reserve --start: already started: the floor is {pfx}{have} ({FLOOR}); nothing "
-                    "changed")
         main = locator.main_clone(project) or project.root
-        net = network(records)
-        p = net(main, "fetch", "--all", "-q")
-        if p.returncode != 0:
-            raise Refused(f"the floor needs the remote: {rs.why(p, 'the code repository remotes', 'fetch')}. Nothing "
-                          "is recorded")
+        fetch_code(records, main, up)
         tracker = binding["tracker"]
         if not isinstance(tracker.get("file"), str):
             raise Refused("the binding has no tracker.file, so the floor cannot be read")
@@ -341,14 +420,23 @@ def start(project, binding: dict, pfx: str, writer: str) -> str:
         if branches == 0:
             raise Refused(f"no branch of {main} holds the tracker file {tracker['file']} (tracker.file), so there is no "
                           "floor to read; nothing is recorded")
-        how, _ = publish(records, up, FLOOR, {"floor": n, "writer": writer, "time": now(), "branches": branches},
-                         f"records: the reservation floor {pfx}{n}, the highest work-order id on {branches} "
-                         "branch(es)", net, TRIES)
-        if how == "taken":
-            return (f"bakehouse reserve --start: already started on another machine: the floor is "
-                    f"{pfx}{floor_at(records)} ({FLOOR}); nothing changed")
-        return (f"bakehouse reserve --start: the floor is {pfx}{n}, the highest id in {tracker['file']} over {branches} "
-                f"branch(es) of {main}; every id at or under it counts as taken. Next: `bakehouse reserve`")
+        net, left = network(records), TRIES
+        while left > 0:
+            have = floor_at(records)
+            if have is not None and n <= have:
+                return (f"bakehouse reserve --start: the floor is {pfx}{have} ({FLOOR}), and no branch of {main} holds "
+                        "a higher id; nothing changed")
+            how, used = publish(records, up, FLOOR, {"floor": n, "writer": writer, "time": now(), "branches": branches},
+                                f"records: the reservation floor {pfx}{n}, the highest work-order id on {branches} "
+                                "branch(es)", net, left, lambda ref, have=have: floor_at(records, ref) != have)
+            if how == "pushed":
+                was = "" if have is None else f" (raised from {pfx}{have})"
+                return (f"bakehouse reserve --start: the floor is {pfx}{n}{was}, the highest id in {tracker['file']} "
+                        f"over {branches} branch(es) of {main}; every id at or under it counts as taken. Next: "
+                        "`bakehouse reserve`")
+            left -= used
+        raise Refused(f"the push to {up[0]} was refused {TRIES} times (the remote kept moving); nothing is recorded. "
+                      "Run it again")
 
 
 def main(argv, root=None) -> int:
