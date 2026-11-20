@@ -319,30 +319,50 @@ format 2. Without either, nothing changes.
    - A tracker id with one letter after the number counts as its number: `A1063b` counts as 1063.
    - The prefix is 1 to 16 letters, hyphens or underscores, and starts with a letter. Preflight check 2
      fails any other shape, for every job.
+   - The prefix and a number must match `tracker.id`: check 2 fails when `<prefix>1` does not.
 2. **The floor: `bakehouse reserve --start [--repo <folder>]`.** Run it once per project.
    1. It syncs the records branch (as `reserve` does, point 3 step 1).
-   2. It fetches every remote of the main clone.
+   2. It fetches each remote of the main clone, one at a time, each within its own bound of 20 seconds.
+      The records token goes only to the remote whose URL is the records upstream's; the others use the
+      user's own login, with no prompts. A remote it cannot fetch stops it, named: fetch that remote by
+      hand, or remove it.
    3. It reads the tracker file (`tracker.file`) on every local and remote-tracking branch of the main
       clone, and takes the highest id number there.
    4. It writes that number to `reservations/FLOOR` (JSON: `floor`, `writer`, `time`, `branches`),
       commits that file alone, by path, and pushes it.
    - Every id at or under the floor counts as taken. One file covers every id used before
-     reservations. An id on an unmerged branch is covered too, because every branch is read.
-   - A second `--start` changes nothing and says so. So does a `--start` on a machine whose sync
-     brings another machine's floor.
+     reservations.
+   - It reads only the branches of this clone: its local branches, and the remote-tracking branches
+     its fetch brings. A branch that is only on another machine, or only in a lane clone, is not read.
+     So push every branch (every lane clone's too), and run `--start` on each machine.
+   - A later `--start` raises the floor, and never lowers it. When this clone's branches hold an id
+     above the recorded floor, it commits the new `reservations/FLOOR` and pushes it, the same way a
+     reservation is pushed (point 3, step 4). Otherwise it changes nothing and says so.
 3. **A new id: `bakehouse reserve [--repo <folder>]`.** It prints the next free id on stdout, and
    records it.
    1. It syncs the records branch. If the sync cannot reach the remote, it refuses and says why: an id
       needs the remote.
    2. It takes the highest number among the reservations and the floor, and adds one.
    3. It writes `reservations/<id>` (JSON: `id`, `writer`, `time`) and commits that file alone, by path.
-   4. It pushes. If the push is refused, it fetches. It takes its own reservation commit back. That
-      commit must be the tip of the records branch and hold only that file. If it is not, reserve stops
-      and says so, and changes nothing. Then it merges the remote.
-      - The remote now holds `reservations/<id>` (another machine took the id): it goes back to step 2.
-      - The remote does not hold it: it commits the same id again, on top of the merge, and pushes again.
+   4. It pushes. If the push is refused because the remote moved (a race), it fetches. It takes its own
+      reservation commit back (below). Then it merges the remote.
+      - The remote now holds `reservations/<id>`, or a floor at or above the id: it goes back to step 2.
+      - Otherwise: it commits the same id again, on top of the merge, and pushes again.
    5. At most 5 pushes. Then it refuses and says so.
-   - Any refusal leaves nothing committed: a reservation commit that was not pushed is taken back.
+   - **Taking a commit back.** The commit must have one parent and hold only its one file. At the tip
+     of the records branch, the branch moves back to its parent. Under a later commit (a seal in another
+     lane, for example), a new commit puts the file back as the parent had it (for a reservation:
+     deleted), by path, under the writer lock. Any other shape stops reserve, which names the repair:
+     `git -C <records> revert --no-edit <commit>`.
+   - A push declined by a server hook or a protected branch is not a race: reserve refuses, says so, and
+     does not retry.
+   - A push with no answer within the bound: reserve refuses, and says the id may be on the remote all
+     the same. Such an id is burned: it is never handed out twice.
+   - Any refusal takes the unpushed reservation commit back, so the id is not committed locally.
+   - Interrupted between its commit and its push (killed, for example), reserve leaves the commit.
+     The next `reserve` or `--start` takes back this writer's reservation commits that the upstream does
+     not hold, before its sync, so the sync never pushes them.
+   - Token settings that are wrong (`bakehouse setup --token-file ...`) refuse, naming them.
    - `reserve` refuses until `--start` has run, naming it.
 4. **The lock.** `reserve` and `--start` hold the sync lock (`bakehouse-sync.lock`, in the records
    worktree's git folder) from their sync to their last push. They wait up to 25 seconds for a sync
@@ -365,9 +385,10 @@ format 2. Without either, nothing changes.
      two machines.
    - Preflight reads the records branch as this machine has it. A reservation made on another machine
      is seen after the next sync (session start runs one).
-6. **The order on a project already in format 2.** Migrate first. Then run `bakehouse reserve
-   --start`. Then add `tracker.reserve` to the binding. From then on, the PM runs `bakehouse reserve`
-   before it writes each new tracker row, and writes the id it prints.
+6. **The order on a project already in format 2.** Migrate first. Then add `tracker.reserve` to the
+   binding: `--start` reads the prefix from it. Then run `bakehouse reserve --start`. Between the last
+   two, `/bakehouse:change` fails preflight check 7 ("no floor"). From then on, the PM runs `bakehouse
+   reserve` before it writes each new tracker row, and writes the id it prints.
 7. **The limits.**
    1. An id needs the remote. Offline, no new work order can start.
    2. An id handed out by `reserve` and never used stays taken.
@@ -376,6 +397,10 @@ format 2. Without either, nothing changes.
    - `reserve` does not write the tracker row. The PM writes it, on the product branch, as before.
    - Ids already used are not rewritten, and get no reservation file: the floor covers them.
    - Decision ids are not reserved.
+   - The floor is only as good as the branches `--start` could read: a branch that was never pushed,
+     or is only in a lane clone, counts only when `--start` runs where it is.
+   - Without `fcntl` (native Windows) there is no sync lock and no writer lock, as for the sync: two
+     reserves on one machine at once can then pick the same id, and the push race decides.
 
 ## Lanes
 
