@@ -346,7 +346,7 @@ stream's decision ledger, and cited on the commit that made the exception:
 3. The value is the decision id alone: `d`, 8 digits, `-`, 6 hex digits. Anything else refuses.
 4. Close reads the project's decision ledger, `decisions/ledger.jsonl` in its records folder, through
    `decision.py`'s own reader. The decision must have an `answer` recorded before the commit's
-   committer time. The latest such answer must choose the approving option (compared as `decision.py`
+   committer time, or in the same second (every stamp is whole seconds). The latest such answer must choose the approving option (compared as `decision.py`
    compares a choice: case and spacing aside), and the ask's `task` must be the work order being
    closed. An id that is not in the ledger, another choice, another work order's decision, or an
    answer recorded after the commit refuses. Named limit: a decision asked without
@@ -453,7 +453,8 @@ by these events ("Closing a sealed work order", below).
    as a file's first seal does. The retire's decision is the owner's go for it. No other command is
    needed. The same holds for a retired prediction or baseline sealed again in its round.
 8. For both, the decision must be asked with `--approves` and `--task <work-order>`, answered before
-   the call, and its latest answer must choose the approving option. A decision asked without
+   the call (or in its same second: every stamp is whole seconds; close judges a revise or retire by its
+   event's stamp the same way), and its latest answer must choose the approving option. A decision asked without
    `--approves` never approves a revise or retire: close's older rule for such decisions (named limit
    D1) is not used here. On 2026-11-04, 0 of the 737 decisions in the adopting project's ledger carried
    `approves`, so every revise or retire needs a new decision. It is recorded in the event as

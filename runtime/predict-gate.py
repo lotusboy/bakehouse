@@ -761,11 +761,12 @@ def decision_refusal(decided: dict, i: str, wo: str, at, before: str = "the comm
     """Why decision i does not approve an exception for work order wo at time at; None when it does
     (D1: answered before at, with its approving option and asked for wo; an ask with no approving option:
     answered agreed true; never an assumed answer, which is the PM's, not the owner's). Shared by close's
-    trailers and by revise and retire."""
+    trailers and by revise and retire. "Before" includes the same instant: every stamp is whole seconds, so an
+    answer written just before the revise (or the commit) can carry its stamp."""
     d = decided.get(i)
     if not d:
         return f"decision {i} is not in the decision ledger"
-    prior = sorted(((t, a) for a in d["answers"] if (t := when(a.get("ts"))) and t < at), key=lambda p: p[0])
+    prior = sorted(((t, a) for a in d["answers"] if (t := when(a.get("ts"))) and t <= at), key=lambda p: p[0])
     if not prior:
         return f"decision {i} has no answer recorded before {before}"
     ask, last = d["ask"], prior[-1][1]
