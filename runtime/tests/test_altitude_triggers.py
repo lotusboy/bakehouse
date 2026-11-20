@@ -27,7 +27,8 @@ class Ask(Scratch):
         self.decisions = self.records / "decisions" / "ledger.jsonl"
 
     def ask(self, *extra, q="Change the reader to keep the column order?", task="T1", options=OPTIONS, ts=None,
-            ok=True):
+            ok=True, declare=False):
+        """declare: the second option is declared the architect check (--architect-option)."""
         args = [str(self.rt / "decision.sh"), "ask", "--category", "process", "--question", q]
         for o in options:
             args += ["--option", o]
@@ -35,6 +36,8 @@ class Ask(Scratch):
                  "--evidence", "WIP.md"]
         if task:
             args += ["--task", task]
+        if declare:
+            args += ["--architect-option", options[1]]
         p = self.run_([*args, *extra], env={"DECISION_TS": ts} if ts else None)
         if ok:
             self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
@@ -58,9 +61,11 @@ class Ask(Scratch):
         with self.ledger.open("a") as f:
             f.write(json.dumps({"ts": ts, "kind": "sealed", "task": task, "round": "first"}) + "\n")
 
-    def architect(self, agent, task):
+    def architect(self, agent, task, *extra, ts=None, kind="architect"):
+        """A run recorded with spend.sh; with ts, backfilled at that time (SPEND_TS, which needs --note)."""
         p = self.run_([str(self.rt / "spend.sh"), "record", "--agent", agent, "--label", f"job {agent}",
-                       "--tokens", "100", "--no-ops", "--kind", "architect", "--task", task, *RESULT])
+                       "--tokens", "100", "--no-ops", "--kind", kind, "--task", task, *RESULT, *extra,
+                       *(["--note", "a test run"] if ts else [])], env={"SPEND_TS": ts} if ts else None)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
 
 
@@ -139,17 +144,55 @@ class Altitude(Ask):
     # test 4
     def test_an_architect_check_option_lets_it_through_and_the_line_still_prints(self):
         for n, (layer, owners) in enumerate((("out", 1), ("in", 2), ("out", 2))):
-            p = self.change(layer, owners, f"area {n}", options=("go on", ARCH), task=f"T{n}")
+            p = self.change(layer, owners, f"area {n}", options=("go on", ARCH), declare=True, task=f"T{n}")
             self.assertEqual(len(self.lines(p, "altitude")), 1, p.stderr)
             self.assertEqual(self.rows()[-1]["triggers"], ["altitude"])
             self.assertEqual((self.rows()[-1]["layer"], self.rows()[-1]["owners"]), (layer, owners))
 
-    def test_an_option_that_declines_the_architect_check_does_not_offer_one(self):
-        for option in ("go on without an architect check", "skip the architect check", "no architect check"):
+    def test_only_the_declared_option_counts_whatever_its_words(self):
+        for option in ("go on without an architect check", "Architect check of the reader layer"):
             with self.subTest(option):
                 p = self.change("out", 1, "reader", options=("stop", option), ok=False)
                 self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
-        self.change("out", 1, "reader", options=("stop", "Architect's check of the reader layer"))
+                self.assertIn("--architect-option", p.stderr.splitlines()[-1])
+        self.change("out", 1, "reader", options=("stop", "ask the reader's owner first"), declare=True)
+        self.assertEqual(self.rows()[-1]["architectOption"], "ask the reader's owner first")
+
+    def test_the_architect_option_is_one_of_the_options_and_goes_with_change(self):
+        p = self.change("out", 1, "reader", "--architect-option", "an architect check", ok=False)
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        last = p.stderr.splitlines()[-1]
+        self.assertIn("--architect-option", last)
+        self.assertIn("--option", last)
+        p = self.ask("--architect-option", "stop", q="Run the audit now?", ok=False)
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn("go with --change", p.stderr.splitlines()[-1])
+        self.assertEqual(self.rows(), [])
+        self.change("in", 1, "reader")
+        self.assertIsNone(self.rows()[-1]["architectOption"])
+
+    def test_an_autonomous_ask_that_fires_recommends_the_architect_option(self):
+        p = self.change("out", 1, "reader", "--autonomous", options=("go on", ARCH), declare=True, ok=False)
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn("--autonomous", p.stderr.splitlines()[-1])
+        self.ask("--change", "--layer", "out", "--owners", "1", "--area", "reader", "--autonomous",
+                 "--architect-option", ARCH, options=(ARCH, "go on"), task="T3")
+        self.assertEqual(self.rows()[-1]["architectOption"], ARCH)
+
+    def test_an_assumed_answer_on_an_altitude_ask_is_the_architect_option(self):
+        (self.work / ".team" / "decision-config.json").write_text(json.dumps({"unattended": {"enabled": True}}))
+        p = self.run_([str(self.rt / "decision.sh"), "unattended", "start", "--why", "owner said unattended"])
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        did = self.change("out", 1, "reader", "--confidence", "0.9", options=("go on", ARCH),
+                          declare=True).stdout.strip()
+        p = self.run_([str(self.rt / "decision.sh"), "answer", did, "--assumed", "--est-tokens", "0"])
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn("architect option", p.stderr.splitlines()[-1])
+        self.assertEqual(self.refusals()[-1]["gate"], "decision:altitude")
+        did = self.ask("--change", "--layer", "out", "--owners", "1", "--area", "reader", "--confidence", "0.9",
+                       "--architect-option", ARCH, options=(ARCH, "go on"), task="T2").stdout.strip()
+        p = self.run_([str(self.rt / "decision.sh"), "answer", did, "--assumed", "--est-tokens", "0"])
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
 
     # test 5
     def test_an_architect_run_recorded_after_the_work_order_opened_lets_it_through(self):
@@ -228,7 +271,7 @@ class Triggers(Ask):
 
     def test_a_fix_round_and_the_altitude_trigger_both_record(self):
         p = self.ask("--fix-round", "1", *self.UP, "--layer", "out", "--owners", "1", "--area", "reader",
-                     options=("go on", ARCH), q="Go on the T1 fix round 1?")
+                     options=("go on", ARCH), declare=True, q="Go on the T1 fix round 1?")
         self.assertEqual(len(self.lines(p)), 2, p.stderr)
         self.assertEqual(self.rows()[-1]["triggers"], ["upstream", "altitude"])
 
@@ -243,7 +286,7 @@ class Triggers(Ask):
         self.decisions.write_text(json.dumps(old) + "\n")
         self.ask(q="Run the audit now?")
         self.assertEqual(self.rows()[-1]["triggers"], [])
-        self.change("out", 2, "reader", options=("go on", ARCH))
+        self.change("out", 2, "reader", options=("go on", ARCH), declare=True)
         self.assertEqual(self.rows()[-1]["triggers"], ["altitude"])
         p = self.run_([str(self.rt / "decision.sh"), "review"])
         self.assertEqual(p.returncode, 0, p.stderr)
@@ -259,64 +302,162 @@ class Cluster(Ask):
 
     # test 12
     def test_the_third_same_kind_trigger_on_one_area_is_a_cluster(self):
-        self.change("in", 2, "row shape", options=("go on", ARCH), task="T1", ts="2026-01-02T10:00:00+00:00")
-        self.change("in", 3, "row shape", options=("go on", ARCH), task="T2", ts="2026-01-02T10:05:00+00:00")
-        p = self.change("in", 2, "row shape", options=("go on", ARCH), task="T3", ok=False)
+        self.change("in", 2, "row shape", options=("go on", ARCH), declare=True, task="T1", ts="2026-01-02T10:00:00+00:00")
+        self.change("in", 3, "row shape", options=("go on", ARCH), declare=True, task="T2", ts="2026-01-02T10:05:00+00:00")
+        p = self.change("in", 2, "row shape", options=("go on", ARCH), task="T3", ok=False)  # not declared
         self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
         self.assertEqual(self.lines(p), [self.OWN.format(area="row shape", n=3, tasks="T1, T2, T3")])
-        self.assertIn("architect check of row shape", p.stderr.splitlines()[-1])
+        self.assertIn("--architect-option", p.stderr.splitlines()[-1])
+        self.assertIn("one architect check of the area row shape", p.stderr.splitlines()[-1])
         self.assertEqual(self.refusals()[-1]["gate"], "decision:altitude-cluster")
-        p = self.change("in", 2, "row shape", options=self.area_check("row shape"), task="T3")
+        p = self.change("in", 2, "row shape", options=self.area_check("row shape"), declare=True, task="T3")
         self.assertEqual(self.lines(p), [self.OWN.format(area="row shape", n=3, tasks="T1, T2, T3")])
         self.assertEqual(self.rows()[-1]["triggers"], ["altitude", "altitude-cluster"])
         # the fourth is a cluster too, and names the count
-        p = self.change("in", 2, "Row  Shape", options=self.area_check("row shape"), task="T4")
+        p = self.change("in", 2, "Row  Shape", options=self.area_check("row shape"), declare=True, task="T4")
         self.assertEqual(self.lines(p), [self.OWN.format(area="Row  Shape", n=4, tasks="T1, T2, T3, T4")])
 
     # test 13
     def test_a_different_kind_or_area_does_not_count_and_both_count_for_each(self):
         arch = ("go on", ARCH)
-        self.change("out", 1, "X", options=arch, task="T1")
-        self.change("in", 2, "X", options=arch, task="T2")
-        self.change("in", 2, "Y", options=arch, task="T3")
-        self.change("out", 1, "Y", options=arch, task="T4")
-        p = self.change("in", 2, "X", options=arch, task="T5")  # owners on X: T2 only before
+        self.change("out", 1, "X", options=arch, declare=True, task="T1")
+        self.change("in", 2, "X", options=arch, declare=True, task="T2")
+        self.change("in", 2, "Y", options=arch, declare=True, task="T3")
+        self.change("out", 1, "Y", options=arch, declare=True, task="T4")
+        p = self.change("in", 2, "X", options=arch, declare=True, task="T5")  # owners on X: T2 only before
         self.assertEqual(self.lines(p), ["decision: altitude trigger: 2 places own the rule"])
         self.assertEqual(self.rows()[-1]["triggers"], ["altitude"])
         # both kinds on X: layer out has one before (T1), two or more owners two (T2, T5)
-        p = self.change("out", 2, "X", options=self.area_check("X"), task="T6")
+        p = self.change("out", 2, "X", options=self.area_check("X"), declare=True, task="T6")
         self.assertEqual(self.lines(p), [self.OWN.format(area="X", n=3, tasks="T2, T5, T6"),
                                          "decision: altitude trigger: layer out"])
         # the ask that fired both counts for layer out too
-        p = self.change("out", 1, "X", options=arch, task="T7", ok=False)
+        p = self.change("out", 1, "X", options=arch, task="T7", ok=False)  # not declared
         self.assertEqual(self.lines(p), [self.OUT.format(area="X", n=3, tasks="T1, T6, T7")])
 
     # test 14
     def test_a_recorded_architect_run_does_not_let_a_cluster_through(self):
-        self.change("in", 2, "row shape", options=("go on", ARCH), task="T1")
-        self.change("in", 2, "row shape", options=("go on", ARCH), task="T2")
+        self.change("in", 2, "row shape", options=("go on", ARCH), declare=True, task="T1")
+        self.change("in", 2, "row shape", options=("go on", ARCH), declare=True, task="T2")
         self.seal("T3", "2000-01-01T00:00:00+00:00")
         self.architect("ar1", "T3")
         p = self.change("in", 2, "row shape", task="T3", ok=False)
         self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
         self.assertIn("a recorded architect run for one task does not count", p.stderr.splitlines()[-1])
-        p = self.change("in", 2, "row shape", options=("go on", ARCH), task="T3", ok=False)
-        self.assertEqual(p.returncode, 1, "an architect check that does not name the area is not one of the area")
         p = self.change("in", 2, "a new area", task="T3")  # a single trigger still goes through on the run
         self.assertEqual(self.rows()[-1]["triggers"], ["altitude"])
 
     # test 16
     def test_a_new_area_lists_the_areas_already_recorded(self):
-        p = self.change("out", 1, "reader", options=("go on", ARCH), ts="2026-01-02T10:00:00+00:00")
+        p = self.change("out", 1, "reader", options=("go on", ARCH), declare=True, ts="2026-01-02T10:00:00+00:00")
         self.assertEqual(self.lines(p), ["decision: altitude trigger: layer out"])  # nothing recorded yet
         for n in range(1, 12):
             self.change("in", 1, f"area {n:02d}", ts=f"2026-01-02T11:{n:02d}:00+00:00")
-        p = self.change("out", 1, "parser", options=("go on", ARCH), ts="2026-01-02T12:00:00+00:00")
+        p = self.change("out", 1, "parser", options=("go on", ARCH), declare=True, ts="2026-01-02T12:00:00+00:00")
         listed = ", ".join(f"area {n:02d}" for n in range(11, 1, -1))
         self.assertEqual(self.lines(p), [f"decision: altitude trigger: layer out; area 'parser' is new"
                                          f" (areas already recorded, most recent first: {listed})"])
-        p = self.change("out", 1, "Reader", options=("go on", ARCH))  # an area already recorded: no list
+        p = self.change("out", 1, "Reader", options=("go on", ARCH), declare=True)  # an area already recorded: no list
         self.assertEqual(self.lines(p), ["decision: altitude trigger: layer out"])
+
+
+class FixRoundOne(Ask):
+    """0.11.0 fix round, part 1: M4, L1, L3, the order by time, and the mutants that survived (L5)."""
+
+    def area_check(self, area):
+        return ("go on", f"architect check of the {area} area (redesign mode)")
+
+    def test_m4_one_recorded_run_lets_only_the_next_altitude_ask_through(self):
+        self.seal("T1", "2000-01-01T00:00:00+00:00")
+        self.architect("ar1", "T1", ts="2026-01-02T11:00:00+00:00")
+        self.change("out", 1, "reader", ts="2026-01-02T12:00:00+00:00")
+        p = self.change("out", 1, "writer", ts="2026-01-02T12:05:00+00:00", ok=False)  # another defect
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertEqual(self.refusals()[-1]["gate"], "decision:altitude")
+        self.architect("ar2", "T1", "--stepped-back", "the second defect is in another layer",
+                       ts="2026-01-02T12:10:00+00:00")
+        self.change("out", 1, "writer", ts="2026-01-02T12:15:00+00:00")
+        self.assertEqual(self.rows()[-1]["triggers"], ["altitude"])
+
+    def test_l1_a_cluster_answered_with_the_area_check_clears_it(self):
+        arch = ("go on", ARCH)
+        self.change("in", 2, "X", options=arch, declare=True, task="T1")
+        self.change("in", 2, "X", options=arch, declare=True, task="T2")
+        did = self.change("in", 2, "X", options=self.area_check("X"), declare=True, task="T3").stdout.strip()
+        self.assertEqual(self.rows()[-1]["triggers"], ["altitude", "altitude-cluster"])
+        p = self.run_([str(self.rt / "decision.sh"), "answer", did, "--choice", self.area_check("X")[1],
+                       "--agreed", "no"])
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        for task in ("T4", "T5"):
+            p = self.change("in", 2, "X", options=arch, declare=True, task=task)
+            self.assertEqual(self.lines(p), ["decision: altitude trigger: 2 places own the rule"], task)
+        p = self.change("in", 2, "X", options=arch, task="T6", ok=False)  # not declared
+        self.assertEqual(self.lines(p), [Cluster.OWN.format(area="X", n=3, tasks="T4, T5, T6")])
+
+    def test_l1_a_cluster_answered_another_way_does_not_clear(self):
+        arch = ("go on", ARCH)
+        self.change("in", 2, "X", options=arch, declare=True, task="T1")
+        self.change("in", 2, "X", options=arch, declare=True, task="T2")
+        did = self.change("in", 2, "X", options=self.area_check("X"), declare=True, task="T3").stdout.strip()
+        p = self.run_([str(self.rt / "decision.sh"), "answer", did, "--choice", "go on"])
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        p = self.change("in", 2, "X", options=arch, task="T4", ok=False)  # not declared
+        self.assertEqual(self.lines(p), [Cluster.OWN.format(area="X", n=4, tasks="T1, T2, T3, T4")])
+
+    def test_l3_the_altitude_line_prints_before_a_fix_round_refusal(self):
+        p = self.ask("--fix-round", "1", "--layer", "out", "--owners", "1", "--area", "reader",
+                     q="Go on the T1 fix round 1?", ok=False)
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn("give --upstream", p.stderr.splitlines()[-1])
+        self.assertEqual([x.split(" trigger:")[0] for x in self.lines(p)],
+                         ["decision: upstream", "decision: altitude"])
+        p = self.ask("--fix-round", "3", "--layer", "in", "--owners", "1", "--area", "reader",
+                     q="Go on the T1 fix round 3?", ok=False)
+        self.assertEqual([x.split(" trigger:")[0] for x in self.lines(p)],
+                         ["decision: upstream", "decision: re-check", "decision: step-back"])
+
+    def test_the_areas_are_ordered_by_time_not_by_text(self):
+        self.change("in", 1, "first", ts="2026-01-02T10:00:00+00:00")
+        self.change("in", 1, "second", ts="2026-01-02T10:30:00+01:00")  # 09:30 UTC: the earlier one
+        p = self.change("out", 1, "third", options=("go on", ARCH), declare=True, ts="2026-01-02T12:00:00+00:00")
+        self.assertIn("most recent first: first, second)", self.lines(p)[0])
+
+    # L5: each test below fails with one mutant that survived the review
+    def test_a_run_for_another_task_does_not_count(self):
+        self.seal("T1", "2000-01-01T00:00:00+00:00")
+        self.architect("ar1", "T2")
+        self.assertEqual(self.change("out", 1, "reader", ok=False).returncode, 1)
+
+    def test_a_run_of_another_kind_does_not_count(self):
+        self.seal("T1", "2000-01-01T00:00:00+00:00")
+        self.architect("en1", "T1", kind="engineer")
+        self.assertEqual(self.change("out", 1, "reader", ok=False).returncode, 1)
+
+    def test_the_first_seal_opens_the_work_order(self):
+        self.seal("T1", "2000-01-01T00:00:00+00:00")
+        self.seal("T1", "2099-01-01T00:00:00+00:00")
+        self.architect("ar1", "T1", ts="2026-01-02T11:00:00+00:00")
+        self.change("out", 1, "reader")
+
+    def test_an_ops_event_that_is_not_a_seal_does_not_open_it(self):
+        self.ledger.parent.mkdir(parents=True, exist_ok=True)
+        self.ledger.write_text(json.dumps({"ts": "2000-01-01T00:00:00+00:00", "kind": "note", "task": "T1"}) + "\n")
+        self.architect("ar1", "T1", ts="2026-01-02T11:00:00+00:00")
+        p = self.change("out", 1, "reader", ok=False)
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn("no sealed event", p.stderr.splitlines()[-1])
+
+    def test_the_same_task_asked_twice_counts_twice(self):
+        self.change("in", 2, "X", options=("go on", ARCH), declare=True)
+        self.change("in", 2, "X", options=("go on", ARCH), declare=True)
+        p = self.change("in", 2, "X", options=("go on", ARCH), ok=False)  # not declared
+        self.assertEqual(self.lines(p), [Cluster.OWN.format(area="X", n=3, tasks="T1")])
+
+    def test_the_fix_note_does_not_print_with_change(self):
+        p = self.change("in", 1, "reader", q="Fix the reader?")
+        self.assertNotIn("mentions a fix", p.stderr)
+        p = self.ask(q="Fix the reader?")
+        self.assertIn("mentions a fix", p.stderr)
 
 
 class OtherWriters(twf.Base):
@@ -332,7 +473,7 @@ class OtherWriters(twf.Base):
     def test_asks_in_another_writers_file_count(self):
         self.migrate("--writer", "beta")
         for task in ("W-1", "W-2"):
-            p = self.change(task)
+            p = self.change(task, "--architect-option", ARCH)
             self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         self.assertEqual(len(self.rows(self.wfile("decisions_ledger", "beta"))), 2)
         self.rgit("config", "bakehouse.writer", "alpha")

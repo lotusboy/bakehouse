@@ -57,9 +57,6 @@ GUESS_WORDS = ("probably", "likely", "should", "infer", "inferred", "inferring",
 LEADING_SHOULD = re.compile(r"(^|[.?!;]\s+)should\b")
 FIX_WORDS = re.compile(r"\b(fix|fixes|fixing|workaround)\b")
 CHANGE_WORDS = re.compile(r"\b(change|changes|changed|changing)\b")
-# An option offers an architect check when its text names one, and does not decline it (0.11.0, judged from text).
-ARCHITECT_CHECK = re.compile(r"\barchitect(?:'s|\u2019s)?\s+check\b")
-DECLINED = re.compile(r"\b(no|not|without|skip|skips|skipping|instead of)\s+(?:an?\s+|the\s+)?$")
 AREAS_LISTED = 10  # a new area lists at most this many areas already recorded
 GUESS_LABEL = re.compile(r"\bguess\s*:", re.I)
 # A word inside quotation marks is named, not used: "refuses the word 'should'" asserts nothing.
@@ -284,7 +281,7 @@ def cmd_ask(a):
           "task": a.task or None, "fixRound": a.fix_round, "rechecked": a.rechecked or None,
           "upstream": a.upstream or None, "steppedBack": a.stepped_back or None,
           "recheck": bool(a.recheck), "change": changes(a), "layer": a.layer, "owners": a.owners,
-          "area": a.area.strip() if a.area else None, "triggers": triggers}
+          "area": a.area.strip() if a.area else None, "architectOption": a.architect_option, "triggers": triggers}
     if a.approves is not None:
         ev["approves"] = a.approves
     if loose:
@@ -373,9 +370,19 @@ def check_grounding(a, cfg):
             fail("--fix-round needs --task (the work order id)", "decision:fix-round")
         if a.fix_round < 1:
             fail("--fix-round counts from 1", "decision:fix-round-number")
-        # a fix is what the asker declares with --fix-round, not a word in the question (item 13)
+        # every trigger that applies prints before the first refusal, so one try shows them all
         fired.append(trigger("upstream", f"fix round {a.fix_round} of {a.task}: check what feeds the failing step"
                                          " first (--upstream)"))
+        if a.fix_round >= 2:
+            fired.append(trigger("re-check", f"fix round {a.fix_round} of {a.task}: a second round means the design"
+                                             " may be wrong; re-check at the source first (--rechecked)"))
+        if a.fix_round >= 3 or len(asked) >= 2:
+            fired.append(trigger("step-back", f"{a.task} is at fix round {a.fix_round} (rounds asked so far:"
+                                              f" {sorted(asked) or 'none'}): step back across the whole problem"
+                                              " first (--stepped-back)"))
+    plan = altitude(a, events)
+    if a.fix_round is not None:
+        # a fix is what the asker declares with --fix-round, not a word in the question (item 13)
         if not meaningful(a.upstream):
             fail("the question proposes a fix: give --upstream, what feeds the failing step and what you saw"
                  " when you looked at it (Seesaw: check what it was given before fixing it)", "decision:upstream")
@@ -383,22 +390,15 @@ def check_grounding(a, cfg):
         if asked and a.fix_round <= max(asked):
             fail(f"{a.task} already has fix round(s) {sorted(asked)}; this one is round {max(asked) + 1}",
                  "decision:fix-round-number")
-        if a.fix_round >= 2:
-            fired.append(trigger("re-check", f"fix round {a.fix_round} of {a.task}: a second round means the design"
-                                             " may be wrong; re-check at the source first (--rechecked)"))
         if a.fix_round >= 2 and not meaningful(a.rechecked):
             fail(f"fix round {a.fix_round} of {a.task}: give --rechecked, what you re-checked at the source"
                  " before proposing another round (a second round means the design may be wrong)", "decision:rechecked")
-        if a.fix_round >= 3 or len(asked) >= 2:
-            fired.append(trigger("step-back", f"{a.task} is at fix round {a.fix_round} (rounds asked so far:"
-                                              f" {sorted(asked) or 'none'}): step back across the whole problem"
-                                              " first (--stepped-back)"))
         if (a.fix_round >= 3 or len(asked) >= 2) and not meaningful(a.stepped_back):
             fail(f"{a.task} is at fix round {a.fix_round} (rounds asked so far: {sorted(asked) or 'none'}):"
                  " give --stepped-back, the step-back you did first — what you re-checked at the source across"
                  " the whole problem, and why another round beats re-designing (owner, 2026-10-15)",
                  "decision:stepped-back")
-    fired += check_change(a, events)
+    fired += check_change(a, events, plan)
     if FIX_WORDS.search(text) and not changes(a) and not a.recheck:
         print("decision: note: the question mentions a fix; if it proposes one, give --task, --fix-round"
               " and --upstream", file=sys.stderr)
@@ -408,14 +408,14 @@ def check_grounding(a, cfg):
     return fired
 
 
-def check_change(a, events):
+def check_change(a, events, plan):
     """A declared change (--change, or --fix-round) names its layer, owners and area; the altitude trigger fires on
-    a layer out or two or more owners, and a cluster on the third of one kind on one area (0.11.0). events: every
-    writer's file (read_events). Returns the triggers that fired."""
+    a layer out or two or more owners, and a cluster on the third of one kind on one area (0.11.0). plan: what
+    altitude() found and printed. Returns the triggers that fired."""
     if not changes(a):
-        if a.layer is not None or a.owners is not None or a.area is not None:
-            fail("--layer, --owners and --area go with --change (or --fix-round): the question proposes a code"
-                 " change on --task", "decision:change")
+        if a.layer is not None or a.owners is not None or a.area is not None or a.architect_option is not None:
+            fail("--layer, --owners, --area and --architect-option go with --change (or --fix-round): the question"
+                 " proposes a code change on --task", "decision:change")
         return []
     if not a.task:
         fail("--change needs --task (the work order id the change is on)", "decision:change")
@@ -427,17 +427,70 @@ def check_change(a, events):
         fail(f"the question proposes a change on {a.task}: give {'; '.join(missing)}", "decision:change")
     if a.owners < 1:
         fail("--owners counts from 1: the places that own the rule the change touches", "decision:change")
+    if a.architect_option is not None and a.architect_option not in a.option:
+        fail(f"--architect-option {a.architect_option!r} is not one of the --option values"
+             f" ({', '.join(repr(o) for o in a.option)}): it names the option that is the architect check",
+             "decision:change")
+    if plan is None:
+        return []
+    area, why, clusters = plan
+    if a.autonomous and a.recommendation != a.architect_option:
+        fail(f"the altitude trigger fired on {a.task}: an --autonomous decision takes the architect check, so"
+             " --recommendation is the --architect-option (or ask the owner)", "decision:altitude")
+    if clusters:
+        if a.architect_option is None:
+            fail(f"a cluster of altitude triggers on {area}: give --architect-option, the --option that is one"
+                 f" architect check of the area {area}, and hold the items it covers until it reports; a recorded"
+                 " architect run for one task does not count for a cluster", "decision:altitude-cluster")
+        return ["altitude", "altitude-cluster"]
+    if a.architect_option is not None:
+        return ["altitude"]
+    opened, run = architect_run(a.task, events)
+    if run:
+        return ["altitude"]
+    fail(f"the altitude trigger fired on {a.task} ({why}): give --architect-option, the --option that is an"
+         " architect check of the owning layer, or record an architect run for"
+         f" {a.task} after its work order opened (spend.sh record --kind architect --task {a.task})"
+         + ("" if opened else f"; {a.task} has no sealed event in the ops ledger, so no recorded run counts yet"),
+         "decision:altitude")
+
+
+def by_time(events):
+    """The ask events, oldest first: by their time (when()), then by read order."""
+    lowest = datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
+    return [e for _, _, e in sorted(((when(e.get("ts")) or lowest, n, e) for n, e in enumerate(events)
+                                     if e.get("kind") == "ask"), key=lambda x: x[:2])]
+
+
+def cleared(e, answers):
+    """An ask that recorded altitude-cluster and whose latest answer chose its declared architect option (the
+    area check): the cluster's count starts again after it."""
+    if "altitude-cluster" not in (e.get("triggers") or []) or not answers or not e.get("architectOption"):
+        return False
+    return norm(answers[-1].get("choice")) == norm(e["architectOption"])
+
+
+def altitude(a, events):
+    """The altitude trigger: prints its line(s) and returns (area, why, cluster lines), or None when it does not
+    fire or the change flags are not all given (check_change refuses those). Prints before any refusal."""
+    if not (changes(a) and a.task and a.layer and isinstance(a.owners, int) and a.owners >= 1
+            and (a.area or "").strip()):
+        return None
     kinds = [k for k, on in (("layer", a.layer == "out"), ("owners", a.owners >= 2)) if on]
     if not kinds:
-        return []
+        return None
     area = a.area.strip()
-    # earlier asks, oldest first: by time, then read order
-    asks = [e for _, _, e in sorted(((str(e.get("ts") or ""), n, e) for n, e in enumerate(events)
-                                     if e.get("kind") == "ask"), key=lambda x: x[:2])]
+    asks = by_time(events)
     same = [e for e in asks if norm(e.get("area") if isinstance(e.get("area"), str) else "") == norm(area)]
+    folded = fold(events)
+    after = same
+    for i in range(len(same) - 1, -1, -1):  # the count starts again after the latest cleared cluster
+        if cleared(same[i], folded.get(same[i].get("id"), {}).get("answers")):
+            after = same[i + 1:]
+            break
     clusters, single = [], []
     for k in kinds:
-        earlier = [e for e in same if fires(e, k)]
+        earlier = [e for e in after if fires(e, k)]
         if len(earlier) >= 2:
             tasks = ", ".join(dict.fromkeys([str(e.get("task") or "-") for e in earlier] + [a.task]))
             clusters.append(f"cluster: {CLUSTER_KINDS[k]} on {area}, {len(earlier) + 1} times ({tasks})")
@@ -459,23 +512,7 @@ def check_change(a, events):
                                 f" {', '.join(known[:AREAS_LISTED])})")
         else:
             trigger("altitude", why)
-    if clusters:
-        if not any(offers_architect_check(o, area) for o in a.option):
-            fail(f"a cluster of altitude triggers on {area}: offer an architect check of {area} as one --option"
-                 " (its text names an architect check and the area), and hold the items it covers until it"
-                 " reports; a recorded architect run for one task does not count for a cluster",
-                 "decision:altitude-cluster")
-        return ["altitude", "altitude-cluster"]
-    if any(offers_architect_check(o) for o in a.option):
-        return ["altitude"]
-    opened, run = architect_run(a.task)
-    if run:
-        return ["altitude"]
-    fail(f"the altitude trigger fired on {a.task} ({why}): offer an architect check of the owning layer as one"
-         " --option (its text names an architect check), or record an architect run for"
-         f" {a.task} after its work order opened (spend.sh record --kind architect --task {a.task})"
-         + ("" if opened else f"; {a.task} has no sealed event in the ops ledger, so no recorded run counts yet"),
-         "decision:altitude")
+    return area, why, clusters
 
 
 CLUSTER_KINDS = {"layer": "layer out", "owners": "two or more places own the rule"}
@@ -489,15 +526,6 @@ def fires(e, kind):
     return isinstance(owners, int) and not isinstance(owners, bool) and owners >= 2
 
 
-def offers_architect_check(option, area=None):
-    """The option's text names an architect check it does not decline ("no", "without", "skip" before it), and,
-    for a cluster, names the area too."""
-    text = norm(option)
-    if area is not None and norm(area) not in text:
-        return False
-    return any(not DECLINED.search(text[:m.start()]) for m in ARCHITECT_CHECK.finditer(text))
-
-
 def when(ts):
     try:
         t = datetime.datetime.fromisoformat(str(ts))
@@ -506,10 +534,11 @@ def when(ts):
     return t if t.tzinfo else t.astimezone()
 
 
-def architect_run(task):
+def architect_run(task, events):
     """(when the work order opened, an architect run recorded for it since). The work order opened at its first
     sealed event in the ops ledger (every writer's file); the run is the spend ledger's (spend.sh record --kind
-    architect --task), its latest row per agent id."""
+    architect --task), its latest row per agent id. One run lets one altitude ask through: it counts only when
+    recorded after the task's latest earlier ask that recorded the altitude trigger."""
     import ops_ledger
     import spend
     seals = []
@@ -523,8 +552,12 @@ def architect_run(task):
     if not seals:
         return None, None
     opened = min(seals)
+    since = [opened] + [when(e.get("ts")) for e in by_time(events) if "altitude" in (e.get("triggers") or [])
+                        and str(e.get("task") or "").lower() == task.lower() and when(e.get("ts"))]
+    used = max(since[1:]) if len(since) > 1 else None
     runs = [r for r in spend.agents(spend.read_events(_PROJECT)) if r.get("kind") == "architect"
-            and str(r.get("task") or "").lower() == task.lower() and when(r.get("ts")) and when(r.get("ts")) >= opened]
+            and str(r.get("task") or "").lower() == task.lower() and when(r.get("ts"))
+            and when(r.get("ts")) >= opened and (used is None or when(r.get("ts")) > used)]
     return opened, (runs[0] if runs else None)
 
 
@@ -648,6 +681,9 @@ def answer_assumed(project, a, d):
     if ask.get("approves") is not None:
         fail(f"{a.id} names --approves: an approval of a gate exception is always the owner's",
              "decision:assumed-approves")
+    if "altitude" in (ask.get("triggers") or []) and rec != ask.get("architectOption"):
+        fail(f"{a.id} fired the altitude trigger and its recommendation is not its architect option: an assumed"
+             " answer takes only the architect check, so this waits for the owner", "decision:altitude")
     if ask.get("blind"):
         fail(f"{a.id} was asked blind: a blind ask measures the owner's own answer, so it waits for the owner",
              "decision:assumed-blind")
@@ -950,6 +986,7 @@ def main():
     s.add_argument("--layer", choices=("in", "out"), help="with --change: the change's layer against the work order's owning layer")
     s.add_argument("--owners", type=int, help="with --change: how many places own the rule the change touches (1 or more)")
     s.add_argument("--area", help="with --change: the module or data shape whose rule the change touches")
+    s.add_argument("--architect-option", help="with --change: the --option that is the architect check (one of --option)")
     s.set_defaults(fn=cmd_ask)
 
     s = sub.add_parser("answer", help="record the owner's reply")
