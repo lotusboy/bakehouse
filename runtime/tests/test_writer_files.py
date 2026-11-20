@@ -571,16 +571,27 @@ class CrossWriter(Base):
         self.rgit("config", "bakehouse.writer", w)
 
     def test_a_writer_file_git_reads_as_a_copy_of_another_never_unseals(self):
-        # F1: beta's file, first committed while alpha's is as short, is a copy to `git log --follow`; alpha's
+        # F1: beta's file, first committed while it is much like alpha's, is a copy to `git log --follow`; alpha's
         # Sealed-line trailers then show in beta's history, and must not read as removed from it
+        def backfilled():  # the same lines in each writer's file: a fixed stamp and commit, so the copy is found
+            for n in range(10):
+                p = self.tool("ops-event.sh", "note", "-", f"backfilled note {n}",
+                              env={"OPS_REPO": str(self.repo), "OPS_TS": "2026-11-01T00:00:00+00:00",
+                                   "OPS_COMMIT": "0000000"})
+                self.assertEqual(p.returncode, 0, p.stderr)
+
         self.migrate("--writer", "alpha")
+        backfilled()
         self.commit("W-1: prediction", {self.r("moves.prediction.json"): tsc.GOOD_P})
         self.assertEqual(self.seal("first", "moves.prediction.json"), 0)
         self.setw("beta")
+        backfilled()
         f2 = "runs/2026-11-10-W-2-step1-review/moves.prediction.json"
         self.commit("W-2: prediction", {f2: tsc.GOOD_P})
         p = self.gate("seal", "W-2", "first", str(self.repo / f2))
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        follow = self.rgit("log", "--follow", "--name-status", "--format=", "--", "ops/events/beta.jsonl")
+        self.assertRegex(follow, r"(?m)^C\d+\tops/events/alpha\.jsonl\tops/events/beta\.jsonl$")  # the copy case
         files = locator.ledger_files(self.records, "ops_ledger")
         for wo in ("W-1", "W-2"):
             sealed, kept, refused = tsc.pg.sealed_state(files, wo)
