@@ -178,6 +178,8 @@ checks. Without the field, nothing below happens.
    when the tip of `main` is not an ancestor of the code checkout's `HEAD`. The refusal names the fix: merge
    `main` into this branch, then measure and seal the baseline again. In a lane clone it names
    `git pull <main clone> main`. A fix round's baseline, a prediction and a measured file are not checked.
+   A seal again of a first baseline's same bytes (as "ANCHOR REFUSED" asks) is not checked again: its first
+   seal was, and a merge then would change the baseline, which is never sealed.
 2. **The session notice.** At session start, when `main` has N > 0 commits that touch the code roots and that
    this checkout's `HEAD` does not have, one line says so: "`main` has N engine commits this branch does not
    have: merge it in before the next work order's baseline". There is no line when N is 0.
