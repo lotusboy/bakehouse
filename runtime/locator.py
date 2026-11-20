@@ -197,7 +197,39 @@ def find(folder=None, env=os.environ) -> Project | None:
         # a linked worktree off its branch: the records worktree, detached or switched
         raise SetupNeeded(f"{top}: the records folder {records} is not on the branch {RECORDS_BRANCH} (a detached "
                           f"HEAD, as in a rebase, or another branch): run `git -C {records} switch {RECORDS_BRANCH}`")
+    if len(gitdirs) == 1:
+        # a checkout on the records branch with its own git folder: records committed there never reach the project
+        raise SetupNeeded(f"{top}: the records folder {records} is a separate clone on the branch {RECORDS_BRANCH}, "
+                          f"not a worktree of {top} or of its main clone, so records committed there never reach the "
+                          "project: run `bakehouse setup` in the main clone, or `bakehouse setup --pointer <main "
+                          "clone>` in a lane clone")
+    common = Path(_git(records, "rev-parse", "--path-format=absolute", "--git-common-dir"))
+    own = _git(top, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    if not own or common.resolve() != Path(own).resolve():
+        # a lane clone: its records worktree is a worktree of its main clone, judged as `setup --pointer` judges it
+        why = main_clone_problem(top, common.parent)
+        if why:
+            raise SetupNeeded(f"{top}: the records folder {records} is a worktree of {common.parent}, and {why}: run "
+                              "`bakehouse setup --pointer <main clone>` in a lane clone, or `bakehouse setup` in the "
+                              "main clone")
     return Project(root=top, team=team, records=records)
+
+
+def main_clone_problem(top: Path, main: Path) -> str | None:
+    """Why the clone at main is not the main clone of the clone at top, or None when it is: a shallow top's HEAD
+    commit is not in main, or the two share no root commit. The one rule for `bakehouse setup --pointer` and for
+    find, which judges a lane clone's records worktree by its repository."""
+    if _git(top, "rev-parse", "--is-shallow-repository") == "true":
+        # a shallow clone's root commit is its cut-off point: the main clone must hold its HEAD commit instead
+        head = _git(top, "rev-parse", "HEAD")
+        if not head or _git(main, "cat-file", "-e", f"{head}^{{commit}}") is None:
+            return (f"{main} does not hold {top}'s HEAD commit ({head or 'none'}), so it is not the main clone of "
+                    "this shallow clone")
+        return None
+    roots = [set((_git(w, "rev-list", "--max-parents=0", "HEAD") or "").split()) for w in (top, main)]
+    if not roots[0] & roots[1]:
+        return f"{main} shares no root commit with {top}, so it is not a clone of this project"
+    return None
 
 
 DEFAULT_REVIEWS = "axis/runs/"
@@ -316,13 +348,19 @@ def code_roots(binding: dict):
 
 def records_owner(folder, env=os.environ) -> Project | None:
     """The project whose records worktree holds folder (a folder not made yet: its nearest parent), or None. git's
-    common dir names the main clone, and that clone's `bakehouse.records` pointer must name this checkout."""
+    common dir names the main clone, and that clone's `bakehouse.records` pointer must name this checkout.
+    SetupNeeded: folder is in a checkout on the records branch that is not a linked worktree (a separate clone)."""
     p = Path(folder)
     while not p.is_dir() and p != p.parent:
         p = p.parent
     top = toplevel(p)
     common = _git(p, "rev-parse", "--path-format=absolute", "--git-common-dir") if top else None
     if not common or Path(common).parent.resolve() == top.resolve():
+        if common and not os.path.lexists(top / ".team" / "binding.json") \
+                and _git(top, "symbolic-ref", "-q", "HEAD") == f"refs/heads/{RECORDS_BRANCH}":
+            raise SetupNeeded(f"{folder} is in {top}, a separate clone on the branch {RECORDS_BRANCH}, not a records "
+                              "worktree (a worktree of a main clone), so it maps back to no project: run "
+                              "`bakehouse setup` in the main clone, which makes its records worktree")
         return None  # not in a git repo, or in a main checkout: no records worktree
     try:
         project = find(Path(common).parent, env)

@@ -1581,8 +1581,11 @@ def seal_target(path: Path, repo_arg: str | None, wo: str,
     code = repo
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import locator
-    owner = None if folder or repo_arg else locator.records_owner(repo, {k: v for k, v in os.environ.items()
-                                                                        if k != "CLAUDE_PROJECT_DIR"})
+    try:
+        owner = None if folder or repo_arg else locator.records_owner(repo, {k: v for k, v in os.environ.items()
+                                                                            if k != "CLAUDE_PROJECT_DIR"})
+    except locator.SetupNeeded as e:
+        raise BadInput(str(e))
     if owner is not None:
         try:
             ob = json.loads(owner.binding.read_text())

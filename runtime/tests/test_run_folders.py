@@ -607,6 +607,32 @@ class RecordCommit(Project):
         self.assertEqual(self.git(self.records, "log", "--format=%s"), "records")
 
 
+class RecordCommitSeparateClone(Project):
+    """Backlog 293: a folder in a separate clone on the records branch is named as that, not as a folder in no
+    project; a lane clone pointing at the main clone's records worktree still commits there."""
+
+    def test_record_commit_in_a_separate_clone_names_it(self):
+        sep = self.t / "repo.sep"
+        self.git(self.t, "clone", "-q", "-b", "bakehouse-records", str(self.repo), str(sep))
+        folder = sep / "runs" / REC
+        self.write(folder, {"moves.prediction.json": GOOD_P, "moves.baseline.json": BASE_M})
+        rc, out = self.bakehouse("record", "commit", str(folder), "-m", "W-1: prediction", cwd=sep)
+        self.assertEqual(rc, 2, out)
+        self.assertIn("separate clone", out)
+        self.assertIn("not a records worktree", out)
+        self.assertNotIn("no project with a team", out)
+        self.assertEqual(self.git(sep, "log", "--format=%s"), "records")
+
+    def test_record_commit_from_a_lane_clone_commits_in_the_main_clones_records_worktree(self):
+        lane = self.t / "lane"
+        self.git(self.t, "clone", "-q", str(self.repo), str(lane))
+        self.git(lane, "config", "bakehouse.records", str(self.records))
+        self.write(self.rec(), {"moves.prediction.json": GOOD_P, "moves.baseline.json": BASE_M})
+        rc, out = self.bakehouse("record", "commit", str(self.rec()), "-m", "W-1: prediction", cwd=lane)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self.git(self.records, "log", "-1", "--format=%s"), "W-1: prediction")
+
+
 # ---------- the end-to-end run ----------
     # R0.3 D4
     def test_d4_a_refusal_names_the_command_that_ran(self):

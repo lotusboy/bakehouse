@@ -231,6 +231,77 @@ class TestFind(Base):
         self.assertEqual(locator.find(link, env={}).records, rec)
 
 
+class TestRecordsAreAWorktreeOfTheRightRepository(Base):
+    """Backlog 293: the records folder is a worktree of the project's repository, or, for a lane clone, of its main
+    clone. A separate clone on the records branch is refused: records committed there never reach the project."""
+
+    def setUp(self):
+        super().setUp()
+        self.bind()
+        git(self.repo, "add", ".team")
+        git(self.repo, "commit", "-q", "-m", "bind")
+        self.rec = self.records()
+        git(self.rec, "commit", "-q", "--allow-empty", "-m", "records")
+
+    def separate_clone(self, name):
+        sep = self.tmp / name
+        git(self.tmp, "clone", "-q", "-b", "bakehouse-records", str(self.repo), str(sep))
+        return sep
+
+    def lane(self):
+        # the real lane shape: a full clone made by `git clone <main clone path>`, its origin that local path, its
+        # own .team/binding.json in its tree, and its pointer naming the main clone's records worktree
+        lane = self.tmp / "lane1"
+        git(self.tmp, "clone", "-q", str(self.repo), str(lane))
+        git(lane, "config", "bakehouse.records", str(self.rec))
+        return lane
+
+    def test_a_separate_clone_on_the_records_branch_is_refused_naming_the_cause(self):
+        sep = self.separate_clone("proj.sep")
+        git(self.repo, "config", "bakehouse.records", str(sep))
+        with self.assertRaises(locator.SetupNeeded) as e:
+            locator.find(self.repo, env={})
+        self.assertIn(f"the records folder {sep} is a separate clone", str(e.exception))
+        self.assertIn("not a worktree", str(e.exception))
+        self.assertIn("`bakehouse setup` in the main clone", str(e.exception))
+        self.assertIn("`bakehouse setup --pointer <main clone>` in a lane clone", str(e.exception))
+
+    def test_the_real_lane_clone_shape_finds_the_main_clones_records(self):
+        lane = self.lane()
+        self.assertTrue((lane / ".git").is_dir())
+        self.assertEqual(subprocess.run(["git", "-C", str(lane), "config", "remote.origin.url"], capture_output=True,
+                                        text=True).stdout.strip(), str(self.repo))
+        self.assertTrue((lane / ".team" / "binding.json").is_file())
+        p = locator.find(lane, env={})
+        self.assertEqual((p.root, p.team, p.records), (lane, lane / ".team", self.rec))
+
+    def test_a_linked_worktree_of_the_main_clone_used_as_a_lane_finds_the_records(self):
+        wt = self.tmp / "proj.lane"
+        git(self.repo, "worktree", "add", "-q", "-b", "lane", str(wt))
+        self.assertEqual(locator.find(wt, env={}).records, self.rec)
+
+    def test_a_lane_pointing_at_a_separate_clone_of_the_main_clone_is_refused(self):
+        lane = self.lane()
+        sep = self.separate_clone("proj.sep")
+        git(lane, "config", "bakehouse.records", str(sep))
+        with self.assertRaises(locator.SetupNeeded) as e:
+            locator.find(lane, env={})
+        self.assertIn(f"the records folder {sep} is a separate clone", str(e.exception))
+
+    def test_a_lane_pointing_at_the_records_worktree_of_an_unrelated_repository_is_refused(self):
+        other = self.tmp / "other"
+        other.mkdir()
+        git(other, "init", "-q", "-b", "main")
+        git(other, "commit", "-q", "--allow-empty", "-m", "unrelated")
+        other_rec = self.tmp / "other.bakehouse-records"
+        git(other, "worktree", "add", "-q", "--orphan", "-b", "bakehouse-records", str(other_rec))
+        lane = self.lane()
+        git(lane, "config", "bakehouse.records", str(other_rec))
+        with self.assertRaises(locator.SetupNeeded) as e:
+            locator.find(lane, env={})
+        self.assertIn(f"shares no root commit with {lane}", str(e.exception))
+
+
 class TestMachineDir(unittest.TestCase):
     def test_override_then_xdg_then_home(self):
         self.assertEqual(locator.machine_dir({"BAKEHOUSE_MACHINE_DIR": "/m"}), Path("/m"))
