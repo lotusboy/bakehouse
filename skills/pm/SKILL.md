@@ -157,6 +157,14 @@ model for that one dispatch, and only with the owner's yes.
      back before the next round (the `step-back` skill's "Reach not falling" signal).
   4. Match the care to how hard the change is to undo. A gated change that touches no owner data and no
      contract may move fast. A contract, a ruling file or a pinned output moves slowly, with the owner.
+- **Name the trigger that fired.** When `decision.sh ask` prints a trigger line (`decision: <name>
+  trigger: <why>`, for upstream, re-check, step-back or altitude), the message to the owner says which
+  trigger fired and why, in plain words. For the altitude trigger it presents the options with the
+  architect check among them. The same holds at review findings: a fix round for a finding outside the
+  owning layer, or for one rule that two places own, is asked with `--layer` and `--owners` saying so.
+  At a cluster (`altitude trigger: cluster: ...`), the message leads with the one architect check of
+  the area (the architect's redesign mode). The work orders and items it covers are held until it
+  reports, not worked one by one ("When findings repeat, build one mechanism", above).
 - **Run the lanes the owner asks for, while they stay safe and make the whole faster.** Lanes side by
   side change different files. When the machine is the bottleneck, open no further lane, and say why.
   The lane habits are in `docs/PROJECT-TEAM.md`, "Lanes".
@@ -271,6 +279,14 @@ them, and each tool's header comment is its full reference.
   second fix round asked after two earlier ones — the tool refuses without `--stepped-back`, a
   one-line summary of the step-back done first (the `step-back` skill's helicopter view); `spend.sh record --kind architect` refuses a second architect run for the same
   task without it (written in after a change found its edge cases one review round at a time).
+  A question that proposes a code change on a task (a fix or a design change) gives `--change` (a fix
+  round implies it), with `--layer in|out` (the change's layer against the work order's owning layer),
+  `--owners N` (how many places own the rule it touches) and `--area <name>` (the module or data shape
+  whose rule it touches). With `--layer out`, or two or more owners, the altitude trigger fires: the
+  tool refuses unless one option offers an architect check, or an architect run is recorded for the
+  task since its work order opened. From the third trigger of one kind on one area, over every task,
+  the tool refuses unless one option offers an architect check of that area; a recorded run for one
+  task does not count.
   When the reply arrives, record it with `decision.sh answer`. Before asking, `decision.sh should-ask
   <category>` says whether to ask, to ask without showing the recommendation, or to decide and log it.
   When later evidence shows a decision held or was reversed, record that with `decision.sh outcome`.

@@ -332,7 +332,9 @@ branch), `BASE` and the record folder. Commit by path, with the trailer. Fill th
    `brief.engineer.first-continue.md` (in fix round N: `brief.engineer.fix<N>-continue.md`).
 4. **An andon** from the engineer — an unpredicted move, a gate that cannot pass, a `mustNotMove`
    output that moved, a need the evidence does not show — goes to the owner as one decision. The job
-   waits.
+   waits. An andon that proposes a code change is that decision, asked with `decision.sh ask --task {id}
+   --change --layer in|out --owners N --area <name>`, so the altitude trigger fires there too (the PM
+   skill, "Name the trigger that fired").
 5. The engineer cannot start agents. Never ask it to start the reviewer.
 6. Record each run (owned repos only), with `{id}` as the task:
    `${CLAUDE_PLUGIN_ROOT}/runtime/ops-event.sh agent-run - "engineer: <id>" <model> - - <tokens> <seconds> <outcome>`.
@@ -360,6 +362,9 @@ round N saves its filled brief first, as step 6.1 does, as `brief.engineer.fix<N
 - Before the round, check its altitude (`skills/pm/SKILL.md`, "Check the altitude before a fix round"):
   a finding outside the owning layer gets a short architect check first, and a P2 or P3 finding with
   reach 0 in code the work order did not change goes into a new work order, not this round.
+  The round is asked with `--layer` and `--owners` from the findings (`--fix-round` implies
+  `--change`). When the tool prints a trigger line, the PM names the trigger to the owner, with the
+  architect check among the options for the altitude trigger.
 - A fix that moves an output the approved prediction did not name is a new prediction, and goes to
   the owner first (step 6.2). It is written as its own round (see "A round").
 - Each fix round commits its prediction file before its first code edit, as step 6.1 does.

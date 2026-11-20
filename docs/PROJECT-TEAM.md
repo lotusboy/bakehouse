@@ -1395,6 +1395,73 @@ agent still running has recorded none. So `--est` is the next agent's estimate p
 every agent still running. The PM runs it before every dispatch while the mode is on, so a run stops
 before its ceiling when the estimates hold.
 
+### Decision triggers
+
+`decision.sh ask` has four triggers (0.11.0). Each prints one line on stderr whenever its rule
+applies, whether the ask passes or is refused:
+
+```
+decision: <name> trigger: <why>
+```
+
+| trigger | applies when | the way through |
+|---|---|---|
+| `upstream` | a fix round (`--fix-round N`) | `--upstream` |
+| `re-check` | fix round 2 or later | `--rechecked` |
+| `step-back` | fix round 3 or later, or a third round asked | `--stepped-back` |
+| `altitude` | a change with `--layer out`, or `--owners` 2 or more | an option that offers an architect check, or a recorded architect run |
+
+The ask event records `triggers`: the names that fired, in that order (`altitude-cluster` after
+`altitude` at a cluster), or an empty list. An older ask event without the field reads as before. A
+refused ask writes no ask event; its gate-refused event is written as before.
+
+**A declared change.** `--change` says the question proposes a code change on `--task` (a fix or a
+design change). `--fix-round` implies it. The asker declares it; the tool does not detect it from
+words, because a word trigger fires on the wrong questions and is met by rewording (0.6.2). The word
+"fix" prints the note it printed before; the word "change" in a question with `--task` and no
+`--change` prints one note naming `--change`. With `--change`, three flags are required, and the ask
+event records them with `change`:
+
+- `--layer in|out`: the change's layer against the work order's owning layer.
+- `--owners N`: how many places own the rule the change touches; 1 or more.
+- `--area <name>`: the module or data shape whose rule the change touches.
+
+**The altitude trigger.** With `--layer out`, or `--owners` 2 or more, the line is
+`decision: altitude trigger: layer out`, `... N places own the rule`, or
+`... both (layer out, N places own the rule)`. The ask is refused (gate `decision:altitude`) unless one
+of these holds:
+
+1. One `--option` offers an architect check: its text names an "architect check" (or "architect's
+   check"), with no "no", "not", "without", "skip" or "instead of" just before it.
+2. An architect run is recorded for the task in the spend ledger (`spend.sh record --kind architect
+   --task <id>`) at or after the work order opened. The work order opened at its first `sealed` event
+   in the ops ledger. A work order with no seal has no recorded run that counts.
+
+A recorded run is the second way through, not a free-text flag, because a free-text field can be
+filled without the check being done.
+
+**A cluster.** When the altitude trigger fires, the tool counts the earlier ask events, over every
+task and every writer's file, with the same area (case and spaces ignored) and the same kind: layer
+out, or two or more owners. An ask that fired both counts for each. At the third or later of one kind
+on one area, the line is `decision: altitude trigger: cluster: <kind> on <area>, <n> times (<task
+ids>)`, `triggers` holds `altitude-cluster`, and the ask is refused (gate `decision:altitude-cluster`)
+unless one `--option` offers an architect check whose text also names the area. A recorded architect
+run does not let a cluster through: a run for one task is not a check of the area. The PM leads with
+that one area check and holds the items it covers (the PM skill, "Name the trigger that fired").
+
+**Names reused.** When the area has no earlier ask, the altitude line adds `area '<name>' is new
+(areas already recorded, most recent first: ...)`, at most 10, so the asker can reuse one.
+
+**Limits.**
+
+- `--layer`, `--owners` and `--area` are the asker's judgement. The tool checks they are given and
+  acts on them; it cannot check they are true.
+- An option offering an architect check is judged from its text.
+- The area is free text, so two names for one area split the count. The list of recorded areas
+  reduces this; it does not remove it.
+- Across machines, the count sees another writer's asks once they are synced (records format 2).
+- Only recorded asks count toward a cluster. A refused ask is not recorded.
+
 ### Gate refusals
 
 Each refusal by a team gate writes one `gate-refused` event to the ops ledger, so runs and
@@ -1456,6 +1523,9 @@ refusals can be counted per tool and per check. The event is ops-event.sh's, wit
 | `decision:fix-round-number` | decision.sh | a round below 1, or a round number already used |
 | `decision:rechecked` | decision.sh | fix round 2 or later with no `--rechecked` |
 | `decision:stepped-back` | decision.sh | fix round 3 or later (or a third round asked) with no `--stepped-back` |
+| `decision:change` | decision.sh | `--change` (or `--fix-round`) without `--task`, `--layer`, `--owners` or `--area`; `--owners` below 1; or `--layer`, `--owners` or `--area` without `--change` ("Decision triggers") |
+| `decision:altitude` | decision.sh | the altitude trigger fired, no option offers an architect check, and no architect run is recorded for the task since its work order opened |
+| `decision:altitude-cluster` | decision.sh | a cluster of altitude triggers on one area, and no option offers an architect check of that area |
 | `decision:unknown-id` | decision.sh | `answer` or `outcome` names no decision in the ledger |
 | `decision:autonomous-answer` | decision.sh | `answer` on a decision taken autonomously |
 | `decision:choice` | decision.sh | `--choice` is empty |
