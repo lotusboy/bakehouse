@@ -71,7 +71,8 @@ its `projectPath`, compared resolved), then a user-scope one. There is no regist
 | `approvals.json` | beside the binding | approvals for work in a repo another party owns | the owner, with the PM |
 | the register (`registers/<binding.register>`) | records | each part's health signal, state and decision | the signal command; decisions by the owner |
 | the driver register (`registers/<drivers.register>`, default `drivers.json`) | records | each driver family seen in 2 or more run folders, its coherence, state and decision | `runtime/driver-signal.py`; decisions by the owner |
-| `ops/events.jsonl` | records | the ops ledger | `runtime/ops-event.sh` only |
+| `ops/events.jsonl` (in records format 2, frozen, and `ops/events/<writer>.jsonl`) | records | the ops ledger | `runtime/ops-event.sh` only |
+| `FORMAT` | records | the records format (2) and the frozen legacy ledgers' sha256 ([One records file per writer](#one-records-file-per-writer)) | `bakehouse setup migrate` |
 | the run folders (`runs/<record folder>/`), in records mode | records | each job's record: prediction, baseline, measured files, findings | the agents; committed with `bakehouse record commit` |
 
 ### Where the run folders live
@@ -99,6 +100,78 @@ role hook.
    is already closed stays closed: `bakehouse status` reads the ledger, not the record folder.
 6. Nothing moves an existing record. The records of work orders closed in tree mode stay in the code
    tree.
+
+### One records file per writer
+
+**The problem.** Each ledger on the records branch was one file. Two people on two machines appended to
+the same file. The second push was refused, because it was not a fast forward. A merge then conflicted,
+or, with a line-union merge, reordered lines and broke the ops ledger's hash chain.
+
+**The fix (records format 2, bakehouse 0.8.0).** Each machine appends only to its own files. Two
+machines then never write the same file, so a plain `git pull` merges their records with no conflict.
+
+1. **The writer id.** Each records worktree has one writer id, in its git config `bakehouse.writer`.
+   - `bakehouse setup` in the main clone sets it when it is unset.
+   - `bakehouse setup --writer <name>` sets `<name>`: 1 to 32 letters, digits or hyphens. Without
+     `--writer`, setup sets `w` followed by 8 random hex characters.
+   - Setup never changes an id that is set. A `--writer` that differs from it is refused.
+   - A lane clone's records worktree is its main clone's records worktree. So every lane on one machine
+     shares the main clone's writer id.
+2. **The layout.** Each of the five ledgers keeps its legacy file and gains a folder of writer files.
+   The folder is the legacy file's path without `.jsonl`.
+
+   | Ledger | Legacy file (frozen) | Writer files |
+   |---|---|---|
+   | ops ledger | `ops/events.jsonl` | `ops/events/<writer>.jsonl` |
+   | lane ledger | `ops/lanes.jsonl` | `ops/lanes/<writer>.jsonl` |
+   | decision ledger | `decisions/ledger.jsonl` | `decisions/ledger/<writer>.jsonl` |
+   | spend ledger | `spend/ledger.jsonl` | `spend/ledger/<writer>.jsonl` |
+   | ratification ledger | `ratifications/ledger.jsonl` | `ratifications/ledger/<writer>.jsonl` |
+
+   - A tool appends only to its own writer's file (`runtime/locator.py` `writer_file`).
+   - The hash chain is unchanged. Each ops writer file is its own chain. A seal's anchor commits that
+     writer file, by path. `predict-gate.sh verify-chain` reports each file on its own line.
+3. **The read order.** Every reader reads the legacy file first, then every writer file, sorted by
+   name (`runtime/locator.py` `ledger_files`, the one helper every reader uses).
+   - A writer file is read from disk, and also from the records worktree's HEAD. So a deleted writer
+     file is still read as git holds it.
+   - Order rules (for example "the prediction was sealed before the code") are judged within one
+     file's order. They are never judged across writers by timestamp.
+   - A work order whose events began in the legacy file and go on in a writer file reads in that
+     order. So its seal and close order holds across the migration.
+4. **The migration.** `bakehouse setup migrate [--writer <name>]`, run once per project, in the main
+   clone or a lane clone.
+   - It writes `FORMAT` at the records root. `FORMAT` holds the format number (2), the bakehouse
+     version that reads it (0.8.0), and the sha256 of each of the five legacy files. A legacy file
+     that does not exist is recorded as `absent`.
+   - It commits `FORMAT` in the records worktree only, by path. It sets the writer id when it is unset.
+   - From then on the five legacy files are frozen: no tool appends to them again.
+   - It is refused when the records worktree has uncommitted changes to tracked files. The ops ledger
+     is often one of them, because the PM's records commit leaves it to the seal anchors. Commit it by
+     path first, then run the migration again.
+   - A second run changes nothing and says so.
+   - Order: every machine moves to bakehouse 0.8.0 first (limit 2, below). Then one person migrates
+     and pushes the records branch. Each other machine pulls it and runs `bakehouse setup` in its main
+     clone, which sets that machine's writer id.
+5. **The refusals.**
+   - A `FORMAT` this bakehouse does not know: every tool refuses, naming the bakehouse version that
+     `FORMAT` says it needs.
+   - A frozen legacy file whose sha256 is not the one `FORMAT` records (or an absent one that now
+     exists): every tool refuses, naming the file. This is how an older bakehouse, still writing the
+     old path, is caught.
+   - After migration, a records worktree with no writer id: every write refuses, naming
+     `bakehouse setup`. Reads still work.
+   - A records folder with no `FORMAT` is format 1: one file per ledger, exactly as before 0.8.0.
+6. **The limits.**
+   1. Until a later release splits the registers, only one person runs the health and driver passes.
+      Each pass rewrites one register file (`registers/*.json`), so two people running them conflict.
+   2. An older bakehouse on another machine still writes the old paths. The frozen-file check catches
+      it at the next read. It cannot stop the write. So every machine moves to 0.8.0 before migrating.
+   3. The writer id names a records worktree, not a person. Two people sharing one main clone share
+      one id; one person with two main clones has two.
+   - Pushing and pulling the records branch is still done by hand with git. `TOOLS.md` is still one file.
+   - Ids are not reserved across machines: two machines can still pick the same work order id or
+     decision id. Each machine keeps to its own work orders.
 
 ## Lanes
 
@@ -999,6 +1072,9 @@ reference.
 | `spend/ledger.jsonl` | `spend.sh` | measured tokens per agent, grouped into waves with a ceiling. |
 | `ratifications/ledger.jsonl` | `ratify.sh` | which entries of a closed vocabulary two blind readers agreed are right. |
 
+In records format 2 each ledger above is its frozen legacy file plus one file per writer, read in that
+order ([One records file per writer](#one-records-file-per-writer)).
+
 `predict-gate.sh` and `save-report.sh` keep no ledger: the first compares a written prediction with
 measured outputs and refuses any move nobody predicted; the second saves an agent's report
 byte-for-byte.
@@ -1262,6 +1338,9 @@ For whoever adds a tool or changes one.
 
 ## Known limits in this release
 
+- Records format 2 (one records file per writer) has three named limits: one person runs the health and
+  driver passes; an older bakehouse still writing the old paths is caught at the next read, not stopped;
+  the writer id names a records worktree, not a person ([One records file per writer](#one-records-file-per-writer)).
 - Only one repository has run the jobs. The binding's field list is complete for that repo and a
   hypothesis for any other.
 - A job in a repo another party owns stops before it writes any plan or step state: where that

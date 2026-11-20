@@ -222,6 +222,12 @@ serves: a person who submits an empty note gets a clear message, and no model ca
 
    - It makes the records worktree `../notes-app.bakehouse-records` on the branch `bakehouse-records`.
    - It writes the git config `bakehouse.records`, and installs the post-commit drift report.
+   - It sets the records worktree's writer id, the git config `bakehouse.writer`: `w` and 8 random hex
+     characters, or the name you give with `bakehouse setup --writer <name>` (1 to 32 letters, digits or
+     hyphens). Each tool writes its records to files named by this id, so two machines never write the
+     same file. Lane clones share the main clone's id. A project set up before bakehouse 0.8.0 moves to
+     these files once, with `bakehouse setup migrate`
+     ([One records file per writer](PROJECT-TEAM.md#one-records-file-per-writer)).
    - `bakehouse setup --pre-commit` also installs the commit gate. `bakehouse setup --help` lists every
      option. When to use `--no-remote-check`: [README, "Install"](../README.md#install), step 4.
 
