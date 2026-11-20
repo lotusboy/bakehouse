@@ -904,22 +904,25 @@ def ledger_refusals(ledger: Path | None, wo: str, project=None) -> list:
     return out
 
 
-def sealed_scan(ledger) -> dict:
+def sealed_scan(ledger, held_elsewhere=frozenset()) -> dict:
     """Everything sealed_state reads from one ledger, parsed once: HEAD's ledger events, every Sealed-line
     trailer whose line HEAD's ledger no longer holds (with that line, read from its commit), and the
     ledger file's lines no commit holds. A caller that judges many work orders (records-check) makes it once
     per run, so each work order only filters it. Given the ledger's files in read order, each file is scanned on
-    its own (its own anchors) and the scans are joined in that order."""
-    if isinstance(ledger, (list, tuple)):
-        scans = [sealed_scan(f) for f in ledger]
-        return {k: [x for sc in scans for x in sc[k]] for k in ("head", "removed", "loose")}
+    its own (its own anchors) and the scans are joined in that order. A trailer's line is held when any of the
+    files holds it at HEAD (held_elsewhere): `git log --follow` can read a new writer file as a copy of another
+    and show that one's trailers in its history."""
     ol = ledger_module()
+    if isinstance(ledger, (list, tuple)):
+        held = {ol.line_sha(x) for f in ledger for x in ol.lines_of(ol.committed(f) or b"")}
+        scans = [sealed_scan(f, held) for f in ledger]
+        return {k: [x for sc in scans for x in sc[k]] for k in ("head", "removed", "loose")}
     blob = ol.committed(ledger)
     head_lines = ol.lines_of(blob or b"")
     at_head = {ol.line_sha(x): x for x in head_lines}
     removed, old = [], {}
     for commit, digest, rel in ol.sealed_trailers(ledger):
-        if digest in at_head:
+        if digest in at_head or digest in held_elsewhere:
             continue
         if (commit, rel) not in old:
             old[commit, rel] = ol.lines_of(ol.committed_at(ledger, commit, rel) or b"")

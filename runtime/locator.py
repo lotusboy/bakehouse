@@ -264,6 +264,10 @@ def records_format(records) -> int:
     not the one FORMAT records (naming it: an older bakehouse may still be writing it)."""
     path = Path(records) / FORMAT_FILE
     if not os.path.lexists(path):
+        if _git(Path(records), "cat-file", "-e", f"HEAD:{FORMAT_FILE}") is not None:
+            # git holds it and the disk does not: read as format 1, the tools would append to the frozen files
+            raise BadFormat(f"{path} is missing, and the records branch's HEAD holds it (records format {FORMAT}): "
+                            f"restore it with `git -C {records} checkout -- {FORMAT_FILE}`")
         return 1
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -299,7 +303,7 @@ def writer_folder(legacy: Path) -> Path:
 def writer_id(records) -> str | None:
     """The records worktree's writer id (git config bakehouse.writer), or None when it has none. One per records
     worktree: a lane clone's records worktree is its main clone's, so its lanes share the main clone's id."""
-    return _git(Path(records), "config", "--get", WRITER_KEY) or None
+    return _git(Path(records), "config", "--local", "--get", WRITER_KEY) or None  # never a global or system value
 
 
 def ledger_files(records, field: str) -> list:

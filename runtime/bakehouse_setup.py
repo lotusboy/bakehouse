@@ -384,14 +384,22 @@ def make_records(top: Path, remote_check=True) -> Path | None:
     return folder
 
 
-def ensure_writer(records: Path, given: str | None) -> bool:
-    """Set the records worktree's writer id (git config bakehouse.writer) when it has none: given, else `w` and 8
-    random hex characters. False (after saying why) when given differs from the one it has."""
+def writer_conflict(records: Path, given: str | None) -> bool:
+    """True (after saying why) when given differs from the writer id the records worktree has."""
     have = locator.writer_id(records)
     if have and given and have != given:
         say(f"the records worktree {records} already has the writer id {have} (git config {locator.WRITER_KEY}), "
             f"not {given}: the id names the records worktree, so setup does not change it. Refused, nothing changed")
+        return True
+    return False
+
+
+def ensure_writer(records: Path, given: str | None) -> bool:
+    """Set the records worktree's writer id (git config bakehouse.writer) when it has none: given, else `w` and 8
+    random hex characters. False (after saying why) when given differs from the one it has."""
+    if writer_conflict(records, given):
         return False
+    have = locator.writer_id(records)
     if have:
         say(f"writer id: {have} ({locator.WRITER_KEY} in {records})")
         return True
@@ -408,7 +416,8 @@ def migrate(top: Path, env, writer: str | None) -> int:
     """`bakehouse setup migrate`: records format 2. Writes FORMAT (the format, the bakehouse version that reads it,
     each legacy ledger's sha256 or "absent"), commits it by path in the records worktree only, and sets the writer
     id when unset. A second run changes nothing and says so. Refused: no project here, a records worktree with
-    uncommitted changes to tracked files, or a writer id given that differs from the one set."""
+    uncommitted changes to tracked files, a legacy ledger git does not hold, or a writer id given that differs from
+    the one set. The writer id is set only after FORMAT is committed, so a refused migration changes nothing."""
     try:
         project = locator.find(top, env)
     except locator.SetupNeeded as e:
@@ -431,7 +440,15 @@ def migrate(top: Path, env, writer: str | None) -> int:
             f"(`git -C {rec} add -- <file> && git -C {rec} commit -m records -- <file>`), then run "
             f"`{locator.MIGRATE}` again.")
         return 1
-    if not ensure_writer(rec, writer):
+    loose = [x[3:] for x in git(rec, "status", "--porcelain", "--untracked-files=all", "--",
+                                *locator.LEDGERS.values()).stdout.splitlines() if x.startswith("??")]
+    if loose:
+        say(f"the legacy ledger(s) {', '.join(loose)} in {rec} are not committed, and migration freezes the ledgers as "
+            "git holds them (a file only this machine has would refuse every other clone). Refused, nothing changed. "
+            f"Commit them first (`git -C {rec} add -- <file> && git -C {rec} commit -m records -- <file>`), then run "
+            f"`{locator.MIGRATE}` again.")
+        return 1
+    if writer_conflict(rec, writer):
         return 1
     frozen = {rel: locator.file_sha(rec / rel) for rel in sorted(locator.LEDGERS.values())}
     path = rec / locator.FORMAT_FILE
@@ -448,6 +465,10 @@ def migrate(top: Path, env, writer: str | None) -> int:
         git(rec, "reset", "-q", "--", locator.FORMAT_FILE)
         path.unlink()
         say(f"could not commit {path}:\n{(p.stderr or p.stdout).strip()}\nNothing migrated.")
+        return 1
+    if not ensure_writer(rec, writer):
+        say(f"{path} is committed: the records are in format {locator.FORMAT}, and nothing can be written until "
+            "the writer id is set: run `bakehouse setup` in the main clone")
         return 1
     say(f"{path} written and committed: records format {locator.FORMAT}. The five legacy ledgers are frozen ("
         + ", ".join(f"{rel} {'absent' if h == locator.ABSENT else h[:12]}" for rel, h in frozen.items())

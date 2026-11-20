@@ -73,46 +73,85 @@ class Unreadable(Exception):
     """A ledger line that reads whole but that status cannot use: (the ledger, the error)."""
 
 
+def ops_rows(path: Path) -> list:
+    return [ops_ledger.parse(x) for x in ops_ledger.lines_of(path.read_bytes())] if path.is_file() else []
+
+
+def decision_rows(path: Path) -> list:
+    """One decision ledger file's events, as decision.read_events reads each line (a line that is not JSON is
+    skipped)."""
+    rows = []
+    for line in (path.read_text(encoding="utf-8").splitlines() if path.is_file() else []):
+        try:
+            rows.append(json.loads(line))
+        except ValueError:
+            pass
+    return rows
+
+
+def culprit(files, rows, part) -> Path:
+    """The ledger file a line status cannot use is in: the first of files whose own events part cannot use, else
+    the first file (the line is unusable only beside another file's lines)."""
+    for f in files:
+        try:
+            part(rows(f))
+        except Exception:  # noqa: BLE001 - the same failure, looked for one file at a time
+            return f
+    return files[0]
+
+
+def ops_part(events, since):
+    """(open work orders, closed since) from the ops ledger's events in read order."""
+    by_wo, closed = {}, []
+    for ev in events:
+        wo = ev.get("task")
+        if not wo:
+            continue
+        by_wo.setdefault(wo, []).append(ev)
+        at = when(ev.get("ts"))
+        if ev.get("kind") == CLOSED_KIND and (since is None or (at is not None and at >= since)):
+            closed.append({"workOrder": wo, "closedAt": ev.get("ts"), "commit": ev.get("commit"),
+                           "overridden": (ev.get("note") or "").startswith(OVERRIDDEN)})
+    open_wos = []
+    for wo, evs in by_wo.items():
+        kinds = [e.get("kind") for e in evs]
+        if SEALED_KIND not in kinds:
+            continue  # no seal: not open
+        if CLOSED_KIND in kinds and last(kinds, CLOSED_KIND) > last(kinds, SEALED_KIND):
+            continue  # closed after its latest seal
+        rounds = [e["round"] for e in evs if e.get("round")]
+        open_wos.append({"workOrder": wo, "events": len(evs), "latestRound": rounds[-1] if rounds else None,
+                         "latestKind": evs[-1].get("kind"), "latestAt": evs[-1].get("ts")})
+    return open_wos, closed
+
+
+def decision_part(project, events):
+    """(waiting decisions, unattended mode, assumed answers to confirm) from the decision ledger's events."""
+    decided = decision.fold(events)
+    waiting = [{"id": d["ask"]["id"], "category": d["ask"].get("category"), "question": d["ask"].get("question"),
+                "askedAt": d["ask"].get("ts")}
+               for d in decided.values() if not d["ask"].get("autonomous") and not d["answers"]]
+    away = decision.unattended(project, events)
+    assumed = [{"id": d["ask"]["id"], "question": d["ask"].get("question"),
+                "confidence": d["ask"].get("confidence"), "estTokens": d["answers"][-1].get("estTokens")}
+               for d in decided.values() if d["answers"] and d["answers"][-1].get("assumed")]
+    return waiting, away, assumed
+
+
 def state(project, since) -> dict:
+    # each ledger's files in read order (locator.ledger_files): the ledger itself, then each writer's file
+    files = project.read_files("ops_ledger")
     try:
-        # the ledger's files in read order (locator.ledger_files): the ledger itself, then each writer's file
-        events = [ops_ledger.parse(x) for f in project.read_files("ops_ledger") if f.is_file()
-                  for x in ops_ledger.lines_of(f.read_bytes())]
-        by_wo, closed = {}, []
-        for ev in events:
-            wo = ev.get("task")
-            if not wo:
-                continue
-            by_wo.setdefault(wo, []).append(ev)
-            at = when(ev.get("ts"))
-            if ev.get("kind") == CLOSED_KIND and (since is None or (at is not None and at >= since)):
-                closed.append({"workOrder": wo, "closedAt": ev.get("ts"), "commit": ev.get("commit"),
-                               "overridden": (ev.get("note") or "").startswith(OVERRIDDEN)})
-        open_wos = []
-        for wo, evs in by_wo.items():
-            kinds = [e.get("kind") for e in evs]
-            if SEALED_KIND not in kinds:
-                continue  # no seal: not open
-            if CLOSED_KIND in kinds and last(kinds, CLOSED_KIND) > last(kinds, SEALED_KIND):
-                continue  # closed after its latest seal
-            rounds = [e["round"] for e in evs if e.get("round")]
-            open_wos.append({"workOrder": wo, "events": len(evs), "latestRound": rounds[-1] if rounds else None,
-                             "latestKind": evs[-1].get("kind"), "latestAt": evs[-1].get("ts")})
+        open_wos, closed = ops_part([e for f in files for e in ops_rows(f)], since)
     except Exception as e:  # noqa: BLE001 - any line shape status cannot use is reported, never a traceback
-        raise Unreadable(project.ops_ledger, e) from e
+        raise Unreadable(culprit(files, ops_rows, lambda evs: ops_part(evs, since)), e) from e
+    files = project.read_files("decisions_ledger")
     try:
-        decided, _ = decision.decisions(project)
-        waiting = [{"id": d["ask"]["id"], "category": d["ask"].get("category"), "question": d["ask"].get("question"),
-                    "askedAt": d["ask"].get("ts")}
-                   for d in decided.values() if not d["ask"].get("autonomous") and not d["answers"]]
-        away = decision.unattended(project)
-        assumed = [{"id": d["ask"]["id"], "question": d["ask"].get("question"),
-                    "confidence": d["ask"].get("confidence"), "estTokens": d["answers"][-1].get("estTokens")}
-                   for d in decided.values() if d["answers"] and d["answers"][-1].get("assumed")]
+        waiting, away, assumed = decision_part(project, decision.read_events(project))
     except decision.SettingsError:
         raise  # the project's settings, not the ledger: main names the file
     except Exception as e:  # noqa: BLE001
-        raise Unreadable(project.decisions_ledger, e) from e
+        raise Unreadable(culprit(files, decision_rows, lambda evs: decision_part(project, evs)), e) from e
     return {"format": 1, "team": True, "project": str(project.root), "records": str(project.records),
             "workOrders": open_wos, "waitingDecisions": waiting, "closedSince": closed,
             "unattended": away, "assumedToConfirm": assumed}

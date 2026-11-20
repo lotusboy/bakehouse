@@ -70,7 +70,7 @@ class TestRecordsAndLanes(unittest.TestCase):
 
     def test_m6_the_pm_commits_the_records_after_each_close_and_before_the_session_ends(self):
         b = bullet(self.pm, "The records folder is always committed: after each close, and before the session ends.")
-        self.assertIn("`git -C <records> add -A -- . ':!ops/events.jsonl' && git -C <records> commit -m "
+        self.assertIn("`git -C <records> add -A -- . ':!ops/events.jsonl' ':!ops/events' && git -C <records> commit -m "
                       "\"<work order or 'records'>: records\"`", b)
         self.assertEqual(self.pm.count("git -C <records> add -A"), 1)
 
@@ -83,13 +83,14 @@ class TestRecordsAndLanes(unittest.TestCase):
             env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": t, "GIT_CONFIG_NOSYSTEM": "1",
                    "GIT_CONFIG_GLOBAL": str(rec / ".gitconfig")}
             subprocess.run(["git", "init", "-q", str(rec)], check=True, env=env)
-            for f in ("ops/events.jsonl", "decisions/ledger.jsonl", "spend/ledger.jsonl"):
-                (rec / f).parent.mkdir(exist_ok=True)
+            for f in ("ops/events.jsonl", "ops/events/alpha.jsonl", "decisions/ledger.jsonl", "spend/ledger.jsonl",
+                      "spend/ledger/alpha.jsonl"):
+                (rec / f).parent.mkdir(parents=True, exist_ok=True)
                 (rec / f).write_text("{}\n")
             subprocess.run(f"git -C {shlex.quote(t)} add{add}", shell=True, check=True, env=env)
             staged = subprocess.run(["git", "-C", t, "diff", "--cached", "--name-only"], capture_output=True,
                                     text=True, check=True, env=env).stdout.split()
-        self.assertEqual(staged, ["decisions/ledger.jsonl", "spend/ledger.jsonl"])
+        self.assertEqual(staged, ["decisions/ledger.jsonl", "spend/ledger.jsonl", "spend/ledger/alpha.jsonl"])
 
     def test_m7_the_lane_variables_are_named_where_lanes_are_set(self):
         for text in (self.pm, self.change, self.refactor):

@@ -217,12 +217,15 @@ def heading_question(line):
 
 
 def fold(events):
-    """id -> {ask, answers, outcomes}. Later answers do not erase earlier ones; the latest one counts."""
+    """id -> {ask, answers, outcomes}. Later answers do not erase earlier ones; the latest one counts. Two passes,
+    asks first: in records format 2 an answer in one writer's file can come, in read order, before its ask in
+    another's."""
     out = {}
     for e in events:
         if e.get("kind") == "ask":
             out[e["id"]] = {"ask": e, "answers": [], "outcomes": []}
-        elif e.get("id") in out:
+    for e in events:
+        if e.get("kind") != "ask" and e.get("id") in out:
             out[e["id"]]["answers" if e["kind"] == "answer" else "outcomes"].append(e)
     return out
 

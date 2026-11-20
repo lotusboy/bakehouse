@@ -10,6 +10,7 @@ import hashlib
 import importlib.util
 import json
 import re
+import shlex
 import subprocess
 import sys
 import unittest
@@ -90,7 +91,8 @@ class Migration(Base):
 
     def test_migrate_writes_format_and_the_writer_id_and_commits_format_by_path(self):
         self.flow()  # seals in the legacy ops ledger, anchored
-        self.decide("d20261101-aaaaa1")  # a decision ledger that is not committed yet: untracked
+        self.decide("d20261101-aaaaa1")
+        self.commit_records()  # every legacy file is committed: migration freezes them as git holds them
         before = self.legacy()
         p = self.migrate("--writer", "alpha")
         self.assertIn("records format 2", p.stdout)
@@ -123,6 +125,29 @@ class Migration(Base):
         self.assertEqual(self.rgit("config", "--get", "bakehouse.writer"), "")
         self.commit_records()
         self.migrate()
+
+    def test_an_untracked_legacy_file_refuses(self):
+        # F5: a legacy file git does not hold would be frozen on this machine only, and refuse on every clone
+        self.decide("d20261101-aaaaa1")  # the decision ledger, written and not committed
+        p = self.migrate("--writer", "alpha", ok=False)
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("decisions/ledger.jsonl", p.stdout)
+        self.assertIn("not committed", p.stdout)
+        self.assertFalse((self.records / "FORMAT").exists())
+        self.assertEqual(self.rgit("config", "--get", "bakehouse.writer"), "")
+
+    def test_a_failed_migration_commit_leaves_no_writer_id_and_no_format(self):
+        # F8: "Nothing migrated" holds: the writer id is set only after the FORMAT commit
+        hooks = Path(self.git("rev-parse", "--path-format=absolute", "--git-common-dir")) / "hooks"
+        hooks.mkdir(exist_ok=True)
+        (hooks / "pre-commit").write_text("#!/bin/sh\nexit 1\n")
+        (hooks / "pre-commit").chmod(0o755)
+        p = self.migrate("--writer", "alpha", ok=False)
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("Nothing migrated", p.stdout)
+        self.assertFalse((self.records / "FORMAT").exists())
+        self.assertEqual(self.rgit("config", "--get", "bakehouse.writer"), "")
+        self.assertEqual(self.rgit("status", "--porcelain"), "")
 
     def test_migrate_without_a_name_sets_w_and_8_hex_and_setup_keeps_it(self):
         self.migrate()
@@ -270,22 +295,31 @@ class AcrossTheMigration(Base):
         self.assertCloses()
         self.assertEqual([e["kind"] for e in self.rows(self.wfile("ops_ledger"))], ["work-order-closed"])
 
-    def test_a_measured_seal_after_migration_still_needs_the_legacy_baseline_seal(self):
-        # the seal's own order rule reads the legacy file first: no baseline seal anywhere still refuses
+    def test_a_seal_after_migration_is_judged_against_the_legacy_files_baseline_seal(self):
+        # the seal's own rules read the legacy file first: its baseline seal makes a changed baseline refuse, and
+        # lets the measured seal after migration find the sealed baseline
         self.commit("W-1: prediction", {self.r("moves.prediction.json"): tsc.GOOD_P,
                                         self.r("moves.baseline.json"): tsc.BASE_M})
         self.assertEqual(self.seal("first", "moves.prediction.json"), 0)
+        self.assertEqual(self.seal("first", "moves.baseline.json"), 0)
+        self.assertEqual([e["fileKind"] for e in self.rows(self.records / "ops/events.jsonl")],
+                         ["prediction", "baseline"])
         self.migrate("--writer", "alpha")
+        self.put("moves.baseline.json", {"out:v": 9, "out:w": 5})
+        p = self.gate("seal", "W-1", "first", str(self.repo / self.r("moves.baseline.json")))
+        self.assertNotEqual(p.returncode, 0, p.stdout)
+        self.assertIn("changed since its seal", p.stdout + p.stderr)
+        self.put("moves.baseline.json", tsc.BASE_M)
         b = self.head()
         self.assertEqual(self.code("W-1: the change", {"src/app.py": "v = 2\n"}), 0)
-        self.assertNotEqual(self.measure("first", tsc.PASS_M, b, self.head()), 0)
-        self.assertEqual(self.seal("first", "moves.baseline.json"), 0)
         self.assertEqual(self.measure("first", tsc.PASS_M, b, self.head()), 0)
+        self.assertEqual([e["fileKind"] for e in self.rows(self.wfile("ops_ledger")) if e["kind"] == "sealed"],
+                         ["code", "measured"])  # beside the refused seal's gate-refused event
 
 
-def work_order(case, repo, wo, src, value, when):
+def work_order(case, repo, wo, src, value, when, close_ok=True):
     """One sealed round of wo in repo (tree mode), sealed and closed through predict-gate, as Sealed.flow does for
-    W-1. Returns the close's output."""
+    W-1. Returns the close's output; close_ok=False: the close may refuse."""
     folder = f"runs/2026-11-10-{wo}-step1-review"
 
     def git(*a, dated=False):
@@ -294,10 +328,11 @@ def work_order(case, repo, wo, src, value, when):
         case.assertEqual(p.returncode, 0, p.stderr)
         return p.stdout.strip()
 
-    def gate(*a):
+    def gate(*a, ok=True):
         p = subprocess.run([sys.executable, str(case.rt / "predict-gate.py"), *a], cwd=repo, capture_output=True,
                            text=True, env=dict(case.env, GIT_AUTHOR_DATE=when, GIT_COMMITTER_DATE=when), check=False)
-        case.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        if ok:
+            case.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         return p.stdout
 
     def put(name, data):
@@ -320,7 +355,7 @@ def work_order(case, repo, wo, src, value, when):
     gate("seal", wo, "first", str(repo / folder / "moves.measured.json"))
     git("add", "-A")
     git("commit", "-q", "-m", f"{wo}: measurement", dated=True)
-    return gate("close", wo)
+    return gate("close", wo, ok=close_ok)
 
 
 class TwoWriters(Base):
@@ -351,9 +386,10 @@ class TwoWriters(Base):
                                                    "2026-11-10T09:30:00+00:00"))
         self.assertIn("Result: CLOSED", work_order(self, b, "W-2", "src/b.py", "b = 1\n",
                                                    "2026-11-10T09:40:00+00:00"))
-        for rec in (self.records, brec):
-            subprocess.run(["git", "-C", str(rec), "add", "-A"], check=True, env=self.env)
-            subprocess.run(["git", "-C", str(rec), "commit", "-q", "-m", "records"], check=True, env=self.env)
+        for rec, w in ((self.records, "alpha"), (brec, "beta")):
+            (rec / "spend" / "ledger").mkdir(parents=True, exist_ok=True)
+            (rec / "spend" / "ledger" / f"{w}.jsonl").write_text("{}\n")  # another record, for the PM's commit
+            pm_commit(self, rec)  # the documented commit: the ops files stay with the seal anchors
         self.rgit("push", "-q", "origin", "bakehouse-records")
         # B pulls A's records (a merge: both sides have commits), pushes; A pulls (a fast forward)
         for rec, push in ((brec, True), (self.records, False)):
@@ -368,7 +404,9 @@ class TwoWriters(Base):
             self.assertEqual(names, ["alpha.jsonl", "beta.jsonl"], rec)
             p = self.bakehouse("status", "--json", "--repo", repo)
             self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
-            self.assertEqual(sorted(c["workOrder"] for c in json.loads(p.stdout)["closedSince"]), ["W-1", "W-2"])
+            # a close line is committed by the next seal's anchor only, so each side sees its own close so far
+            own = "W-1" if rec == self.records else "W-2"
+            self.assertEqual([c["workOrder"] for c in json.loads(p.stdout)["closedSince"]], [own])
             files = locator.ledger_files(rec, "ops_ledger")
             for wo in ("W-1", "W-2"):
                 sealed, kept, refused = pg.sealed_state(files, wo)
@@ -438,6 +476,175 @@ class Refusals(Base):
         self.assertIn("has no writer id", p.stderr)
         self.assertEqual(self.status()["workOrders"][0]["workOrder"], "W-1")  # reads need no writer id
         self.assertFalse(locator.writer_folder(self.records / "ops/events.jsonl").exists())
+
+
+class ThreeFiles(Base):
+    """F6: events in the legacy file and in two writer files (alpha, beta): every reader reads all three."""
+
+    def setw(self, w):
+        self.rgit("config", "bakehouse.writer", w)
+
+    def ask(self, question):
+        p = self.tool("decision.sh", "ask", "--repo", self.repo, "--category", "spend", "--question", question,
+                      "--option", "yes", "--option", "no", "--recommendation", "yes", "--confidence", "0.9",
+                      "--evidence-kind", "measured", "--evidence", "WIP.md")
+        self.assertEqual(p.returncode, 0, p.stderr)
+
+    def spend_open(self, wave):
+        p = self.tool("spend.sh", "wave", "open", wave, "--ceiling", "1000", "--repo", self.repo)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+
+    def test_every_reader_reads_the_legacy_file_and_both_writer_files(self):
+        old = {"OPS_REPO": str(self.repo), "OPS_TS": "2026-11-01T00:00:00+00:00"}
+        self.assertEqual(self.tool("ops-event.sh", "note", "-", "backfilled: legacy", env=old).returncode, 0)
+        self.spend_open("w0")
+        self.ask("legacy")
+        self.commit_records()
+        self.migrate("--writer", "alpha")
+        self.spend_open("w1")
+        self.ask("alpha")
+        self.assertIn("Result: CLOSED", work_order(self, self.repo, "W-1", "src/a.py", "a = 1\n",
+                                                   "2026-11-10T09:30:00+00:00"))
+        self.setw("beta")
+        self.spend_open("w2")
+        # closed_hashes: the same bytes as W-1's record, closed in alpha's file, refuse W-2's close in beta's
+        out = work_order(self, self.repo, "W-2", "src/b.py", "b = 1\n", "2026-11-10T09:40:00+00:00", close_ok=False)
+        self.assertIn("sha256 already recorded by the close of W-1", out)
+        self.assertEqual([e["kind"] for e in self.rows(self.wfile("ops_ledger", "beta"))],
+                         ["sealed"] * 4 + ["gate-refused"])  # W-2's seals and its refused close: beta's own file
+        # decisions: the asks of the legacy file and of a writer file, both waiting
+        self.ask("beta")
+        self.assertEqual(sorted(d["question"] for d in self.status()["waitingDecisions"]), ["alpha", "beta", "legacy"])
+        # spend: the waves of all three files
+        p = self.tool("spend.sh", "status", "--all", "--json", "--repo", self.repo)
+        self.assertEqual(sorted(w["wave"] for w in json.loads(p.stdout)["waves"]), ["w0", "w1", "w2"], p.stderr)
+        # ops-gap: the latest event of every file
+        rows = [e for f in locator.ledger_files(self.records, "ops_ledger") for e in self.rows(f)]
+        p = self.tool("ops-gap.sh", env={"OPS_REPO": str(self.repo)})
+        self.assertIn(f"last event {max(e['ts'] for e in rows)}", p.stdout, p.stderr)
+        # ledger_refusals: a committed line of alpha's file edited refuses a close
+        f = self.wfile("ops_ledger", "alpha")
+        lines = f.read_text().splitlines()
+        f.write_text("\n".join([lines[0].replace('"role": "engine"', '"role": "edited"')] + lines[1:]) + "\n")
+        rc, out = self.close("the ledger ops/events/alpha.jsonl differs from its last commit")
+        self.assertNotEqual(rc, 0, out)
+        self.rgit("checkout", "--", "ops/events/alpha.jsonl")
+        # status: a line of beta's file that is not a JSON object is BROKEN, naming beta's file
+        with self.wfile("ops_ledger", "beta").open("a") as fh:
+            fh.write("not json\n")
+        p = self.bakehouse("status", "--repo", self.repo)
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn("ops/events/beta.jsonl is BROKEN", p.stderr)
+
+
+def pm_commit(case, rec):
+    """The PM's records commit, exactly as skills/pm/SKILL.md documents it, with <records> filled in."""
+    pm = (RUNTIME.parent / "skills" / "pm" / "SKILL.md").read_text()
+    cmd = re.search(r"`(git -C <records> add -A -- [^`]*)`", pm).group(1)
+    p = subprocess.run(cmd.replace("<records>", shlex.quote(str(rec))).replace("<work order or 'records'>", "W"),
+                       shell=True, capture_output=True, text=True, env=case.env)
+    case.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+
+
+class PmCommit(Base):
+    """F2: the PM's records commit leaves the ops writer files to the seal anchors, as it leaves the legacy file."""
+
+    def test_a_seal_whose_anchor_was_undone_stays_uncommitted_after_the_pms_commit(self):
+        self.migrate("--writer", "alpha")
+        self.commit("W-1: prediction", {self.r("moves.prediction.json"): tsc.GOOD_P})
+        self.assertEqual(self.seal("first", "moves.prediction.json"), 0)
+        self.rgit("reset", "-q", "--mixed", "HEAD~1")  # what an ANCHOR REFUSED leaves: the line on disk, no commit
+        p = self.tool("spend.sh", "wave", "open", "w1", "--ceiling", "10", "--repo", self.repo)  # another record
+        self.assertEqual(p.returncode, 0, p.stderr)
+        files = locator.ledger_files(self.records, "ops_ledger")
+        why = "1 sealed event(s) of W-1 are not in a commit of the ledger"
+        self.assertIn(why, " ".join(tsc.pg.sealed_state(files, "W-1")[2]))
+        pm_commit(self, self.records)
+        self.assertEqual(self.rgit("log", "-1", "--format=", "--name-only").split(), ["spend/ledger/alpha.jsonl"])
+        self.assertIn(why, " ".join(tsc.pg.sealed_state(files, "W-1")[2]))
+
+
+class CrossWriter(Base):
+    """F1, F3, F4, F9, F10: what one writer's records do to another's, and a FORMAT gone from disk."""
+
+    def setw(self, w):
+        self.rgit("config", "bakehouse.writer", w)
+
+    def test_a_writer_file_git_reads_as_a_copy_of_another_never_unseals(self):
+        # F1: beta's file, first committed while alpha's is as short, is a copy to `git log --follow`; alpha's
+        # Sealed-line trailers then show in beta's history, and must not read as removed from it
+        self.migrate("--writer", "alpha")
+        self.commit("W-1: prediction", {self.r("moves.prediction.json"): tsc.GOOD_P})
+        self.assertEqual(self.seal("first", "moves.prediction.json"), 0)
+        self.setw("beta")
+        f2 = "runs/2026-11-10-W-2-step1-review/moves.prediction.json"
+        self.commit("W-2: prediction", {f2: tsc.GOOD_P})
+        p = self.gate("seal", "W-2", "first", str(self.repo / f2))
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        files = locator.ledger_files(self.records, "ops_ledger")
+        for wo in ("W-1", "W-2"):
+            sealed, kept, refused = tsc.pg.sealed_state(files, wo)
+            self.assertEqual((sealed, len(kept), refused), (True, 1, []), wo)
+
+    def test_an_answer_in_one_writer_to_an_ask_in_another_counts(self):
+        # F3: read order is by writer name, so alpha's answer comes before zed's ask
+        self.migrate("--writer", "zed")
+        p = self.tool("decision.sh", "ask", "--repo", self.repo, "--category", "spend", "--question", "Run it?",
+                      "--option", "yes", "--option", "no", "--recommendation", "yes", "--confidence", "0.9",
+                      "--evidence-kind", "measured", "--evidence", "WIP.md")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        did = self.rows(self.wfile("decisions_ledger", "zed"))[0]["id"]
+        self.setw("alpha")
+        p = self.tool("decision.sh", "answer", "--repo", self.repo, did, "--choice", "yes", "--agreed", "yes")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual([e["kind"] for e in self.rows(self.wfile("decisions_ledger", "alpha"))], ["answer"])
+        self.assertEqual(self.status()["waitingDecisions"], [])
+        decided, _ = load("decision_writer_test", "decision.py").decisions(locator.find(self.repo, env={}))
+        self.assertEqual([a["choice"] for a in decided[did]["answers"]], ["yes"])
+
+    def test_a_format_file_git_holds_and_the_disk_lacks_refuses(self):
+        # F4: with FORMAT gone, the tools would read and write format 1 again: the frozen file, appended
+        self.migrate("--writer", "alpha")
+        self.flow()
+        before = self.legacy()
+        (self.records / "FORMAT").unlink()
+        p = self.bakehouse("status", "--repo", self.repo)
+        self.assertEqual(p.returncode, locator.SETUP_NEEDED, p.stdout)
+        self.assertIn("checkout -- FORMAT", p.stderr)
+        p = self.note()
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("checkout -- FORMAT", p.stderr)
+        self.assertEqual(self.legacy(), before)
+
+    def test_a_writer_id_in_the_global_git_config_is_not_this_records_worktrees(self):
+        # F9: the id names the records worktree, so only the repository's own config counts
+        self.migrate("--writer", "alpha")
+        self.rgit("config", "--unset", "bakehouse.writer")
+        glob = self.repo.parent / "global.gitconfig"
+        glob.write_text("[user]\n\tname = t\n\temail = t@t\n[bakehouse]\n\twriter = glob\n")
+        p = self.tool("ops-event.sh", "note", "-", "x", env={"OPS_REPO": str(self.repo),
+                                                              "GIT_CONFIG_GLOBAL": str(glob)})
+        self.assertNotEqual(p.returncode, 0, p.stdout)
+        self.assertIn("has no writer id", p.stderr)
+        self.assertFalse(self.wfile("ops_ledger", "glob").exists())
+
+    def test_status_names_the_writer_file_it_cannot_use(self):
+        # F10: a line status cannot use is named by the file it is in, not by the legacy file
+        self.migrate("--writer", "alpha")
+        f = self.wfile("ops_ledger", "beta")
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(json.dumps({"ts": "2026-11-10T00:00:00+00:00", "kind": "work-order-closed", "task": "W-1",
+                                 "note": 5}) + "\n")
+        p = self.bakehouse("status", "--repo", self.repo)
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn(f"the ledger {f} cannot be read", p.stderr)
+        g = self.wfile("decisions_ledger", "beta")
+        g.parent.mkdir(parents=True, exist_ok=True)
+        g.write_text(json.dumps({"kind": "ask"}) + "\n")
+        f.unlink()
+        p = self.bakehouse("status", "--repo", self.repo)
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn(f"the ledger {g} cannot be read", p.stderr)
 
 
 class Lanes(Base):
