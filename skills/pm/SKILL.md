@@ -233,6 +233,10 @@ model for that one dispatch, and only with the owner's yes.
 
 - **The team's plan** lives in the project — a tracker, a wiki, a plan in the repo. Read it when it
   matters to a decision.
+- **A new work order's id comes from `bakehouse reserve`** when the binding has `tracker.reserve`
+  (records format 2). Run it before writing the tracker row, and write the id it prints. The id must be
+  reserved first: preflight fails `/bakehouse:change` for an id above the floor with no reservation.
+  Offline, no new id can be had: tell the owner, and start the work order once the remote answers.
 
 ## 8. The records the PM keeps
 

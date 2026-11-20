@@ -180,8 +180,9 @@ machines then never write the same file, so a plain `git pull` merges their reco
    - The PM's records commit leaves the ops files (`ops/events.jsonl` and `ops/events/`) to the seal
      anchors and the close's own commit. So an ops line that is neither a seal nor a close (a note, for
      example) reaches another machine only with that writer's next seal or close.
-   - Ids are not reserved across machines: two machines can still pick the same work order id or
-     decision id. Each machine keeps to its own work orders.
+   - Work-order ids are reserved across machines only when the binding has `tracker.reserve`
+     ([Work-order ids reserved before use](#work-order-ids-reserved-before-use)). Without it, two
+     machines can still pick the same work order id. Decision ids are not reserved.
    - Moving the records between machines: [Records sync](#records-sync).
 
 ### Records sync
@@ -297,6 +298,84 @@ points. One function does it for every caller: `runtime/records_sync.py` `sync`.
     get `FORMAT` by itself. After one person migrates and pushes, each other machine, once, by hand:
     `git -C <records> pull --no-rebase`, then `bakehouse setup` in its main clone (which sets its
     writer id). From then on the sync moves its records.
+
+### Work-order ids reserved before use
+
+**The problem.** Two people on two machines both take the next work-order id from the tracker. Both
+open the same id, say A1254. Their records then mix under one id: seals, closes and decisions for two
+different pieces of work.
+
+**The cause.** Before 0.10.0, bakehouse did not hand out ids. Each machine found the next id by
+reading its own branches. A second machine's branches are not there until they are pushed. So two
+machines can pick the same number.
+
+**The fix (bakehouse 0.10.0).** An id is reserved on the records branch, through the remote, before
+the tracker row is written. It is on only when the binding has `tracker.reserve` and the records are in
+format 2. Without either, nothing changes.
+
+1. **The binding field.** `tracker.reserve` is `{"prefix": "<prefix>"}`, for example
+   `{"prefix": "A"}`.
+   - An id is the prefix and a number: `A1262`.
+   - A tracker id with one letter after the number counts as its number: `A1063b` counts as 1063.
+   - The prefix is 1 to 16 letters, hyphens or underscores, and starts with a letter. Preflight check 2
+     fails any other shape, for every job.
+2. **The floor: `bakehouse reserve --start [--repo <folder>]`.** Run it once per project.
+   1. It syncs the records branch (as `reserve` does, point 3 step 1).
+   2. It fetches every remote of the main clone.
+   3. It reads the tracker file (`tracker.file`) on every local and remote-tracking branch of the main
+      clone, and takes the highest id number there.
+   4. It writes that number to `reservations/FLOOR` (JSON: `floor`, `writer`, `time`, `branches`),
+      commits that file alone, by path, and pushes it.
+   - Every id at or under the floor counts as taken. One file covers every id used before
+     reservations. An id on an unmerged branch is covered too, because every branch is read.
+   - A second `--start` changes nothing and says so. So does a `--start` on a machine whose sync
+     brings another machine's floor.
+3. **A new id: `bakehouse reserve [--repo <folder>]`.** It prints the next free id on stdout, and
+   records it.
+   1. It syncs the records branch. If the sync cannot reach the remote, it refuses and says why: an id
+      needs the remote.
+   2. It takes the highest number among the reservations and the floor, and adds one.
+   3. It writes `reservations/<id>` (JSON: `id`, `writer`, `time`) and commits that file alone, by path.
+   4. It pushes. If the push is refused, it fetches. It takes its own reservation commit back. That
+      commit must be the tip of the records branch and hold only that file. If it is not, reserve stops
+      and says so, and changes nothing. Then it merges the remote.
+      - The remote now holds `reservations/<id>` (another machine took the id): it goes back to step 2.
+      - The remote does not hold it: it commits the same id again, on top of the merge, and pushes again.
+   5. At most 5 pushes. Then it refuses and says so.
+   - Any refusal leaves nothing committed: a reservation commit that was not pushed is taken back.
+   - `reserve` refuses until `--start` has run, naming it.
+4. **The lock.** `reserve` and `--start` hold the sync lock (`bakehouse-sync.lock`, in the records
+   worktree's git folder) from their sync to their last push. They wait up to 25 seconds for a sync
+   that holds it.
+   - Why the sync lock: every sync takes it. So no sync at a fixed point merges or pushes between the
+     reservation commit and its push, or while a losing commit is taken back. Two reserves on one
+     machine share the records worktree, so they share the lock and run one after the other.
+   - The writer lock (this writer's ops ledger lock) is held only for each local step that moves the
+     records branch: the commit, the take-back and the merge. A seal or close in another lane then waits
+     for those steps only. It never waits on the network.
+   - The network steps run as the sync's do: no prompts, the same token, and one bound of 20 seconds
+     for `reserve`'s own steps, after the sync's.
+5. **Preflight `change <id>`** (check 7). When reservations are on:
+   - an id with a reservation passes;
+   - an id at or under the floor passes;
+   - any other id fails, naming `bakehouse reserve`;
+   - no floor yet fails, naming `bakehouse reserve --start`;
+   - an id that is not the prefix and a number fails;
+   - a reservation by another writer is a note, not a failure: one person may move between their own
+     two machines.
+   - Preflight reads the records branch as this machine has it. A reservation made on another machine
+     is seen after the next sync (session start runs one).
+6. **The order on a project already in format 2.** Migrate first. Then run `bakehouse reserve
+   --start`. Then add `tracker.reserve` to the binding. From then on, the PM runs `bakehouse reserve`
+   before it writes each new tracker row, and writes the id it prints.
+7. **The limits.**
+   1. An id needs the remote. Offline, no new work order can start.
+   2. An id handed out by `reserve` and never used stays taken.
+   3. The tracker row and the reservation can still disagree, if someone writes a row by hand.
+      Preflight catches it at `/bakehouse:change`.
+   - `reserve` does not write the tracker row. The PM writes it, on the product branch, as before.
+   - Ids already used are not rewritten, and get no reservation file: the floor covers them.
+   - Decision ids are not reserved.
 
 ## Lanes
 
@@ -462,7 +541,7 @@ in the binding, because preflight cannot check it.
 | `approver` | who approves work when `owned` is false — a role, never a name | when `owned` is false |
 | `register` | the register's path | for `health` and `refactor` |
 | `signal` | what rewrites the register: a command, a pointer, or rules for the shipped script (see "The signal") | for `health` and `refactor` |
-| `tracker` | `file`: where a job opens or reads its item; `id`: the id form, as a regular expression | when owned |
+| `tracker` | `file`: where a job opens or reads its item; `id`: the id form, as a regular expression; `reserve`: `{"prefix": "<prefix>"}`, which turns on work-order ids reserved before use, in records format 2 ("Work-order ids reserved before use") | when owned; `reserve` no |
 | `measure` | `commands`: what the architect runs; `layerRules`: where the layer rules are (optional) | `commands` when owned |
 | `gates.byteIdentical` | the gate list for `refactor` | when owned |
 | `gates.predictedMoves` | `gates`: the gate list for `change`; `prediction`: the prediction file's name, `moves.prediction.json` (preflight refuses a prose file; one may sit beside it) | when owned |
@@ -1180,6 +1259,9 @@ runs read-only git commands; it writes nothing. One line per failure; exit 1 on 
    be read, does not parse, is not a JSON object or has a `roles` that is not an object fails, named. So
    does a binding whose `roles` is not an object.
 6. For a job when `owned` is false: an unconsumed approval of this exact scope exists.
+7. For `change <id>`, when reservations are on (`tracker.reserve`, records format 2): the id has a
+   reservation on the records branch, or is at or under the floor. A reservation by another writer is a
+   note. Check 2 checks `tracker.reserve`'s shape, for every job ("Work-order ids reserved before use").
 
 `startup` mode runs checks 1 to 4, for a session start that knows the repo folder: it exits 0, and the
 session carries any failure into its hand-back without stopping.
@@ -1471,6 +1553,10 @@ For whoever adds a tool or changes one.
   offline machine sees other machines' records only at its next successful sync; status is only as current
   as the last pull; a file two machines both write stops the sync until merged by hand; the first publish of
   the records branch is by hand ([Records sync](#records-sync)).
+- Work-order ids reserved before use have named limits: an id needs the remote, so offline no new work
+  order can start; an id handed out and never used stays taken; a tracker row written by hand can
+  disagree with the reservations, and preflight catches it at `/bakehouse:change`
+  ([Work-order ids reserved before use](#work-order-ids-reserved-before-use)).
 - Only one repository has run the jobs. The binding's field list is complete for that repo and a
   hypothesis for any other.
 - A job in a repo another party owns stops before it writes any plan or step state: where that

@@ -571,6 +571,16 @@
    "note": "R1 fix1 (review F6): no tool reads the committed line; the assumed yes itself is refused as an approval by close (bakehouse-change-70)"
   },
   {
+   "id": "bakehouse-change-72",
+   "file": "commands/change.md",
+   "sentences": [
+    "The id must be reserved first: preflight (step 1) fails an id above the floor with no reservation, naming `bakehouse reserve`."
+   ],
+   "enforcer": "code",
+   "proof": "test_reservations.Preflight.test_an_unreserved_id_above_the_floor_fails_naming_reserve",
+   "note": "0.10.0 R2: preflight check 7, when the binding has tracker.reserve and the records are in format 2"
+  },
+  {
    "id": "bakehouse-change-32",
    "file": "commands/change.md",
    "sentences": [
@@ -1905,6 +1915,16 @@
    ],
    "enforcer": "prompt",
    "proof": "prompt only: no tool, hook or review brief checks it"
+  },
+  {
+   "id": "pm-30",
+   "file": "skills/pm/SKILL.md",
+   "sentences": [
+    "The id must be reserved first: preflight fails `/bakehouse:change` for an id above the floor with no reservation."
+   ],
+   "enforcer": "code",
+   "proof": "test_reservations.Preflight.test_an_unreserved_id_above_the_floor_fails_naming_reserve",
+   "note": "0.10.0 R2: preflight check 7, when the binding has tracker.reserve and the records are in format 2"
   }
  ],
  "notRules": [

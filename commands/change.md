@@ -54,6 +54,12 @@ the owner needs now; where the repo's gate list has a scope gate, that gate says
 slice or a sample the work was framed on is counted the same way. Whoever writes the work order
 writes this line; the job never fills it.
 
+**A new work order's id comes from `bakehouse reserve`** when the binding has `tracker.reserve` and the
+records are in format 2 (bakehouse `docs/PROJECT-TEAM.md`, "Work-order ids reserved before
+use"). Whoever writes the work order runs it before writing the tracker row, and writes the id it
+prints. The id must be reserved first: preflight (step 1) fails an id above the floor with no
+reservation, naming `bakehouse reserve`.
+
 The job writes back to the same item, on that branch: `BASE`, the record folder, the prediction file,
 the owner's go on the prediction, each gate's result, the commits and the pull request. The item is
 the job's re-entry state.

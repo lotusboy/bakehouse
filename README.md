@@ -82,7 +82,7 @@ machine, write `none` into `~/.local/state/bakehouse/role`.
 
 ## Commands
 
-- `bakehouse setup`, `bakehouse status [--json]`, `bakehouse sync`, `bakehouse run <script>` (from the Bash tool).
+- `bakehouse setup`, `bakehouse status [--json]`, `bakehouse sync`, `bakehouse reserve [--start]`, `bakehouse run <script>` (from the Bash tool).
 - `/bakehouse:change`, `/bakehouse:refactor`, `/bakehouse:health` (in a session).
 
 More on each: [Docs](#docs).
