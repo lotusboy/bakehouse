@@ -180,9 +180,9 @@ def plain(s: dict, since_arg) -> str:
     out += [f"  {c['workOrder']}: at {c['closedAt']}, commit {c['commit']}"
             + (" (overridden)" if c["overridden"] else "") for c in s["closedSince"]]
     y = s["sync"]
-    if y and y["waiting"]:
+    if y and (y["waiting"] or y["lastFailure"]):
         f = y["lastFailure"]
-        out.append(f"records sync: {y['waiting']} commit(s) waiting to be pushed to {y['upstream']}"
+        out.append(f"records sync: {y['waiting'] or 0} commit(s) waiting to be pushed to {y['upstream']}"
                    + (f"; last failure at {f.get('at')}: {f.get('line')}" if f else ""))
     return "\n".join(out)
 

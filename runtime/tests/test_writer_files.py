@@ -317,9 +317,10 @@ class AcrossTheMigration(Base):
                          ["code", "measured"])  # beside the refused seal's gate-refused event
 
 
-def work_order(case, repo, wo, src, value, when, close_ok=True):
+def work_order(case, repo, wo, src, value, when, close_ok=True, frm=1):
     """One sealed round of wo in repo (tree mode), sealed and closed through predict-gate, as Sealed.flow does for
-    W-1. Returns the close's output; close_ok=False: the close may refuse."""
+    W-1. Returns the close's output; close_ok=False: the close may refuse. frm: the value out:v moves from (to frm + 1),
+    so two work orders can have evidence of their own."""
     folder = f"runs/2026-11-10-{wo}-step1-review"
 
     def git(*a, dated=False):
@@ -339,8 +340,8 @@ def work_order(case, repo, wo, src, value, when, close_ok=True):
         (repo / folder).mkdir(parents=True, exist_ok=True)
         (repo / folder / name).write_text(json.dumps(data))
 
-    put("moves.prediction.json", {"moves": [{"what": "out:v", "from": 1, "to": 2}]})
-    put("moves.baseline.json", {"out:v": 1})
+    put("moves.prediction.json", {"moves": [{"what": "out:v", "from": frm, "to": frm + 1}]})
+    put("moves.baseline.json", {"out:v": frm})
     git("add", "-A")
     git("commit", "-q", "-m", f"{wo}: prediction", dated=True)
     for n in ("moves.prediction.json", "moves.baseline.json"):
@@ -350,7 +351,7 @@ def work_order(case, repo, wo, src, value, when, close_ok=True):
     (repo / src).write_text(value)
     git("add", "-A")
     gate("seal-code", wo, "first", "--", "-q", "-m", f"{wo}: the change")
-    put("moves.measured.json", {"out:v": 2})
+    put("moves.measured.json", {"out:v": frm + 1})
     put("measure-report.json", {"base": {"sha": base}, "head": {"sha": git("rev-parse", "HEAD")}})
     gate("seal", wo, "first", str(repo / folder / "moves.measured.json"))
     git("add", "-A")
@@ -385,7 +386,7 @@ class TwoWriters(Base):
         self.assertIn("Result: CLOSED", work_order(self, self.repo, "W-1", "src/a.py", "a = 1\n",
                                                    "2026-11-10T09:30:00+00:00"))
         self.assertIn("Result: CLOSED", work_order(self, b, "W-2", "src/b.py", "b = 1\n",
-                                                   "2026-11-10T09:40:00+00:00"))
+                                                   "2026-11-10T09:40:00+00:00", frm=10))  # its own evidence
         for rec, w in ((self.records, "alpha"), (brec, "beta")):
             (rec / "spend" / "ledger").mkdir(parents=True, exist_ok=True)
             (rec / "spend" / "ledger" / f"{w}.jsonl").write_text("{}\n")  # another record, for the PM's commit
@@ -404,9 +405,8 @@ class TwoWriters(Base):
             self.assertEqual(names, ["alpha.jsonl", "beta.jsonl"], rec)
             p = self.bakehouse("status", "--json", "--repo", repo)
             self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
-            # a close line is committed by the next seal's anchor only, so each side sees its own close so far
-            own = "W-1" if rec == self.records else "W-2"
-            self.assertEqual([c["workOrder"] for c in json.loads(p.stdout)["closedSince"]], [own])
+            # each close commits its own line (0.9.0), so after the pull both machines see both closes
+            self.assertEqual(sorted(c["workOrder"] for c in json.loads(p.stdout)["closedSince"]), ["W-1", "W-2"])
             files = locator.ledger_files(rec, "ops_ledger")
             for wo in ("W-1", "W-2"):
                 sealed, kept, refused = pg.sealed_state(files, wo)

@@ -28,7 +28,7 @@ RUNTIME = twf.RUNTIME
 sys.path.insert(0, str(RUNTIME))
 import records_sync  # noqa: E402
 
-TOKEN = "tok-5a1t-NOT-IN-ANY-FILE-9c2e"
+TOKEN = "tok-5a1t\\nOT-IN-ANY-FILE-9c2e"  # a backslash, which an `echo` in the helper would corrupt
 
 
 class Base(twf.Base):
@@ -171,6 +171,27 @@ class Refused(Base):
             self.assertTrue((rec / "notes/alpha.txt").exists() and (rec / "notes/beta.txt").exists(), rec)
 
 
+    def test_a_push_still_refused_after_the_retry_is_one_refused_line(self):
+        self.two()
+        self.local_commit(self.brec, "notes/beta.txt", "b\n")
+        hooks = Path(self.g(self.b, "rev-parse", "--path-format=absolute", "--git-common-dir")) / "hooks"
+        count = self.repo.parent / "moves"
+        (hooks / "pre-push").write_text(  # every push from B: A commits and pushes first, so the retry is refused too
+            "#!/bin/sh\nunset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE\n"
+            f"echo x >> '{count}'\n"
+            f"date +%s%N > '{self.records}/notes/moving.txt'\n"
+            f"git -C '{self.records}' add -- notes/moving.txt && "
+            f"git -C '{self.records}' commit -q -m move -- notes/moving.txt && "
+            f"git -C '{self.records}' push -q origin bakehouse-records\n")
+        (hooks / "pre-push").chmod(0o755)
+        (self.records / "notes").mkdir(exist_ok=True)
+        out = self.sync(self.b, rc=1)
+        self.assertEqual(len(count.read_text().split()), 2)  # the push and its one retry
+        self.assertEqual(len(out.strip().splitlines()), 1, out)
+        self.assertIn("bakehouse sync: refused: push to origin", out)
+        self.assertIn("stay local", out)
+
+
 class Offline(Base):
     """Test 4: an unreachable remote: the seal still succeeds, the commit stays local, one line names the failure;
     the next sync pushes it; status shows the waiting count, then 0."""
@@ -196,6 +217,84 @@ class Offline(Base):
                          {"upstream": "origin/bakehouse-records", "waiting": 0, "lastFailure": None})
         self.assertNotIn("records sync:", self.bakehouse("status", "--repo", self.repo).stdout)
         self.assertEqual(self.tip(), self.rgit("rev-parse", "HEAD"))
+
+
+    def test_a_failing_pull_with_nothing_waiting_shows_in_plain_status(self):
+        self.origin_setup()
+        self.origin.rename(self.origin.with_name("away.git"))
+        self.sync(self.repo, rc=1)
+        s = self.status_of(self.repo)["sync"]
+        self.assertEqual(s["waiting"], 0)
+        plain = self.bakehouse("status", "--repo", self.repo).stdout
+        self.assertIn("records sync: 0 commit(s) waiting to be pushed to origin/bakehouse-records; last failure at", plain)
+        self.assertIn("offline", plain)
+
+
+class SessionStart(Base):
+    """Session start with a failing sync, and with the lock held: exit 0 either way."""
+
+    def test_a_failing_sync_at_session_start_is_one_line_and_exit_0(self):
+        self.origin_setup()
+        self.origin.rename(self.origin.with_name("away.git"))
+        out = self.session_start(self.repo)  # exit 0, asserted inside
+        lines = [x for x in out.splitlines() if x.startswith("bakehouse sync:")]
+        self.assertEqual(len(lines), 1, out)
+        self.assertIn("bakehouse sync: offline", lines[0])
+
+    def test_a_held_lock_at_session_start_skips_and_says_nothing(self):
+        self.origin_setup()
+        self.local_commit(self.records, "notes/a.txt", "a\n")
+        before = self.tip()
+        lock = Path(self.rgit("rev-parse", "--absolute-git-dir")) / records_sync.LOCK
+        with lock.open("a") as f:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            self.assertNotIn("bakehouse sync", self.session_start(self.repo))
+        self.assertEqual(self.tip(), before)
+
+
+class SealCode(Base):
+    """seal-code syncs after its anchor, as seal does."""
+
+    def test_seal_code_syncs_after_its_anchor(self):
+        self.origin_setup()
+        (self.repo / "src").mkdir(exist_ok=True)
+        (self.repo / "src" / "x.py").write_text("x = 1\n")
+        self.git("add", "-A")
+        p = self.run_([sys.executable, self.rt / "predict-gate.py", "seal-code", "W-1", "first", "--", "-q", "-m",
+                       "W-1: the change"])
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn("code commit", self.rgit("log", "-1", "--format=%s"))
+        self.assertEqual(self.tip(), self.rgit("rev-parse", "HEAD"))
+
+
+class Bound(Base):
+    """The bound: a remote that never answers, with a child that leaves git's process group holding its stderr, is
+    stopped within the bound, and the line says offline."""
+
+    def test_a_silent_remote_is_stopped_within_the_bound(self):
+        self.origin_setup()
+        pidfile = self.repo.parent / "silent.pid"
+        script = self.repo.parent / "silent.sh"
+        script.write_text("#!/bin/sh\n"
+                          "python3 -c 'import os, sys, time; os.setsid(); open(sys.argv[1], \"w\").write(str(os.getpid())); "
+                          f"time.sleep(60)' '{pidfile}' &\nsleep 60\n")
+        script.chmod(0o755)
+        self.addCleanup(_kill, pidfile)
+        self.rgit("config", "protocol.ext.allow", "always")
+        self.git("remote", "set-url", "origin", f"ext::{script}")
+        t = time.monotonic()
+        out = self.sync(self.repo, rc=1)
+        took = time.monotonic() - t
+        self.assertLess(took, records_sync.BOUND + 8, out)
+        self.assertGreaterEqual(took, records_sync.BOUND - 1, out)
+        self.assertIn(f"bakehouse sync: offline: fetch to origin had no answer within {records_sync.BOUND} seconds", out)
+
+
+def _kill(pidfile):
+    try:  # the child that left git's process group
+        os.kill(int(pidfile.read_text()), 9)
+    except (ValueError, OSError):
+        pass
 
 
 class FakeHttp:
@@ -312,6 +411,44 @@ class Credentials(Base):
             "are level with the remote all the same."])
         self.assertEqual(self.tip(), self.rgit("rev-parse", "HEAD"))  # the local remote needed no token: pushed
 
+    def test_an_askpass_program_is_never_called(self):
+        server = FakeHttp()
+        self.http_origin(server)
+        called = self.repo.parent / "askpass-called"
+        ap = self.repo.parent / "askpass.sh"
+        ap.write_text(f"#!/bin/sh\n: > '{called}'\nsleep 30\necho x\n")
+        ap.chmod(0o755)
+        self.rgit("config", "core.askPass", str(ap))
+        t = time.monotonic()
+        p = self.run_([sys.executable, twf.BAKEHOUSE, "sync", "--repo", self.repo],
+                      env={"GIT_ASKPASS": str(ap), "SSH_ASKPASS": str(ap)})
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertLess(time.monotonic() - t, 10)
+        self.assertIn("bakehouse sync: no credential: fetch to origin", p.stderr)
+        self.assertFalse(called.exists())
+
+    def test_the_token_is_never_in_argv(self):
+        self.origin_setup()
+        tf = Path(self.env["HOME"]) / "secrets.env"
+        tf.write_text(f"RECORDS_TOKEN='{TOKEN}'\n")
+        p = self.bakehouse("setup", "--token-file", tf, "--token-key", "RECORDS_TOKEN", "--token-user", "bot")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        with mock.patch.dict(os.environ, self.env, clear=True):
+            args, extra, problem = records_sync.token(self.records)
+        self.assertIsNone(problem)
+        self.assertEqual(extra, {records_sync.TOKEN_ENV: TOKEN, records_sync.USER_ENV: "bot"})
+        self.assertEqual(args, ["-c", "credential.helper=", "-c", f"credential.helper={records_sync.HELPER}"])
+        self.assertNotIn(TOKEN, " ".join(args))
+        self.assertIn(f'"${records_sync.TOKEN_ENV}"', records_sync.HELPER)  # the helper names the variable only
+
+    def test_a_token_file_inside_the_records_worktree_is_refused(self):
+        tf = self.records / "secrets.env"
+        tf.write_text(f"RECORDS_TOKEN={TOKEN}\n")
+        p = self.bakehouse("setup", "--token-file", tf, "--token-key", "RECORDS_TOKEN", "--token-user", "bot")
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn("inside the records worktree", p.stdout)
+        self.assertEqual(self.rgit("config", "--local", "--get", "bakehouse.tokenFile"), "")
+
     def test_the_token_options_go_together(self):
         p = self.bakehouse("setup", "--token-file", "f", "--token-key", "K")
         self.assertEqual(p.returncode, 2, p.stdout)
@@ -335,6 +472,90 @@ class Conflict(Base):
         self.assertEqual(self.g(self.brec, "status", "--porcelain", "--untracked-files=no"), "")
         self.assertEqual((self.brec / "shared.txt").read_text(), "beta\n")
         self.assertIn("conflict", self.status_of(self.b)["sync"]["lastFailure"]["line"])
+
+
+    def test_staged_changes_that_block_the_merge_are_named(self):
+        self.two()
+        self.local_commit(self.records, "notes/alpha.txt", "a\n")
+        self.sync(self.repo)
+        self.local_commit(self.brec, "notes/beta.txt", "b\n")  # not a fast forward: a merge commit is needed
+        (self.brec / "notes" / "staged.txt").write_text("s\n")
+        self.g(self.brec, "add", "--", "notes/staged.txt")
+        out = self.sync(self.b, rc=1)
+        self.assertIn("notes/staged.txt", out)
+        self.assertIn("bakehouse sync: conflict", out)
+
+    def test_a_merge_commit_never_asks_for_a_signature(self):
+        self.two()
+        self.local_commit(self.records, "notes/alpha.txt", "a\n")
+        self.sync(self.repo)
+        self.local_commit(self.brec, "notes/beta.txt", "b\n")
+        asked = self.repo.parent / "gpg-asked"
+        gpg = self.repo.parent / "gpg.sh"
+        gpg.write_text(f"#!/bin/sh\n: > '{asked}'\nexit 1\n")
+        gpg.chmod(0o755)
+        self.g(self.brec, "config", "commit.gpgsign", "true")
+        self.g(self.brec, "config", "gpg.program", str(gpg))
+        self.assertIn("level with", self.sync(self.b))
+        self.assertFalse(asked.exists())
+        self.assertEqual(self.g(self.brec, "rev-list", "--count", "--merges", "HEAD"), "1")
+
+
+class WriterLock(Base):
+    """F1: a seal during a conflicted sync waits for the merge and its abort: it loses no line and does not fail."""
+
+    def test_a_seal_during_a_conflicted_sync_loses_no_line_and_does_not_fail(self):
+        self.two()
+        self.local_commit(self.records, "shared.txt", "alpha\n")
+        self.sync(self.repo)
+        self.local_commit(self.brec, "shared.txt", "beta\n")
+        note = self.run_([self.rt / "ops-event.sh", "note", "-", "an uncommitted note"], env={"OPS_REPO": str(self.b)})
+        self.assertEqual(note.returncode, 0, note.stderr)
+        folder = self.b / "runs/2026-11-10-W-2-step1-review"
+        folder.mkdir(parents=True)
+        (folder / "moves.prediction.json").write_text(json.dumps({"moves": [{"what": "out:v", "from": 7, "to": 8}]}))
+        self.g(self.b, "add", "-A")
+        self.g(self.b, "commit", "-q", "-m", "W-2: prediction")
+        real, seal = records_sync.git, []
+
+        def git(records, *args, **kw):
+            r = real(records, *args, **kw)
+            if "merge" in args and "--abort" not in args and r.returncode and not seal:
+                seal.append(subprocess.Popen(
+                    [sys.executable, str(self.rt / "predict-gate.py"), "seal", "W-2", "first",
+                     str(folder / "moves.prediction.json")], cwd=self.b, env=self.env, text=True,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE))
+                time.sleep(2)  # the seal runs now, mid-merge, unless the merge holds the writer's lock
+            return r
+
+        with mock.patch.dict(os.environ, self.env, clear=True), mock.patch.object(records_sync, "git", git):
+            r = records_sync.sync(self.brec)
+        self.assertEqual(r.state, "failed")
+        self.assertIn("conflict", r.line)
+        out, err = seal[0].communicate(timeout=60)
+        self.assertEqual(seal[0].returncode, 0, out + err)
+        rows = [json.loads(x) for x in (self.brec / "ops/events/beta.jsonl").read_text().splitlines()]
+        self.assertEqual([e["kind"] for e in rows], ["note", "sealed"])
+        held = self.g(self.brec, "show", "HEAD:ops/events/beta.jsonl")
+        self.assertIn("an uncommitted note", held)
+        self.assertIn('"sealed"', held)
+        self.assertEqual(self.g(self.brec, "rev-parse", "-q", "--verify", "MERGE_HEAD", ok=False), "")
+
+
+class Upstream(Base):
+    """F3: with no upstream, origin is used only when it already holds the records branch: an orphan records branch
+    is never published by a sync."""
+
+    def test_an_orphan_records_branch_is_never_pushed(self):
+        self.migrate("--writer", "alpha")
+        origin = self.repo.parent / "origin.git"
+        self.g(self.repo.parent, "init", "-q", "--bare", str(origin))
+        self.git("remote", "add", "origin", str(origin))
+        self.assertEqual(self.sync(self.repo), "")
+        out = self.sealp(self.repo, "W-1", 1)
+        self.assertNotIn("bakehouse sync", out)
+        self.assertEqual(self.g(origin, "branch", "--list"), "")
+        self.assertIsNone(self.status_of(self.repo)["sync"]["upstream"])
 
 
 class OneAtATime(Base):
@@ -382,7 +603,7 @@ class Register(Base):
     def test_a_project_migrated_under_0_8_0_is_cleaned_by_its_first_sync(self):
         self.migrate("--writer", "alpha")
         # what 0.8.0's migration left: no ignore line, the register committed
-        (self.records / ".gitignore").write_text("")
+        (self.records / ".gitignore").write_text(twf.load("setup_sync_test", "bakehouse_setup.py").GITIGNORE)
         self.records_check()
         self.rgit("add", "-f", "--", ".gitignore", records_sync.REGISTER)
         self.rgit("commit", "-q", "-m", "0.8.0 records")
@@ -406,6 +627,28 @@ class Register(Base):
         self.assertIn("Nothing migrated", p.stdout)
         self.assertEqual(self.rgit("rev-parse", "HEAD"), head)
         self.assertEqual(self.rgit("ls-files", "--", records_sync.REGISTER), records_sync.REGISTER)
+        self.assertEqual(self.rgit("status", "--porcelain"), "")
+
+
+    def test_a_failed_format_commit_takes_the_register_commit_back(self):
+        self.records_check()
+        self.commit_records()
+        hooks = Path(self.git("rev-parse", "--path-format=absolute", "--git-common-dir")) / "hooks"
+        hooks.mkdir(exist_ok=True)
+        (hooks / "pre-commit").write_text(  # only the FORMAT commit fails: the register's commit goes through
+            "#!/bin/sh\ngit diff --cached --name-only | grep -qx FORMAT && exit 1\nexit 0\n")
+        (hooks / "pre-commit").chmod(0o755)
+        head = self.rgit("rev-parse", "HEAD")
+        gi = (self.records / ".gitignore").read_bytes() if (self.records / ".gitignore").exists() else None
+        p = self.migrate("--writer", "alpha", ok=False)
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("Nothing migrated", p.stdout)
+        self.assertEqual(self.rgit("rev-parse", "HEAD"), head)
+        self.assertIn("is derived, so it is not committed", self.rgit("reflog", "-3", "--format=%gs"))  # it was made
+        self.assertEqual(self.rgit("ls-files", "--", records_sync.REGISTER), records_sync.REGISTER)
+        self.assertEqual((self.records / ".gitignore").read_bytes() if (self.records / ".gitignore").exists() else None,
+                         gi)
+        self.assertFalse((self.records / "FORMAT").exists())
         self.assertEqual(self.rgit("status", "--porcelain"), "")
 
 

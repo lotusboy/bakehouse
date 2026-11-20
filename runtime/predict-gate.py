@@ -1580,7 +1580,10 @@ def run_close(wo: str, repo_arg: str | None, binding_arg: str | None, merged: bo
         return 1
     print(f"Result: CLOSED. Recorded in {ledger} as {kind}, with each file's sha256.")
     if project is not None:  # records format 2: the close commits its own line, then syncs; neither changes the result
-        why = commit_close_line(project, ledger, kind, wo)
+        try:
+            why = commit_close_line(project, ledger, kind, wo)
+        except Exception as e:  # noqa: BLE001 - the close is recorded; its commit never changes the result
+            why = repr(e)
         if why:
             print(f"bakehouse: the {kind} line is in {ledger} but not in a commit ({why}); the next seal's anchor "
                   "takes it", file=sys.stderr)

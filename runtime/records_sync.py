@@ -35,6 +35,7 @@ ends level. Format 1 (no FORMAT file): nothing is fetched, merged or pushed.
 
 from __future__ import annotations
 
+import contextlib
 import datetime
 import json
 import os
@@ -47,6 +48,7 @@ from typing import NamedTuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import locator  # noqa: E402
+import ops_ledger  # noqa: E402
 
 try:
     import fcntl
@@ -64,7 +66,9 @@ USAGE = "usage: bakehouse sync [--repo <folder>]"
 TOKEN_CONFIG = ("bakehouse.tokenFile", "bakehouse.tokenKey", "bakehouse.tokenUser")
 TOKEN_ENV, USER_ENV = "BAKEHOUSE_SYNC_TOKEN", "BAKEHOUSE_SYNC_USER"
 # the helper names the variables only: the token is in the child's environment, never in argv
-HELPER = (f'!f() {{ test "$1" = get || exit 0; echo "username=${USER_ENV}"; echo "password=${TOKEN_ENV}"; }}; f')
+HELPER = (f'!f() {{ test "$1" = get || exit 0; printf "username=%s\\npassword=%s\\n" "${USER_ENV}" "${TOKEN_ENV}"; }}; f')
+# the local steps (untrack's commit, the merge) never wait for a passphrase or stash writer lines away
+LOCAL = ("-c", "commit.gpgsign=false", "-c", "merge.autoStash=false")
 
 
 class Result(NamedTuple):
@@ -90,7 +94,11 @@ def git(records, *args, env=None, timeout=None):
                 break
             except subprocess.TimeoutExpired:
                 continue
-        p.communicate()
+        try:  # a child that left the group may still hold the pipes: wait a moment, then let them go
+            p.communicate(timeout=1)
+        except subprocess.TimeoutExpired:
+            for f in (p.stdout, p.stderr):
+                f.close()
         return subprocess.CompletedProcess(p.args, None, "", "")
     return subprocess.CompletedProcess(p.args, p.returncode, out, err)
 
@@ -101,14 +109,16 @@ def git_dir(records) -> Path:
 
 def upstream(records) -> tuple[str, str] | None:
     """(remote, branch on the remote) for the records branch: its upstream when git config names one, else origin
-    and the branch's own name when origin exists; None when neither."""
+    and the branch's own name when origin already holds that branch (refs/remotes/origin/bakehouse-records exists);
+    None otherwise. The sync never publishes a records branch the remote does not have: the first publish is the
+    owner's own `git push -u origin bakehouse-records`."""
     def cfg(key):
         return git(records, "config", "--get", key).stdout.strip()
 
     remote, merge = cfg(f"branch.{BRANCH}.remote"), cfg(f"branch.{BRANCH}.merge")
     if remote and remote != "." and merge.startswith("refs/heads/"):
         return remote, merge[len("refs/heads/"):]
-    if cfg("remote.origin.url"):
+    if cfg("remote.origin.url") and git(records, "rev-parse", "-q", "--verify", tracking("origin", BRANCH)).returncode == 0:
         return "origin", BRANCH
     return None
 
@@ -118,7 +128,8 @@ def tracking(remote: str, branch: str) -> str:
 
 
 def network_env(records) -> dict:
-    env = dict(os.environ, GIT_TERMINAL_PROMPT="0")
+    # GIT_ASKPASS empty: no askpass program runs (it also stops core.askPass and SSH_ASKPASS)
+    env = dict(os.environ, GIT_TERMINAL_PROMPT="0", GIT_ASKPASS="", GCM_INTERACTIVE="never")
     if not (env.get("GIT_SSH_COMMAND") or env.get("GIT_SSH") or git(records, "config", "--get", "core.sshCommand").stdout.strip()):
         env["GIT_SSH_COMMAND"] = "ssh -o BatchMode=yes -o ConnectTimeout=10"
     return env
@@ -220,7 +231,7 @@ def untrack_register(records) -> tuple[bool, str | None]:
     try:
         p = git(records, "read-tree", "HEAD", env=env)
         for args in (("add", "--", ".gitignore"), ("rm", "-q", "--cached", "--ignore-unmatch", "--", REGISTER),
-                     ("commit", "-q", "-m", f"records: {REGISTER} is derived, so it is not committed (records format "
+                     (*LOCAL, "commit", "-q", "-m", f"records: {REGISTER} is derived, so it is not committed (records format "
                                             f"{locator.FORMAT})")):
             if p.returncode == 0:
                 p = git(records, *args, env=env)
@@ -236,20 +247,45 @@ def untrack_register(records) -> tuple[bool, str | None]:
     return True, None
 
 
+@contextlib.contextmanager
+def writer_lock(records):
+    """This writer's ops ledger lock (ops_ledger.locked), which every seal anchor and close commit holds: a step that
+    moves the records worktree's HEAD or index holds it too, so it never runs between a line and its commit. No
+    writer id: no lock (nothing of this writer's is written then)."""
+    try:
+        path = locator.writer_file(records, "ops_ledger")
+    except locator.SetupNeeded:
+        yield
+        return
+    with ops_ledger.locked(path):
+        yield
+
+
 def merge(records, ref: str) -> str | None:
-    """Merge ref into the records branch; None when merged (or nothing to merge), else the failure text. A merge with a
-    conflict is aborted, so the local commits stay as they were."""
-    p = git(records, "merge", "-q", "--no-edit", ref)
-    if p.returncode == 0:
-        return None
-    files = git(records, "diff", "--name-only", "--diff-filter=U").stdout.split()
-    if git(records, "rev-parse", "-q", "--verify", "MERGE_HEAD").returncode == 0:
-        git(records, "merge", "--abort")
+    """Merge ref into the records branch, under this writer's ops ledger lock; None when merged (or nothing to merge),
+    else the failure text. A merge with a conflict is aborted, so the local commits stay as they were; an abort that
+    fails is reported, since the worktree is then mid-merge."""
+    name = ref.removeprefix("refs/remotes/")
+    with writer_lock(records):
+        p = git(records, *LOCAL, "merge", "-q", "--no-edit", ref)
+        if p.returncode == 0:
+            return None
+        files = git(records, "diff", "--name-only", "--diff-filter=U").stdout.split()
+        if git(records, "rev-parse", "-q", "--verify", "MERGE_HEAD").returncode == 0:
+            a = git(records, "merge", "--abort")
+            if a.returncode:
+                return (f"failed: merging {name} conflicts in {', '.join(files) or 'some files'}, and `git merge "
+                        f"--abort` failed ({detail(a.stderr or a.stdout)}): the records worktree is mid-merge. Run "
+                        f"`git -C {records} merge --abort` there")
+        staged = git(records, "diff", "--cached", "--name-only").stdout.split()
     files = files or [x.strip() for x in (p.stderr + p.stdout).splitlines() if x.startswith("\t")]
     if files:
-        return (f"conflict: merging {ref.removeprefix('refs/remotes/')} conflicts in {', '.join(files)}; the merge "
-                "was aborted. Merge it by hand in the records worktree")
-    return f"failed: merging {ref.removeprefix('refs/remotes/')}: {detail(p.stderr or p.stdout)}"
+        return (f"conflict: merging {name} conflicts in {', '.join(files)}; the merge was aborted. Merge it by hand in "
+                "the records worktree")
+    if staged:
+        return (f"conflict: merging {name} is blocked by staged changes in {', '.join(staged)}; commit or unstage them "
+                "in the records worktree")
+    return f"failed: merging {name}: {detail(p.stderr or p.stdout)}"
 
 
 def exchange(records, remote: str, branch: str) -> tuple[str | None, bool]:
@@ -302,7 +338,8 @@ def sync(records) -> Result:
                 fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except OSError:
                 return Result("skipped", "bakehouse sync: another sync of these records is running; skipped")
-        _, err = untrack_register(records)
+        with writer_lock(records):
+            _, err = untrack_register(records)
         if err:
             return failed(records, f"failed: could not stop committing {REGISTER}: {detail(err)}")
         up = upstream(records)
