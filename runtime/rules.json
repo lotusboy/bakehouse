@@ -1930,17 +1930,17 @@
    "id": "pm-31",
    "file": "skills/pm/SKILL.md",
    "sentences": [
-    "With `--layer out`, or two or more owners, the altitude trigger fires: the tool refuses unless one option offers an architect check, or an architect run is recorded for the task since its work order opened."
+    "With `--layer out`, or two or more owners, the altitude trigger fires: the tool refuses unless `--architect-option` is given, or an architect run is recorded for the task since its work order opened and since its last altitude ask."
    ],
    "enforcer": "code",
    "proof": "test_altitude_triggers.Altitude.test_the_trigger_names_which_and_refuses_without_an_architect_option",
-   "note": "0.11.0, decision.sh ask; the recorded run: test_an_architect_run_recorded_after_the_work_order_opened_lets_it_through"
+   "note": "0.11.0, decision.sh ask; the recorded run: test_an_architect_run_recorded_after_the_work_order_opened_lets_it_through, test_m4_one_recorded_run_lets_only_the_next_altitude_ask_through"
   },
   {
    "id": "pm-32",
    "file": "skills/pm/SKILL.md",
    "sentences": [
-    "From the third trigger of one kind on one area, over every task, the tool refuses unless one option offers an architect check of that area; a recorded run for one task does not count."
+    "From the third trigger of one kind on one area, over every task, the tool refuses unless `--architect-option` names the one architect check of that area; a recorded run for one task does not count."
    ],
    "enforcer": "code",
    "proof": "test_altitude_triggers.Cluster.test_the_third_same_kind_trigger_on_one_area_is_a_cluster",

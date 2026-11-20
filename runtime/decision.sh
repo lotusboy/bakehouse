@@ -8,7 +8,8 @@
 #
 #   decision.sh ask --category spend --question "Run the audit now?" --option yes --option no \
 #       --recommendation yes --confidence 0.8 --evidence-kind measured --evidence "estimate in WIP.md"
-#   decision.sh ask ... --task <id> --change --layer in|out --owners N --area <name>   # a proposed code change
+#   decision.sh ask ... --task <id> --change --layer in|out --owners N --area <name> \
+#       [--architect-option <the --option that is the architect check>]   # a proposed code change
 #       (--fix-round implies --change); every trigger prints `decision: <name> trigger: <why>`
 #   decision.sh answer <id> --choice yes            # agreed is worked out when the choice matches
 #   decision.sh unattended start --why "owner said unattended" [--wave W]   # only where the project

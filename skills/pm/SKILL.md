@@ -161,7 +161,8 @@ model for that one dispatch, and only with the owner's yes.
   trigger: <why>`, for upstream, re-check, step-back or altitude), the message to the owner says which
   trigger fired and why, in plain words. For the altitude trigger it presents the options with the
   architect check among them. The same holds at review findings: a fix round for a finding outside the
-  owning layer, or for one rule that two places own, is asked with `--layer` and `--owners` saying so.
+  owning layer, or for one rule that two places own, is asked with `--layer`, `--owners` and `--area`
+  saying so.
   At a cluster (`altitude trigger: cluster: ...`), the message leads with the one architect check of
   the area (the architect's redesign mode). The work orders and items it covers are held until it
   reports, not worked one by one ("When findings repeat, build one mechanism", above).
@@ -282,11 +283,13 @@ them, and each tool's header comment is its full reference.
   A question that proposes a code change on a task (a fix or a design change) gives `--change` (a fix
   round implies it), with `--layer in|out` (the change's layer against the work order's owning layer),
   `--owners N` (how many places own the rule it touches) and `--area <name>` (the module or data shape
-  whose rule it touches). With `--layer out`, or two or more owners, the altitude trigger fires: the
-  tool refuses unless one option offers an architect check, or an architect run is recorded for the
-  task since its work order opened. From the third trigger of one kind on one area, over every task,
-  the tool refuses unless one option offers an architect check of that area; a recorded run for one
-  task does not count.
+  whose rule it touches), and `--architect-option <text>` names the option that is the architect check.
+  With `--layer out`, or two or more owners, the altitude trigger fires: the tool refuses unless
+  `--architect-option` is given, or an architect run is recorded for the task since its work order
+  opened and since its last altitude ask. From the third trigger of one kind on one area, over every
+  task, the tool refuses unless `--architect-option` names the one architect check of that area; a
+  recorded run for one task does not count. An autonomous decision or an assumed answer on an
+  altitude ask takes only the architect option.
   When the reply arrives, record it with `decision.sh answer`. Before asking, `decision.sh should-ask
   <category>` says whether to ask, to ask without showing the recommendation, or to decide and log it.
   When later evidence shows a decision held or was reversed, record that with `decision.sh outcome`.
