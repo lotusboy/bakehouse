@@ -205,6 +205,9 @@ points. One function does it for every caller: `runtime/records_sync.py` `sync`.
       another sync holds it, this sync skips. Only `bakehouse sync` says so. Lanes on one machine share
       the records worktree, so they share the lock.
    2. stops committing the derived register, once (point 4 below).
+   - Steps 2 and 4's merge (with its abort) hold this writer's ops ledger lock, the lock every seal
+     anchor and close commit holds. So a seal or close in another lane waits for them, and never
+     commits in the middle of a merge. The network steps do not hold it.
    3. finds the upstream (point 3 below). With no upstream and no remote, it does nothing and says nothing.
    4. fetches the upstream branch, merges it, and pushes. It always merges and never rebases: writer
       files never overlap, so a merge is clean.
@@ -214,12 +217,16 @@ points. One function does it for every caller: `runtime/records_sync.py` `sync`.
    - First, the records branch's own upstream: git config `branch.bakehouse-records.remote` and
      `branch.bakehouse-records.merge`. Setup sets it when it makes the records worktree from
      `origin/bakehouse-records` (`git worktree add --track`).
-   - Else, when the remote `origin` exists: `origin`, and a branch of the same name,
-     `bakehouse-records`. This covers a records worktree made with no upstream set: from a local
-     branch, or as a new branch before origin had one. The sync does not set the upstream; it finds it
+   - Else, when `origin` already holds the records branch (this clone has
+     `refs/remotes/origin/bakehouse-records`): `origin`, and that branch. This covers a records worktree
+     made from a local branch with no upstream set. The sync does not set the upstream; it finds it
      again each time.
+   - Else nothing: the sync does nothing and says nothing. So a sync never publishes a records branch
+     that origin does not have yet (a new orphan branch, made with `--no-remote-check`, for example).
+     The first publish is the owner's, by hand, once:
+     `git -C <records> push -u origin bakehouse-records`. From then on the sync finds that upstream.
    - The fetch names the branch (`+refs/heads/<branch>:refs/remotes/<remote>/<branch>`), so a
-     single-branch clone works too. A remote with no records branch yet: the push makes it.
+     single-branch clone works too.
 4. **The derived register is not committed.** `registers/records.json` is rewritten by records-check
    from a code ref on each machine. Two machines on different branches write different ones, so a
    pull would conflict on it. In format 2 it is ignored (a line in the records branch's `.gitignore`)
@@ -229,11 +236,17 @@ points. One function does it for every caller: `runtime/records_sync.py` `sync`.
    - A project migrated under 0.8.0 has it done by its first sync.
    - records-check still writes the register to disk. Nothing reads it from git history.
 5. **It never blocks and never prompts.**
-   - Every network command runs with `GIT_TERMINAL_PROMPT=0`.
+   - Every network command runs with `GIT_TERMINAL_PROMPT=0`, an empty `GIT_ASKPASS` (so no askpass
+     program runs: not `GIT_ASKPASS`, `core.askPass` or `SSH_ASKPASS`) and `GCM_INTERACTIVE=never`.
    - For SSH it adds `BatchMode=yes` and `ConnectTimeout=10`, through `GIT_SSH_COMMAND`. When the
      owner set `GIT_SSH_COMMAND`, `GIT_SSH` or `core.sshCommand`, that is left as it is, and the
      bound below still holds.
-   - The network steps of one sync share one bound of 20 seconds. A step still running then is stopped.
+   - The network steps of one sync share one bound of 20 seconds. A step still running then is stopped,
+     with every process it started in its process group.
+   - The local steps (the register's commit and the merge) run with `commit.gpgsign=false` and
+     `merge.autoStash=false`, so they never ask for a passphrase and never stash writer lines away.
+     They have no time bound of their own. A git hook the owner added to the records worktree can
+     still wait or ask.
 6. **A failure.** The commits stay local, and the next fixed point tries again. The tool's own result
    and exit code do not change: the seal, the close or the session start still succeeds. The caller
    prints one line, which starts `bakehouse sync:` and then names why:
@@ -243,7 +256,7 @@ points. One function does it for every caller: `runtime/records_sync.py` `sync`.
    | `offline` | the remote cannot be reached, or gave no answer within the bound |
    | `no credential` | the remote asks for a login git cannot give without asking; or the token file has no value for its key |
    | `refused` | the push was refused, and still refused after the one retry |
-   | `conflict` | the merge conflicts; the line names the files. Merge by hand in the records worktree |
+   | `conflict` | the merge conflicts, or staged changes in the records worktree block it; the line names the files. Merge by hand (or commit or unstage them) in the records worktree |
    | `failed` | anything else, with git's own line |
 
    The last failure line and its time are kept in the records worktree's git folder
@@ -256,6 +269,7 @@ points. One function does it for every caller: `runtime/records_sync.py` `sync`.
      `bakehouse.tokenUser`. These are a path and two names. The token itself is never stored.
    - The file is the user's own `KEY=VALUE` file. A line may start with `export `. A line starting with
      `#` is a comment.
+   - Setup refuses a token file inside the records worktree: the PM's records commit would commit it.
    - At each sync, bakehouse reads the token from the file. It gives the token to git for each network
      command only, through an inline credential helper set with `git -c credential.helper=...`. The
      token travels in that command's environment, never in its arguments, which other users can see.
@@ -274,6 +288,15 @@ points. One function does it for every caller: `runtime/records_sync.py` `sync`.
    2. An offline machine sees the other machines' records only at its next successful sync.
    3. `bakehouse status` is only as current as the last pull. It reads local refs, and never asks the
       remote.
+   4. A file two machines both write conflicts, and stops every sync until it is merged by hand. Writer
+      files never do. The health and driver registers (`registers/health.json`, `registers/drivers.json`)
+      can (limit 1 of [One records file per writer](#one-records-file-per-writer)).
+   5. The token is in the environment of what git starts for that fetch or push (a pre-push hook, ssh),
+      and the helper gives it for any host that asks.
+10. **A second machine, and format 2.** A machine still in format 1 never syncs, so it does not
+    get `FORMAT` by itself. After one person migrates and pushes, each other machine, once, by hand:
+    `git -C <records> pull --no-rebase`, then `bakehouse setup` in its main clone (which sets its
+    writer id). From then on the sync moves its records.
 
 ## Lanes
 
@@ -1414,7 +1437,7 @@ The JSON object:
 | `unattended` | whether unattended mode is on ("Unattended mode"): `on`, and `since`, `why` and `wave` from its start event (`null` when off) |
 | `assumedToConfirm` | each decision whose latest answer is an assumed one, for the owner to confirm or reverse: `id`, `question`, `confidence`, `estTokens` |
 | `closedSince` | each `work-order-closed` event at or after `--since` (all of them without it): `workOrder`, `closedAt`, `commit` (the commit the close event names), `overridden` (`true` when the close was the owner's override) |
-| `sync` | records format 2 ([Records sync](#records-sync)): `upstream` (`"<remote>/<branch>"`, or `null` with no upstream and no remote), `waiting` (the local records commits not on the upstream, from local refs, so only as current as the last sync), `lastFailure` (`at` and `line` of the last sync failure; `null` after a sync that ends level). `null` in format 1 |
+| `sync` | records format 2 ([Records sync](#records-sync)): `upstream` (`"<remote>/<branch>"`, or `null` when there is none to sync with), `waiting` (the local records commits not on the upstream, from local refs, so only as current as the last sync), `lastFailure` (`at` and `line` of the last sync failure; `null` after a sync that ends level). `null` in format 1 |
 
 `predict-gate.sh close` writes a `work-order-closed` event only when the close passes, or when it
 fails and the owner's override is recorded first.
@@ -1444,9 +1467,10 @@ For whoever adds a tool or changes one.
 - Records format 2 (one records file per writer) has three named limits: one person runs the health and
   driver passes; an older bakehouse still writing the old paths is caught at the next read, not stopped;
   the writer id names a records worktree, not a person ([One records file per writer](#one-records-file-per-writer)).
-- The records sync has three named limits: a push needs git to reach the remote without asking; an
+- The records sync has named limits: a push needs git to reach the remote without asking; an
   offline machine sees other machines' records only at its next successful sync; status is only as current
-  as the last pull ([Records sync](#records-sync)).
+  as the last pull; a file two machines both write stops the sync until merged by hand; the first publish of
+  the records branch is by hand ([Records sync](#records-sync)).
 - Only one repository has run the jobs. The binding's field list is complete for that repo and a
   hypothesis for any other.
 - A job in a repo another party owns stops before it writes any plan or step state: where that
