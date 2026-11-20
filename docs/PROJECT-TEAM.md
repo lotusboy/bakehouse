@@ -1242,9 +1242,10 @@ For whoever adds a tool or changes one.
 - In records mode, records-check judges a work order by the record under `runs/`. A work order closed
   in tree mode before a switch to records mode, with code commits still inside the window, reads as
   `not-its-record` there: its close hashed files in the code tree. `bakehouse status` still counts it closed.
-- A records folder that is a separate clone, not a worktree of the main clone, cannot be mapped back to its
-  project (`bakehouse record commit`, a seal without `--repo`, the role hook): git's common dir names that
-  clone, not the main one. `bakehouse setup` makes a worktree.
+- A records folder that is a separate clone, not a worktree of the main clone, is refused: records committed
+  there would never reach the project. The locator says so and names the fix (`bakehouse setup` in the main
+  clone, `bakehouse setup --pointer <main clone>` in a lane clone). `bakehouse record commit` and a seal
+  without `--repo` name a folder in such a clone as a separate clone.
 - The locator's git calls have no timeout of their own: a records folder on a stalled mount makes session
   start wait until the harness's hook timeout.
 - There is one git-hook launcher per machine. Every session start points it at that session's plugin
