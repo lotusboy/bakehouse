@@ -274,7 +274,9 @@ a pass, so it cannot close. That party's own review closes the work there.
 
 **Which ledger.** Close writes to the ops ledger of the project that `runtime/locator.py` finds for
 the repository (`--repo`, else the working directory's): `ops/events.jsonl` in its records folder. A
-repository with no team is refused (exit 2). The output and the event name the ledger file.
+repository with no team is refused (exit 2). The output and the event name the ledger file. In records
+format 2 close reads `ops/events.jsonl` and then every writer file, and writes to this writer's
+`ops/events/<writer>.jsonl` ([PROJECT-TEAM.md, "One records file per writer"](./PROJECT-TEAM.md#one-records-file-per-writer)).
 
 **Step 10: `close <work-order> --merged`.** After the merge, `/bakehouse:change` step 10 runs close
 with `--merged` on the default branch. It checks one thing: each file the work order's latest
@@ -430,7 +432,9 @@ by these events ("Closing a sealed work order", below).
    repository. A lane clone with no records pointer needs `--repo <the main clone>`; without it, the
    seal refuses (exit 2, naming `bakehouse setup`). The project's binding must say `"owned": true`.
    The ledger is `ops/events.jsonl` in the project's records folder, the one close reads. A
-   repository with no team is refused (exit 2), as close refuses it.
+   repository with no team is refused (exit 2), as close refuses it. In records format 2 the seal is
+   written to, and anchored in, this writer's `ops/events/<writer>.jsonl`, and its checks read every file
+   of the ledger ([PROJECT-TEAM.md, "One records file per writer"](./PROJECT-TEAM.md#one-records-file-per-writer)).
 6. `predict-gate.sh revise <work-order> <round> <file> --decision <id>` follows a prediction changed
    after its first seal. It needs an earlier seal or revise of that work order's prediction in that
    round, with a different sha256, and writes a `revised` event.
@@ -466,7 +470,8 @@ by these events ("Closing a sealed work order", below).
    is written first, so a new line is never joined onto it. The chain starts at the first sealed
    event. From it on, every new event, from any writer, carries `prev`: the sha256 of the bytes of the
    line before it. Events before it stay as they are. `ops-event.sh` refuses the kinds `sealed`,
-   `revised` and `retired`.
+   `revised` and `retired`. In records format 2 each writer file has its own lock beside it and is its
+   own chain ([PROJECT-TEAM.md, "One records file per writer"](./PROJECT-TEAM.md#one-records-file-per-writer)).
    **The anchor.** After seal, revise or retire appends its line, still under
    the lock, it commits the ledger file alone, by path, into the git repository that holds it (the records worktree),
    with the trailer `Sealed-line: <sha256 of the line>`. git's index lock, held by another git command,
@@ -503,7 +508,9 @@ is whole. It also refuses when the ledger file no longer begins with the ledger 
 (a committed line edited, moved or removed). These two refusals name the ledger by its path in the
 project's records worktree (`ops/events.jsonl`), as records-check names it, so a symbolic-link spelling of
 the same ledger keeps their refusal ids. A ledger that resolves outside the records worktree is named
-`(outside the records worktree)/<file name>`, never by its machine path. For a sealed work order, close
+`(outside the records worktree)/<file name>`, never by its machine path. In records format 2 both checks run
+on each file of the ledger, and a refusal names that file, for example `ops/events/<writer>.jsonl`
+([PROJECT-TEAM.md, "One records file per writer"](./PROJECT-TEAM.md#one-records-file-per-writer)). For a sealed work order, close
 then refuses, naming each:
 
 1. **The ledger it reads.** A sealed event of the work order that no commit holds. A line a

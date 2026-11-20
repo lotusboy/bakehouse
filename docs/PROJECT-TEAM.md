@@ -110,7 +110,8 @@ or, with a line-union merge, reordered lines and broke the ops ledger's hash cha
 **The fix (records format 2, bakehouse 0.8.0).** Each machine appends only to its own files. Two
 machines then never write the same file, so a plain `git pull` merges their records with no conflict.
 
-1. **The writer id.** Each records worktree has one writer id, in its git config `bakehouse.writer`.
+1. **The writer id.** Each records worktree has one writer id, in its repository's own git config
+   `bakehouse.writer` (`git config --local`; a global or system value is never used).
    - `bakehouse setup` in the main clone sets it when it is unset.
    - `bakehouse setup --writer <name>` sets `<name>`: 1 to 32 letters, digits or hyphens. Without
      `--writer`, setup sets `w` followed by 8 random hex characters.
@@ -144,11 +145,14 @@ machines then never write the same file, so a plain `git pull` merges their reco
    - It writes `FORMAT` at the records root. `FORMAT` holds the format number (2), the bakehouse
      version that reads it (0.8.0), and the sha256 of each of the five legacy files. A legacy file
      that does not exist is recorded as `absent`.
-   - It commits `FORMAT` in the records worktree only, by path. It sets the writer id when it is unset.
+   - It commits `FORMAT` in the records worktree only, by path. After that commit, it sets the writer
+     id when it is unset. A refused migration changes nothing, the writer id included.
    - From then on the five legacy files are frozen: no tool appends to them again.
    - It is refused when the records worktree has uncommitted changes to tracked files. The ops ledger
      is often one of them, because the PM's records commit leaves it to the seal anchors. Commit it by
      path first, then run the migration again.
+   - It is also refused when a legacy file exists but git does not hold it (untracked). Such a file
+     would be frozen on this machine only, and every other clone would then refuse. Commit it first.
    - A second run changes nothing and says so.
    - Order: every machine moves to bakehouse 0.8.0 first (limit 2, below). Then one person migrates
      and pushes the records branch. Each other machine pulls it and runs `bakehouse setup` in its main
@@ -159,6 +163,9 @@ machines then never write the same file, so a plain `git pull` merges their reco
    - A frozen legacy file whose sha256 is not the one `FORMAT` records (or an absent one that now
      exists): every tool refuses, naming the file. This is how an older bakehouse, still writing the
      old path, is caught.
+   - `FORMAT` missing on disk while the records branch's HEAD holds it: every tool refuses, naming
+     `git -C <records> checkout -- FORMAT`. Without this, the tools would read format 1 again and
+     append to the frozen files.
    - After migration, a records worktree with no writer id: every write refuses, naming
      `bakehouse setup`. Reads still work.
    - A records folder with no `FORMAT` is format 1: one file per ledger, exactly as before 0.8.0.
@@ -170,6 +177,9 @@ machines then never write the same file, so a plain `git pull` merges their reco
    3. The writer id names a records worktree, not a person. Two people sharing one main clone share
       one id; one person with two main clones has two.
    - Pushing and pulling the records branch is still done by hand with git. `TOOLS.md` is still one file.
+   - The PM's records commit leaves the ops files (`ops/events.jsonl` and `ops/events/`) to the seal
+     anchors. So a close, or any other ops line that is not a seal, reaches another machine only with
+     that writer's next anchored seal.
    - Ids are not reserved across machines: two machines can still pick the same work order id or
      decision id. Each machine keeps to its own work orders.
 
