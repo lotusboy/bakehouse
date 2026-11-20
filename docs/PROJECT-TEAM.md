@@ -161,6 +161,35 @@ The binding can name runs that must never run in parallel: `gates.oneAtATime` ([
 4. Close it as the job says: `predict-gate.sh close <id>` before the pull request, then, after the merge
    into the default branch, `predict-gate.sh close <id> --merged` (`/bakehouse:change` steps 9 and 10).
 
+### Two product branches that follow one branch (`mainFollows`)
+
+Some projects keep two product branches and one shared branch, usually `main`. The rule is:
+
+- Engine changes merge into `main` when each work order closes.
+- `main` merges into a product branch only between work orders, before the next work order's first baseline.
+- `main` never merges into a product branch between a seal and its close. That merge changes `HEAD` after the
+  measured seal, and close refuses it.
+
+Why it matters: a work order whose first baseline is measured on a branch that missed `main` never measures
+the other product's engine changes. The binding field `"mainFollows": {"branch": "main"}` turns on three
+checks. Without the field, nothing below happens.
+
+1. **The first baseline's seal refuses.** `predict-gate.sh seal <id> first <...>/moves.baseline.json` refuses
+   when the tip of `main` is not an ancestor of the code checkout's `HEAD`. The refusal names the fix: merge
+   `main` into this branch, then measure and seal the baseline again. In a lane clone it names
+   `git pull <main clone> main`. A fix round's baseline, a prediction and a measured file are not checked.
+2. **The session notice.** At session start, when `main` has N > 0 commits that touch the code roots and that
+   this checkout's `HEAD` does not have, one line says so: "`main` has N engine commits this branch does not
+   have: merge it in before the next work order's baseline". There is no line when N is 0.
+3. **The note at close.** When `main` gained commits that touch the code roots after the work order's first
+   baseline was sealed (another product's work order closed meanwhile), close still passes. It prints one
+   note: this change and those commits are first measured together at the next work order's baseline. The
+   commit compared is the one the first baseline's seal event records.
+
+Which `main` is read: always the main clone's own branch, read in the main clone with no fetch. The main clone
+is the repository of the records worktree. In a lane clone, the lane's own `main` and its `origin/main` are
+never read, because they can be stale. A main clone with no such branch makes the seal refuse, naming it.
+
 ## Roles
 
 A role names a job. An agent fills a role. A job dispatches `role:<job>:<role>`, for example
@@ -245,6 +274,7 @@ in the binding, because preflight cannot check it.
 | `reviewName` | one step's record folder name; default `{date}-{id}-step{n}-review` | no |
 | `leaveAlone` | files no step may edit | no |
 | `records` | `since`: the date the record contracts apply from (`YYYY-MM-DD`); `jobs`: artefacts added to a job's record contract (see "Records against the process"). It may add, never remove. `codeRoots`: the folders whose commits are code, in any binding. It is used when `signal` names no `codeRoots`: a binding with no `signal`, or a `signal` that is a command or a pointer. A rules `signal` that names its own `codeRoots` wins | no; `change` and `refactor` need code roots here or in `signal.codeRoots` |
+| `mainFollows` | `{"branch": "<branch>"}`: the branch engine changes merge into as each work order closes, read in the main clone. With it, a work order's first baseline seals only when that branch is merged into the code checkout's `HEAD`; session start and close say when it has engine commits the branch lacks ("Two product branches that follow one branch") | no |
 | `mutation` | what the mutation runner runs for a mutated file: `command`, `env`, `timeout`, `tests` (a list of `{"files": <glob>, "tests": [<path>, ...]}`), `loads` (a command that prints where the tests' environment loads a file from), and `links` (paths in the copy that get a snapshot of a linked git repository; see "The mutation runner") | no |
 
 Placeholders are `{…}` only, from this closed list: `{root}`, `{register}`, `{id}`, `{n}`, `{date}`,
@@ -936,11 +966,13 @@ runs read-only git commands; it writes nothing. One line per failure; exit 1 on 
    `signal.codeRoots`, else `records.codeRoots`. With neither, preflight fails: "name the code folders in
    records.codeRoots (or signal.codeRoots)". A field of the wrong type fails, for every job: a `register`
    that is not a string, or a `signal` that is neither a string (a command or a pointer) nor an object
-   (rules for the shipped script). An empty `register` or `signal` counts as missing.
+   (rules for the shipped script). An empty `register` or `signal` counts as missing. A `mainFollows`
+   that is not an object with a non-empty string `branch` fails.
 3. Every path field exists in the checkout. Each `records.codeRoots` entry is one, for every job; an entry
    that starts with `:` or holds `*`, `?` or `[` is a git pathspec or a glob, and fails. `reviews` is one
    folder, read by the role hook's own rule: `null`, a list, a full path (one inside the repository too)
-   and a path with a `..` part fail, as they do at dispatch.
+   and a path with a `..` part fail, as they do at dispatch. A `mainFollows` branch the main clone does not
+   have fails, naming it.
 4. Every pointer finds its key. A gate the repo wrote as prose is listed, not failed. A rules `signal`
    whose `codeRoots` is not a list of one or more folder names fails in one line. An entry of nothing but
    slashes, such as `/`, is not a folder name: check 4 uses the rule close uses for code roots.
@@ -1247,6 +1279,8 @@ For whoever adds a tool or changes one.
 - In records mode, records-check judges a work order by the record under `runs/`. A work order closed
   in tree mode before a switch to records mode, with code commits still inside the window, reads as
   `not-its-record` there: its close hashed files in the code tree. `bakehouse status` still counts it closed.
+- `mainFollows` reads the main clone's branch as it is on this machine. On a second machine, the main clone's
+  branch is only as current as its last pull, so a work order closed elsewhere and not yet pulled is not seen.
 - The locator's git calls have no timeout of their own: a records folder on a stalled mount makes session
   start wait until the harness's hook timeout.
 - There is one git-hook launcher per machine. Every session start points it at that session's plugin

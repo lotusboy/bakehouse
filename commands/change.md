@@ -285,7 +285,9 @@ branch), `BASE` and the record folder. Commit by path, with the trailer. Fill th
    report: `predict-gate.sh seal {id} <round> <measured file> --report <measure report>`. Seal the
    round's baseline before its measured file: a measured seal is refused while the baseline its check
    uses has no seal (a chained round's baseline that holds an earlier round's sealed measured file is
-   already covered). A measured seal with no report, or a report with no `head.sha`, is refused. A clone of
+   already covered). With the binding's `mainFollows` set, the first round's baseline seals only when the main
+   clone's `<branch>` is merged into this branch: engine changes merge into `<branch>` when each work order
+   closes, and `<branch>` merges into a product branch only between work orders, before the next baseline. A measured seal with no report, or a report with no `head.sha`, is refused. A clone of
    the project runs `bakehouse setup --pointer <the main clone>` first; without it the seal refuses (or give
    `--repo <the main clone>`). Never set `OPS_TS` or `OPS_COMMIT` for a seal: it refuses them.
    The engineer commits each round's first code through `predict-gate.sh seal-code {id} <round> --
