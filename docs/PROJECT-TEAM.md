@@ -55,7 +55,11 @@ its `projectPath`, compared resolved), then a user-scope one. There is no regist
 2. **Team records**: the records folder, a git worktree of an orphan branch of the project repository,
    in a sibling folder. Its git config `bakehouse.records` names it; `bakehouse setup` makes it. The
    locator accepts it only when it is outside the project tree and checked out on the branch
-   `bakehouse-records`; a relative pointer is read from the repository root.
+   `bakehouse-records`; a relative pointer is read from the repository root. It refuses a records folder
+   that is a separate clone, or a worktree of a repository that is neither the project's own nor, for a lane
+   clone, its main clone (judged as `bakehouse setup --pointer` judges it): records committed there would
+   never reach the project. `bakehouse record commit` and a seal without `--repo` name a folder in a
+   separate clone as that.
 3. **Machine state**: the machine folder, `$XDG_STATE_HOME/bakehouse`, else
    `~/.local/state/bakehouse` (`BAKEHOUSE_MACHINE_DIR` replaces it). It holds the logs, the locks, the
    seen-agents file, the personal role table and the role choice. It is never in git.
@@ -1232,9 +1236,10 @@ For whoever adds a tool or changes one.
   such a repo, and changes nothing in it (design 05 §4.8 is not yet met).
 - `records-check.py --binding <file>` reads the ledger of the project the locator finds, not a ledger
   beside that file.
-- A records pointer set by hand (`git config bakehouse.records`) to another project's records worktree is
-  accepted, because every project's records worktree is on the same branch; the ledgers are then written
-  there. `bakehouse setup` never writes such a pointer: `--pointer` refuses a main clone of another project.
+- A records pointer set by hand (`git config bakehouse.records`) to the records worktree of another clone
+  that shares this project's root commit (a fork, for example) is accepted; the ledgers are then written
+  there. One to an unrelated project's records worktree is refused. `bakehouse setup` never writes such a
+  pointer: `--pointer` refuses a main clone of another project.
 - A fresh main clone whose remote `origin` cannot be reached cannot be set up: setup must first ask origin
   for the records branch, so that it never makes a second one. It says so and changes nothing.
 - `bakehouse status` refuses a decision ledger line that is not a JSON object (exit 1), where
@@ -1242,10 +1247,6 @@ For whoever adds a tool or changes one.
 - In records mode, records-check judges a work order by the record under `runs/`. A work order closed
   in tree mode before a switch to records mode, with code commits still inside the window, reads as
   `not-its-record` there: its close hashed files in the code tree. `bakehouse status` still counts it closed.
-- A records folder that is a separate clone, not a worktree of the main clone, is refused: records committed
-  there would never reach the project. The locator says so and names the fix (`bakehouse setup` in the main
-  clone, `bakehouse setup --pointer <main clone>` in a lane clone). `bakehouse record commit` and a seal
-  without `--repo` name a folder in such a clone as a separate clone.
 - The locator's git calls have no timeout of their own: a records folder on a stalled mount makes session
   start wait until the harness's hook timeout.
 - There is one git-hook launcher per machine. Every session start points it at that session's plugin

@@ -623,6 +623,17 @@ class RecordCommitSeparateClone(Project):
         self.assertNotIn("no project with a team", out)
         self.assertEqual(self.git(sep, "log", "--format=%s"), "records")
 
+    def test_a_seal_in_a_separate_clone_names_it(self):
+        sep = self.t / "repo.sep"
+        self.git(self.t, "clone", "-q", "-b", "bakehouse-records", str(self.repo), str(sep))
+        folder = sep / "runs" / REC
+        self.write(folder, {"moves.prediction.json": GOOD_P, "moves.baseline.json": BASE_M})
+        rc, out = self.gate("seal", "W-1", "baseline", str(folder / "moves.baseline.json"), cwd=sep)
+        self.assertEqual(rc, 2, out)
+        self.assertIn("separate clone", out)
+        self.assertNotIn("Traceback", out)
+        self.assertNotIn("has no team", out)
+
     def test_record_commit_from_a_lane_clone_commits_in_the_main_clones_records_worktree(self):
         lane = self.t / "lane"
         self.git(self.t, "clone", "-q", str(self.repo), str(lane))
