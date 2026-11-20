@@ -17,6 +17,10 @@ The JSON object (docs/PROJECT-TEAM.md, "Reading team state"):
                     {id, question, confidence, estTokens}
   closedSince       each work-order-closed event at or after --since (all of them without it):
                     {workOrder, closedAt, commit, overridden}
+  sync              records format 2: {upstream, waiting, lastFailure}: the records branch's upstream
+                    ("<remote>/<branch>", or null), the local records commits not on it (from local refs, so only as
+                    current as the last sync), and the last sync failure {at, line} (null after a sync ends level);
+                    null in format 1 (runtime/records_sync.py)
 A work-order-closed event is written by `predict-gate.sh close` only when the close passes, or fails and
 the owner's override is recorded first; such a close's note starts OVERRIDDEN.
 
@@ -36,6 +40,7 @@ from pathlib import Path
 import decision
 import locator
 import ops_ledger
+import records_sync
 
 USAGE = "usage: bakehouse status [--json] [--since <ISO time>] [--repo <folder>]"
 CLOSED_KIND = "work-order-closed"
@@ -154,7 +159,7 @@ def state(project, since) -> dict:
         raise Unreadable(culprit(files, decision_rows, lambda evs: decision_part(project, evs)), e) from e
     return {"format": 1, "team": True, "project": str(project.root), "records": str(project.records),
             "workOrders": open_wos, "waitingDecisions": waiting, "closedSince": closed,
-            "unattended": away, "assumedToConfirm": assumed}
+            "unattended": away, "assumedToConfirm": assumed, "sync": records_sync.status(project.records)}
 
 
 def plain(s: dict, since_arg) -> str:
@@ -174,6 +179,11 @@ def plain(s: dict, since_arg) -> str:
                f"closed: {len(s['closedSince'])}")
     out += [f"  {c['workOrder']}: at {c['closedAt']}, commit {c['commit']}"
             + (" (overridden)" if c["overridden"] else "") for c in s["closedSince"]]
+    y = s["sync"]
+    if y and y["waiting"]:
+        f = y["lastFailure"]
+        out.append(f"records sync: {y['waiting']} commit(s) waiting to be pushed to {y['upstream']}"
+                   + (f"; last failure at {f.get('at')}: {f.get('line')}" if f else ""))
     return "\n".join(out)
 
 

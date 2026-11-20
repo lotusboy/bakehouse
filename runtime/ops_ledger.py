@@ -120,9 +120,10 @@ def _top(path: Path):
     return Path(p.stdout.strip()) if p.returncode == 0 else None
 
 
-def anchor(path: Path, line: bytes, subject: str) -> str | None:
-    """Commit the ledger file, by path only, with the line's Sealed-line trailer. None when committed;
-    else why not. git's index lock held by another git command is retried, then reported."""
+def anchor(path: Path, line: bytes, subject: str, trailer: str = "Sealed-line") -> str | None:
+    """Commit the ledger file, by path only, with the line's trailer (Sealed-line; a close's own commit gives
+    Closed-line, which sealed_trailers does not read). None when committed; else why not. git's index lock held
+    by another git command is retried, then reported."""
     top = _top(path)
     if top is None:
         return f"{path.parent} is not inside a git repository"
@@ -146,7 +147,7 @@ def anchor(path: Path, line: bytes, subject: str) -> str | None:
                     "-m",
                     subject,
                     "-m",
-                    f"Sealed-line: {line_sha(line)}",
+                    f"{trailer}: {line_sha(line)}",
                     "--",
                     rel,
                 ],

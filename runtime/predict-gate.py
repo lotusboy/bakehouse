@@ -1579,6 +1579,12 @@ def run_close(wo: str, repo_arg: str | None, binding_arg: str | None, merged: bo
         print(f"Result: REFUSED. The close could not be recorded in the ops ledger ({err}).")
         return 1
     print(f"Result: CLOSED. Recorded in {ledger} as {kind}, with each file's sha256.")
+    if project is not None:  # records format 2: the close commits its own line, then syncs; neither changes the result
+        why = commit_close_line(project, ledger, kind, wo)
+        if why:
+            print(f"bakehouse: the {kind} line is in {ledger} but not in a commit ({why}); the next seal's anchor "
+                  "takes it", file=sys.stderr)
+        sync_records(project)
     return 0
 
 
@@ -1592,6 +1598,34 @@ def ledger_module():
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import ops_ledger
     return ops_ledger
+
+
+def sync_records(project):
+    """A fixed point of the records sync (runtime/records_sync.py; records format 2 only): print its failure line,
+    if any. It never changes the tool's own result."""
+    try:
+        import records_sync
+        line = records_sync.quiet(project.records)
+    except Exception as e:  # noqa: BLE001 - the sync never changes a seal or a close
+        line = f"bakehouse sync: failed: {e!r}"
+    if line:
+        print(line, file=sys.stderr)
+
+
+def commit_close_line(project, ledger: Path, kind: str, wo: str) -> str | None:
+    """In records format 2, commit the writer file that holds the close's own line, by path, as an anchor does
+    (trailer Closed-line). None when committed or in format 1; else why not."""
+    import locator
+    if locator.records_format(project.records) != locator.FORMAT:
+        return None
+    ol = ledger_module()
+    with ol.locked(ledger):  # as the sealers' anchors: one writer of git's index at a time
+        lines = ol.lines_of(ledger.read_bytes() if ledger.is_file() else b"")
+        line = next((x for x in reversed(lines) if (ol.parse(x) or {}).get("kind") == kind
+                     and (ol.parse(x) or {}).get("task") == wo), None)
+        if line is None:
+            return f"no {kind} line of {wo} in {ledger}"
+        return ol.anchor(ledger, line, f"ops ledger: {kind} {wo} (predict-gate.sh close)", trailer="Closed-line")
 
 
 def file_round(name: str) -> tuple[str, str]:
@@ -1931,6 +1965,7 @@ def run_seal(cmd: str, wo: str, rnd: str, file: str, repo_arg: str | None, repor
                       f"the {ev['kind']} line of {rel} is written to the ledger but is not in a commit | {unanchored[0]}",
                       wo, None, path)
         return 1
+    sync_records(project)  # after the anchor commit (records format 2 only)
     if rc:
         print("The sealed check REFUSED: the seal records it, and close needs an approved retire for it.")
     return rc
@@ -1989,6 +2024,7 @@ def run_seal_code(wo: str, rnd: str, repo_arg: str | None, commit_args: list) ->
                       f"the code seal of {commit[:8]} is written to the ledger but is not in a commit | {unanchored[0]}",
                       wo, None, repo)
         return 1
+    sync_records(project)  # after the anchor commit (records format 2 only)
     return 0
 
 

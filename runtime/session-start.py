@@ -13,6 +13,8 @@ hook must never stop a session from starting.
    choice `pm`, one instruction to load the PM skill; nothing with `none`.
 3. With a team whose binding names `mainFollows`: one line when the main clone's branch has engine commits (commits
    touching the code roots) that this checkout's HEAD does not have; nothing when it has none.
+4. With a team in records format 2: the records sync (runtime/records_sync.py), within its bound; one line when it
+   fails, naming why. It never stops the session.
 
 The role choice is the file `role` in the machine folder: `pm` or `none`. A missing file means `pm`; any
 other content is read as `pm`, and one line says so.
@@ -104,6 +106,13 @@ def main(env=os.environ, stream=sys.stdin):
     notice = main_follows_notice(project)
     if notice:
         print(notice)
+    try:
+        import records_sync
+        line = records_sync.quiet(project.records)
+    except Exception as e:  # noqa: BLE001 - a sync never stops a session
+        line = f"bakehouse sync: failed: {e!r}"
+    if line:
+        print(line)
 
 
 if __name__ == "__main__":

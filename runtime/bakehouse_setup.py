@@ -23,12 +23,14 @@ unset, to --writer <name> (1 to 32 letters, digits or hyphens), else `w` and 8 r
 records worktree, so every lane clone that points at it shares it. `bakehouse setup migrate` freezes the five
 legacy ledgers in place and writes `FORMAT` (locator.records_format; docs/PROJECT-TEAM.md, "One records file per
 writer"), committed by path in the records worktree only; from then on each tool appends to its writer's own file.
+Before that commit it stops committing the derived register `registers/records.json` (records_sync.untrack_register).
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 import shlex
 import subprocess
@@ -36,12 +38,14 @@ import tempfile
 from pathlib import Path
 
 import locator
+import records_sync
 
 BRANCH = "bakehouse-records"
 MARKER = "# installed-by: bakehouse"
 USAGE = """\
 usage: bakehouse setup [--pointer <main clone>] [--pre-commit] [--no-remote-check]
-       bakehouse setup [--writer <name>] [--pre-commit] [--no-remote-check]   (main clone)
+       bakehouse setup [--writer <name>] [--token-file <path> --token-key <NAME> --token-user <name>]
+                       [--pre-commit] [--no-remote-check]   (main clone)
        bakehouse setup migrate [--writer <name>]
   --pointer <main clone>  in a lane clone (any clone but the main one). setup copies the main clone's
                      records pointer and makes no records worktree.
@@ -51,6 +55,10 @@ usage: bakehouse setup [--pointer <main clone>] [--pre-commit] [--no-remote-chec
                      bakehouse-records branch. setup then makes a new orphan bakehouse-records branch here without
                      asking origin (for a remote that needs a login setup cannot give). Without it, setup asks
                      origin first.
+  --token-file <path> --token-key <NAME> --token-user <name>
+                     main clone only, all three together. A token for the records remote: setup stores the
+                     three values (a path and two names, never the token) in the records worktree's local git
+                     config; each sync reads NAME from the KEY=VALUE file and gives it to git for that command only.
   --writer <name>    main clone only. The writer id of this clone's records worktree (1 to 32 letters, digits or
                      hyphens), set when it has none. Without it, setup sets `w` and 8 random hex characters.
   migrate            move the project's records to one file per writer (records format 2): freeze the five
@@ -450,6 +458,11 @@ def migrate(top: Path, env, writer: str | None) -> int:
         return 1
     if writer_conflict(rec, writer):
         return 1
+    # the derived register is not committed in format 2: untracked first, in its own commit (records_sync)
+    untracked, err = records_sync.untrack_register(rec)
+    if err:
+        say(f"could not stop committing {records_sync.REGISTER} in {rec}:\n{err}\nNothing migrated.")
+        return 1
     frozen = {rel: locator.file_sha(rec / rel) for rel in sorted(locator.LEDGERS.values())}
     path = rec / locator.FORMAT_FILE
     path.write_text(json.dumps({"format": locator.FORMAT, "bakehouse": locator.FORMAT_VERSION,
@@ -464,6 +477,10 @@ def migrate(top: Path, env, writer: str | None) -> int:
     if p.returncode:
         git(rec, "reset", "-q", "--", locator.FORMAT_FILE)
         path.unlink()
+        if untracked:  # take the register's commit back too: a refused migration changes nothing
+            git(rec, "reset", "-q", "HEAD~1")
+            if git(rec, "checkout", "-q", "--", ".gitignore").returncode:
+                (rec / ".gitignore").unlink(missing_ok=True)
         say(f"could not commit {path}:\n{(p.stderr or p.stdout).strip()}\nNothing migrated.")
         return 1
     if not ensure_writer(rec, writer):
@@ -476,7 +493,36 @@ def migrate(top: Path, env, writer: str | None) -> int:
     return 0
 
 
-def setup_main(top: Path, root, env, pre_commit, remote_check=True, writer=None) -> int:
+TOKEN_OPTIONS = ("--token-file", "--token-key", "--token-user")
+TOKEN_KEY = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def set_token(records: Path, given) -> bool:
+    """Store the token settings (records_sync.TOKEN_CONFIG: the file's absolute path, the key, the user) in the records
+    worktree's local git config; never the token. A file that cannot be read, or that has no value for the key, is
+    said, and stored all the same: each sync reads the file again."""
+    if given is None:
+        return True
+    path, key, user = given
+    path = str(Path(path).expanduser().absolute())
+    for k, v in zip(records_sync.TOKEN_CONFIG, (path, key, user)):
+        p = git(records, "config", "--local", k, v)
+        if p.returncode:
+            say(f"could not set {k} in {records}:\n{(p.stderr or p.stdout).strip()}")
+            return False
+    try:
+        found = bool(records_sync.token_file_value(Path(path), key))
+    except OSError as e:
+        say(f"note: the token file {path} cannot be read now ({e.strerror}); each sync reads it again")
+        found = True
+    if not found:
+        say(f"note: the token file {path} has no {key} now; each sync reads it again")
+    say(f"records token: {key} from {path}, user {user} (git config {', '.join(records_sync.TOKEN_CONFIG)} in "
+        f"{records}; the token itself is never stored)")
+    return True
+
+
+def setup_main(top: Path, root, env, pre_commit, remote_check=True, writer=None, token=None) -> int:
     try:
         project = locator.find(top, env)
     except locator.BadFormat as e:  # the records are there, in a format or state this bakehouse refuses
@@ -491,7 +537,7 @@ def setup_main(top: Path, root, env, pre_commit, remote_check=True, writer=None)
             return 1
     if project is not None:
         say(f"already set up: records at {project.records}. Installing the hooks again.")
-        if not ensure_writer(project.records, writer):
+        if not ensure_writer(project.records, writer) or not set_token(project.records, token):
             return 1
         return finish(project, root, env, pre_commit)
     main_clone = origin_main_clone(top)
@@ -509,7 +555,7 @@ def setup_main(top: Path, root, env, pre_commit, remote_check=True, writer=None)
         return 1
     git(top, "config", "bakehouse.records", str(folder))
     say(f"bakehouse.records = {folder}")
-    if not ensure_writer(folder, writer):
+    if not ensure_writer(folder, writer) or not set_token(folder, token):
         return 1
     return finish(locator.find(top, env), root, env, pre_commit)
 
@@ -553,6 +599,26 @@ def main(argv, root) -> int:
             return 2
         writer = argv[i + 1]
         del argv[i:i + 2]
+    token = None
+    if any(o in argv for o in TOKEN_OPTIONS):
+        vals = []
+        for o in TOKEN_OPTIONS:
+            i = argv.index(o) if o in argv else -1
+            if i < 0 or i + 1 >= len(argv) or argv.count(o) > 1 or not argv[i + 1].strip():
+                say("--token-file, --token-key and --token-user go together, each with one value")
+                print(USAGE)
+                return 2
+            vals.append(argv[i + 1])
+            del argv[i:i + 2]
+        if not TOKEN_KEY.fullmatch(vals[1]):
+            say("--token-key takes a variable name: letters, digits and underscores, not starting with a digit")
+            print(USAGE)
+            return 2
+        if argv[:1] == ["migrate"] or "--pointer" in argv:
+            say("the token options are for the main clone's setup, not migrate or --pointer")
+            print(USAGE)
+            return 2
+        token = tuple(vals)
     if argv[:1] == ["migrate"]:
         top = locator.toplevel(Path.cwd())
         if len(argv) > 1 or top is None:
@@ -577,4 +643,4 @@ def main(argv, root) -> int:
         return 1
     if argv:
         return setup_pointer(top, argv[1], root, env, pre_commit)
-    return setup_main(top, root, env, pre_commit, remote_check, writer)
+    return setup_main(top, root, env, pre_commit, remote_check, writer, token)
