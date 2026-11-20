@@ -285,7 +285,8 @@ them, and each tool's header comment is its full reference.
   reported with `${CLAUDE_PLUGIN_ROOT}/runtime/spend.sh record` — the harness's figure, never the agent's own estimate. Open a
   wave with its ceiling before a batch starts (`spend.sh wave open`). At 80% of the ceiling, say so in the
   next update. At 100%, dispatch nothing more in that wave until the owner raises the ceiling or the wave
-  closes.
+  closes. Each figure is that agent's total so far, not one run's share: when an agent is continued, record
+  its new total with `spend.sh record --correct`, because the latest row for an agent id is the one that counts.
 - **Turns are estimated, like tokens.** Before each dispatch, state the turns the brief needs against the
   agent type's cap (`maxTurns` in ${CLAUDE_PLUGIN_ROOT}/agents/<name>.md), and put that cap, not a larger number, in the
   brief. A brief that does not fit is split across agents or cut before it starts. An agent that stops at

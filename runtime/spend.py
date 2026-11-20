@@ -394,7 +394,8 @@ def main():
     r = sub.add_parser("record", help="record one finished agent's measured token count")
     r.add_argument("--agent", required=True, help="the agent id from the completion notification")
     r.add_argument("--label", required=True, help="a short name for what it did")
-    r.add_argument("--tokens", required=True, type=tokens_arg, help="subagent_tokens from the notification")
+    r.add_argument("--tokens", required=True, type=tokens_arg, help="subagent_tokens from the notification: the agent's total so far, not one run's share;"
+                   " for a continued agent, record its new total with --correct (the latest row for an agent id counts)")
     r.add_argument("--wave", help="default: the one open wave, if exactly one is open")
     r.add_argument("--kind", choices=KINDS, help="the role the agent ran as; required on a first record")
     r.add_argument("--source", choices=SOURCES, default="harness",
