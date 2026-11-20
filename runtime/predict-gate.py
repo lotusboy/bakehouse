@@ -1492,6 +1492,8 @@ def run_close(wo: str, repo_arg: str | None, binding_arg: str | None, merged: bo
         notes.append(f"sealed: judged by {len(seal_events)} committed sealed event(s) in the ledger, not by git order")
         refused += seal_refused + sealed_refusals(repo, [rel(f) for f in folders if not f.is_symlink()], seal_events,
                                                   decided, wo, roots, form, notes, rec)
+        if follows := main_follows_note(project, b, seal_events, roots):
+            notes.append(follows)
     print(f"\nWork order {wo}: record folder(s) {', '.join(rel(f) for f in folders) or '(none)'}. "
           f"Pairs passed: {len(passed)}. Ledger: {ledger or '(none)'}. Decisions: {decision_ledger or '(none)'}")
     for n in notes:
@@ -1730,6 +1732,54 @@ def seal_refusal(path: Path, rel: str, wo: str, rnd: str, fkind: str, digest: st
     return None
 
 
+def main_follows_refusal(project, b: dict, code: Path) -> str | None:
+    """Why a work order's first baseline may not be sealed with the code checkout code, or None: the binding's
+    mainFollows names a branch (locator.main_follows), and the main clone's tip of it (locator.main_tip, never the
+    checkout's own copy) is not in code's HEAD, so engine changes merged there would go unmeasured."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import locator
+    try:
+        branch = locator.main_follows(b)
+    except locator.BadMainFollows as e:
+        raise BadInput(str(e))
+    if branch is None:
+        return None
+    main = locator.main_clone(project)
+    tip = locator.main_tip(project, branch)
+    if tip is None:
+        return (f"the binding's mainFollows names the branch {branch}, and the main clone {main} has no branch "
+                f"{branch}: name a branch the main clone has")
+    if git(code, "merge-base", "--is-ancestor", tip, "HEAD", check=False).returncode == 0:
+        return None
+    return (f"the main clone's {branch} ({tip[:8]}) is not merged into this checkout's HEAD ({code}), so this work "
+            f"order would not measure the engine changes merged into {branch}: merge {branch} into this branch (in "
+            f"a lane clone: git pull {main} {branch}), then measure and seal the baseline again")
+
+
+def main_follows_note(project, b: dict, seal_events: list, roots) -> str | None:
+    """Close's note when the main clone's mainFollows branch has engine commits (touching the code roots) that were
+    not in the commit the work order's first baseline seal records: another work order closed meanwhile. None when
+    the switch is off, or there are none, or git cannot count them."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import locator
+    try:
+        branch = locator.main_follows(b)
+    except locator.BadMainFollows:
+        return None  # close never refuses on it: the seal and preflight name the form
+    firsts = [e for e in seal_events if e.get("kind") == "sealed" and e.get("fileKind") == "baseline"
+              and e.get("round") == "first"]
+    commit = firsts[-1].get("commit") if firsts else None
+    tip = locator.main_tip(project, branch) if branch and project is not None else None
+    if not (commit and tip):
+        return None
+    n = locator.missing_engine_commits(project, tip, commit, roots)
+    if not n:
+        return None
+    return (f"the main clone's {branch} has {n} engine commit(s) that were not in {commit} when this work order's "
+            "first baseline was sealed (another work order closed meanwhile): this change and those are first "
+            f"measured together at the next work order's baseline, once {branch} is merged into this branch")
+
+
 def run_seal(cmd: str, wo: str, rnd: str, file: str, repo_arg: str | None, report: str | None = None,
              decision_id: str | None = None) -> int:
     """seal: one sealed event for a prediction, baseline or measured file. revise: a prediction changed
@@ -1763,6 +1813,10 @@ def run_seal(cmd: str, wo: str, rnd: str, file: str, repo_arg: str | None, repor
         if why:
             raise BadInput(why)
         extra["decision"] = decision_id
+    if cmd == "seal" and fkind == "baseline" and rnd == "first":  # reads git, not the record: not in seal_refusal
+        why = main_follows_refusal(project, binding, code)
+        if why:
+            raise BadInput(why)
     if fkind == "measured":
         fields, rc = measured_fields(path, repo, report, code)
         extra.update(fields)

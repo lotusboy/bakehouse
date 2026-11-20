@@ -346,6 +346,54 @@ def code_roots(binding: dict):
     return roots
 
 
+class BadMainFollows(ValueError):
+    """The binding's mainFollows is not {"branch": "<a branch>"}; the message names the fix."""
+
+
+def main_follows(binding: dict) -> str | None:
+    """The branch the binding's mainFollows names: engine changes merge into it as each work order closes, and it
+    merges into a product branch only between work orders, before the next baseline. None when the binding has no
+    mainFollows (the check is off). BadMainFollows: any other form. The one rule for seal, close, session-start and
+    preflight."""
+    if "mainFollows" not in binding:
+        return None
+    v = binding["mainFollows"]
+    if not isinstance(v, dict) or not isinstance(v.get("branch"), str) or not v["branch"].strip():
+        raise BadMainFollows(f'the binding\'s "mainFollows" = {json.dumps(v)} is not an object naming a branch: '
+                             'write {"branch": "main"}, naming the branch engine changes merge into')
+    return v["branch"]
+
+
+def main_clone(project: Project) -> Path | None:
+    """The main clone: the repository of the project's records worktree, its git common dir's parent (find makes
+    sure a lane clone's records worktree is a worktree of its main clone). None when git cannot say."""
+    common = _git(project.records, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    return Path(common).parent if common else None
+
+
+def main_tip(project: Project, branch: str) -> str | None:
+    """The commit the main clone's own `branch` names, read in the main clone with no fetch: never a checkout's own
+    `branch` or its origin/<branch>, which can be stale. None when the main clone has no such branch."""
+    main = main_clone(project)
+    return _git(main, "rev-parse", "-q", "--verify", f"refs/heads/{branch}^{{commit}}") if main else None
+
+
+def missing_engine_commits(project: Project, tip: str, since: str, roots) -> int | None:
+    """How many commits reachable from tip (a main clone commit) and not from since (a commit of the project's
+    checkout) touch the code roots (any commit when roots is None); None when git cannot count them. Counted in the
+    checkout with the main clone's objects readable too, so a lane clone needs no fetch."""
+    env = dict(os.environ)
+    common = _git(project.records, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    if common:  # git skips it silently when it is the checkout's own object folder (the main clone itself)
+        env["GIT_ALTERNATE_OBJECT_DIRECTORIES"] = str(Path(common) / "objects")
+    try:
+        p = subprocess.run(["git", "-C", str(project.root), "rev-list", "--count", tip, "--not", since, "--",
+                            *(roots or [])], capture_output=True, text=True, check=False, env=env)
+    except OSError:
+        return None
+    return int(p.stdout.strip()) if p.returncode == 0 and p.stdout.strip().isdigit() else None
+
+
 def records_owner(folder, env=os.environ) -> Project | None:
     """The project whose records worktree holds folder (a folder not made yet: its nearest parent), or None. git's
     common dir names the main clone, and that clone's `bakehouse.records` pointer must name this checkout.

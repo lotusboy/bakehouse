@@ -11,10 +11,13 @@ hook must never stop a session from starting.
    shell last was), and prints, for the session's context:
    nothing when there is no team; the locator's message when setup is needed; with a team and the role
    choice `pm`, one instruction to load the PM skill; nothing with `none`.
+3. With a team whose binding names `mainFollows`: one line when the main clone's branch has engine commits (commits
+   touching the code roots) that this checkout's HEAD does not have; nothing when it has none.
 
 The role choice is the file `role` in the machine folder: `pm` or `none`. A missing file means `pm`; any
 other content is read as `pm`, and one line says so.
 """
+import json
 import os
 import sys
 from pathlib import Path
@@ -64,6 +67,22 @@ def role(env):
     return "pm", f"bakehouse: {path} holds {text!r}, not `pm` or `none`; treating it as `pm`."
 
 
+def main_follows_notice(project):
+    """The line saying the main clone's mainFollows branch has N > 0 engine commits this checkout's HEAD lacks, or
+    None (the switch off, none missing, or anything git or the binding cannot answer)."""
+    try:
+        binding = json.loads(project.binding.read_text())
+        branch = locator.main_follows(binding)
+        tip = locator.main_tip(project, branch) if branch else None
+        n = locator.missing_engine_commits(project, tip, "HEAD", locator.code_roots(binding)) if tip else None
+    except Exception:  # noqa: BLE001 - a notice never stops a session
+        return None
+    if not n:
+        return None
+    return (f"bakehouse: {branch} has {n} engine commit{'s' if n != 1 else ''} this branch does not have: merge it "
+            "in before the next work order's baseline")
+
+
 def main(env=os.environ, stream=sys.stdin):
     folder = locator.hook_folder(env, stream)
     try:
@@ -82,6 +101,9 @@ def main(env=os.environ, stream=sys.stdin):
         print(note)
     if choice == "pm":
         print(PM)
+    notice = main_follows_notice(project)
+    if notice:
+        print(notice)
 
 
 if __name__ == "__main__":

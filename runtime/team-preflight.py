@@ -22,11 +22,12 @@ prediction file (`gates.predictedMoves.prediction`, one predict-gate reads), onl
 contracts (`records`, runtime/records-check.py), has a well-formed `mutation`
 block when it has one (runtime/mutate.py), says where the run folders are with a `runs` the locator reads
 ("records" or "tree", and "records" never beside `reviews`; runtime/locator.py runs_mode; a binding with `reviews`
-and no `runs` is noted), and uses only the closed placeholder list; 3 every path
+and no `runs` is noted), has a `mainFollows` of the form {"branch": "<a branch>"} when it has one
+(runtime/locator.py main_follows), and uses only the closed placeholder list; 3 every path
 field (each `records.codeRoots` entry among them, which is never a git pathspec or a glob; `reviews` by the
 role hook's rule, locator.reviews_problem), and every test
-path the `mutation` block names, exists in the checkout; 4 every pointer
-finds its key (prose gates are listed, not failed), and a generic-script signal is valid (a
+path the `mutation` block names, exists in the checkout, and the main clone has the branch `mainFollows`
+names; 4 every pointer finds its key (prose gates are listed, not failed), and a generic-script signal is valid (a
 missing script is a note, except for `refactor`, which runs the signal); 5 every
 role the job dispatches resolves; 6 for a job when owned is false, an unconsumed approval of this
 exact scope exists. `startup` runs checks 1-4 and exits 0 when the repository has no binding.
@@ -356,6 +357,28 @@ def check_signal_rules(sig, repo, job):
     return fails, notes
 
 
+def check_main_follows(b, repo):
+    """Check 2: a `mainFollows` is {"branch": "<a branch>"} (locator.main_follows). Check 3: the main clone has that
+    branch (locator.main_tip), the one the first baseline's seal reads."""
+    try:
+        branch = locator.main_follows(b)
+    except locator.BadMainFollows as e:
+        return [f"check 2: {e}"]
+    if branch is None:
+        return []
+    try:
+        project = locator.find(repo, {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"})
+    except locator.SetupNeeded:
+        project = None
+    if project is None:
+        return [f"check 3: 'mainFollows' names the branch {branch}, and {repo} has no records worktree, so its main "
+                "clone cannot be found"]
+    if locator.main_tip(project, branch) is None:
+        return [f"check 3: 'mainFollows' names the branch {branch}, and the main clone {locator.main_clone(project)} "
+                f"has no branch {branch}"]
+    return []
+
+
 def check_roles(b, job, repo, bpath):
     """(fails, notes): resolve each role the job dispatches by §5.1 (team_roles.resolve). A role table that
     cannot be used fails, named; it is never read as one that names no role (S2 fix 2, as the hook's B-N2). So
@@ -443,6 +466,7 @@ def main(argv):
         fails += check_paths(b, repo)
         f4, notes = check_pointers(b, repo, job)
         fails += f4
+    fails += check_main_follows(b, repo)
     if "reviews" in b and "runs" not in b:
         notes.append('check 2: the run folders stay in the code tree, under "reviews": the binding names "reviews" '
                      'and no "runs"; add "runs": "tree" to say so')
