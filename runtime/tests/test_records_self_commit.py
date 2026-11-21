@@ -212,6 +212,26 @@ class CannotCommit(Base):
         staged = self.g(self.records, "diff", "--cached", "--name-only").split()
         self.assertNotIn("decisions/ledger/alpha.jsonl", staged)  # unstaged again: it stays out of the merge commit
 
+    def test_a_second_ask_mid_merge_on_a_file_head_holds_says_not_committed_and_unstages(self):
+        """The file is in HEAD already, but not this line: a failed commit is not taken for one already made."""
+        self.origin_setup()
+        self.sync(self.repo)
+        self.ask(self.repo, "First?")
+        self.g(self.records, "checkout", "-q", "-b", "side")
+        self.local_commit(self.records, "notes/side.txt", "s\n")
+        self.g(self.records, "checkout", "-q", "bakehouse-records")
+        self.g(self.records, "merge", "-q", "--no-commit", "--no-ff", "side")
+        before = self.rgit("rev-parse", "HEAD")
+        p = self.ask(self.repo, "Second?")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        lines = [x for x in p.stderr.splitlines() if x.startswith("bakehouse")]
+        self.assertEqual(len(lines), 1, p.stderr)
+        self.assertIn("not committed", lines[0])
+        self.assertEqual(self.rgit("rev-parse", "HEAD"), before)
+        self.assertEqual(len(self.rows(self.wfile("decisions_ledger"))), 2)
+        staged = self.g(self.records, "diff", "--cached", "--name-only").split()
+        self.assertNotIn("decisions/ledger/alpha.jsonl", staged)
+
 
 class MoreLines(Base):
     """An outcome line and a spend.sh wave open line each commit themselves."""
