@@ -511,7 +511,8 @@ by these events ("Closing a sealed work order", below).
    is retried 5 times; then the command refuses loudly (exit 1, gate `predict-gate:anchor`): the line is
    written but not in a commit, and close refuses the work order until a new seal anchors: seal again
    once the cause is gone (committing the ledger by hand also counts, but sealing again is the route that
-   leaves its trailer). So a seal made
+   leaves its trailer). The ledger file is unstaged again, so no other commit carries the line.
+   So a seal made
    while a commit or a merge is open in the records worktree (an editor waiting on a commit message
    holds the index lock; a merge in progress refuses a commit by path) is refused: seal again after it.
 10. `predict-gate.sh verify-chain [--repo DIR | --ledger FILE]` reports BROKEN, naming each line:
