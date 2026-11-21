@@ -1228,6 +1228,29 @@ def sealed_refusals(repo: Path, folders: list, evs: list, decided: dict, wo: str
     measured =[e for e in seals if e.get("fileKind") == "measured" and not retire_of(e, evs)]
     if not roots:
         return out
+
+    def first_prediction(rnd):
+        """The live chain's first prediction seal of the round: a retired one is not the round's prediction."""
+        return next((x for x in seals if x.get("kind") == "sealed" and x.get("fileKind") == "prediction"
+                     and x.get("round") == rnd and id(x) in firsts and not retire_of(x, evs)), None)
+
+    def code_base(rnd, base):
+        """Where the round's code starts: for a chained round (its prediction's "baseline" names a measured file of
+        its folder with a live measured seal whose head is here), that seal's head; else its report's base."""
+        p = first_prediction(rnd)
+        shown = git(rec, "cat-file", "blob", f"HEAD:{p['path']}", check=False) if p else None
+        if not shown or shown.returncode != 0:
+            return base
+        try:
+            named = named_baseline(Path(p["path"]), shown.stdout)
+        except BadInput:
+            return base  # close's check reports it
+        if not named or not MEASURED_RE.match(named):
+            return base
+        want = (Path(p["path"]).parent / named).as_posix()
+        c = next((x for x in reversed(measured) if x.get("path") == want and x.get("head")), None)
+        return c["head"] if c and code_trees(repo, c["head"], roots) is not None else base
+
     for e in seals:  # a round's prediction is sealed before its code
         if e["kind"] != "sealed" or e.get("fileKind") != "prediction" or retire_of(e, evs) \
                 or id(e) not in firsts:
@@ -1235,7 +1258,7 @@ def sealed_refusals(repo: Path, folders: list, evs: list, decided: dict, wo: str
         m = next((x for x in reversed(measured) if x.get("round") == e.get("round")), None)
         if not m or not m.get("base") or not e.get("commit"):
             continue
-        s, b, h = e["commit"], m["base"], m.get("head")
+        s, b, h = e["commit"], code_base(e.get("round"), m["base"]), m.get("head")
         if code_trees(repo, s, roots) is None or code_trees(repo, b, roots) is None:
             out.append(f"{e['path']}: its seal's commit {s} or its measurement's base {b[:8]} is not in this "
                        "repository: fetch the lane branch that holds it, then close again")
@@ -1250,23 +1273,22 @@ def sealed_refusals(repo: Path, folders: list, evs: list, decided: dict, wo: str
             out.append(f"{e['path']}: its first seal was made at {s}, which already holds code this round measured "
                        f"({', '.join(early[:3])}): a prediction is sealed before its code")
     codes = [e for e in evs if e.get("kind") == "sealed" and e.get("fileKind") == "code"]
+    covers, uncovered = {}, []  # (code at base, code at head) -> the code seal of a round whose check passed
     for rnd in dict.fromkeys(x.get("round") for x in measured):  # the code seal
         m = [x for x in measured if x.get("round") == rnd][-1]
         if not m.get("base"):
             continue
-        at_base = code_trees(repo, m["base"], roots)
+        base = code_base(rnd, m["base"])
+        at_base = code_trees(repo, base, roots)
         at_head = (code_trees(repo, m["head"], roots) if m.get("head") else None) or m.get("headTrees")
         if at_base is None or at_head is None or at_base == at_head:
             continue  # rule 5 or 6 names a missing commit; a round that changed no code has no code commit
         cs = next((x for x in codes if x.get("round") == rnd), None)
         if cs is None:
-            out.append(f"round {rnd} of {wo}: its measurement changed code under the code roots, and no code commit of "
-                       f"the round is sealed: commit the round's first code through predict-gate.sh seal-code {wo} "
-                       f"{rnd} -- <git commit args>")
+            uncovered.append((rnd, at_base, at_head))  # a paired round: judged below, by another round's code seal
             continue
-        # the live chain's first prediction seal of the round: a retired one is not the round's prediction
-        p = next((x for x in seals if x.get("kind") == "sealed" and x.get("fileKind") == "prediction"
-                  and x.get("round") == rnd and id(x) in firsts and not retire_of(x, evs)), None)
+        n = len(out)
+        p = first_prediction(rnd)
         if p is None or evs.index(p) > evs.index(cs):
             out.append(f"round {rnd} of {wo}: its prediction was sealed after its first code commit "
                        f"{str(cs.get('commit'))[:8]} was sealed: a prediction is sealed before its code")
@@ -1277,7 +1299,23 @@ def sealed_refusals(repo: Path, folders: list, evs: list, decided: dict, wo: str
                        "repository: fetch the lane branch that holds it, then close again")
         elif before != at_base:
             out.append(f"round {rnd} of {wo}: the sealed code commit {str(cs.get('commit'))[:8]} is not the round's "
-                       f"first code change: the code before it differs from the measured base {m['base'][:8]}")
+                       "first code change: the code before it differs from " + (
+                           f"the measured base {m['base'][:8]}" if base == m["base"] else
+                           f"{base[:8]}, the head of the sealed measurement its prediction names as its baseline"))
+        if len(out) == n:
+            covers.setdefault((tuple(sorted(at_base.items())), tuple(sorted(at_head.items()))), (rnd, cs))
+    for rnd, at_base, at_head in uncovered:  # a paired round: the same code as a round whose code seal passed
+        rc = covers.get((tuple(sorted(at_base.items())), tuple(sorted(at_head.items()))))
+        if rc is None:
+            out.append(f"round {rnd} of {wo}: its measurement changed code under the code roots, and no code commit of "
+                       f"the round is sealed: commit the round's first code through predict-gate.sh seal-code {wo} "
+                       f"{rnd} -- <git commit args>")
+            continue
+        p = first_prediction(rnd)
+        if p is None or evs.index(p) > evs.index(rc[1]):
+            out.append(f"round {rnd} of {wo}: its prediction was sealed after its first code commit "
+                       f"{str(rc[1].get('commit'))[:8]} (round {rc[0]}'s, which measured the same code) was sealed: "
+                       "a prediction is sealed before its code")
     if measured:
         m, note = latest_measured(measured)
         if note and notes is not None:
