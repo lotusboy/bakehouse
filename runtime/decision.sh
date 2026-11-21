@@ -4,7 +4,9 @@
 # The ledger is <records>/decisions/ledger.jsonl, append-only, and is the source of truth for the
 # scores. <records>/DECISIONS.md is its readable view, regenerated after every write. The project
 # is found from the current folder by runtime/locator.py (as ops-event.sh does), or is named with
-# --repo <folder>.
+# --repo <folder>. In records format 2 each line goes to this writer's decisions/ledger/<writer>.jsonl,
+# which the tool then commits by path and syncs: each line waits for that sync (normally under a
+# second, at most the 20-second bound). docs/PROJECT-TEAM.md, "Records sync".
 #
 #   decision.sh ask --category spend --question "Run the audit now?" --option yes --option no \
 #       --recommendation yes --confidence 0.8 --evidence-kind measured --evidence "estimate in WIP.md"

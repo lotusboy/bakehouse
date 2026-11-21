@@ -4,6 +4,9 @@
 # into waves with a ceiling, and warn at 80% and 100% of that ceiling.
 # The ledger is <records>/spend/ledger.jsonl, append-only. The project is found from the current
 # folder by runtime/locator.py (as decision.sh does), or is named with --repo <folder>.
+# In records format 2 each line goes to this writer's spend/ledger/<writer>.jsonl, which the tool then
+# commits by path and syncs: each line waits for that sync (normally under a second, at most the
+# 20-second bound). docs/PROJECT-TEAM.md, "Records sync".
 #
 #   spend.sh wave open wave-1 --ceiling 400000
 #   spend.sh record --agent a1b2c3 --label "answers r1" --tokens 131204 --kind answering-agent \
