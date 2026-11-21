@@ -200,6 +200,8 @@ class CannotCommit(Base):
         self.assertIn("decisions/ledger/alpha.jsonl", lines[0])
         self.assertEqual(self.rgit("rev-parse", "HEAD"), before)
         self.assertEqual([e["id"] for e in self.rows(self.wfile("decisions_ledger"))], [did])
+        staged = self.g(self.records, "diff", "--cached", "--name-only").split()
+        self.assertNotIn("decisions/ledger/alpha.jsonl", staged)  # unstaged again: it stays out of the merge commit
 
 
 if __name__ == "__main__":
