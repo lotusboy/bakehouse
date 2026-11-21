@@ -227,7 +227,7 @@
    "id": "pm-24",
    "file": "skills/pm/SKILL.md",
    "sentences": [
-    "- **The records folder is always committed: after each close, and before the session ends.** The tools write the records but commit only the ops ledger's seal anchors and close lines, and, in records format 2, the decision and spend lines (each tool commits its own writer file and syncs), so the PM commits the records worktree (`bakehouse status` names it), as the session committed its notes folder before, leaving the ops ledger to the seal anchors: `git -C <records> add -A -- ."
+    "- **The records folder is always committed: after each close, and before the session ends.** The tools write the records but commit only the ops ledger's seal anchors and close lines, and, in records format 2, the decision and spend lines (each tool commits its own writer file and syncs), so the PM commits the records worktree (`bakehouse status` names it), as the session committed its notes folder before, leaving the ops ledger to the seal anchors, and committing only when something is staged (the tools may have committed everything already): `git -C <records> add -A -- ."
    ],
    "enforcer": "prompt",
    "proof": "prompt only: no tool, hook or review brief checks it",

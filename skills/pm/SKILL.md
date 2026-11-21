@@ -258,8 +258,9 @@ them, and each tool's header comment is its full reference.
   write the records but commit only the ops ledger's seal anchors and close lines, and, in records format 2, the
   decision and spend lines (each tool commits its own writer file and syncs), so the PM commits the records worktree
   (`bakehouse status` names it), as the session committed its notes folder before, leaving the ops ledger to
-  the seal anchors: `git -C <records> add -A -- . ':!ops/events.jsonl' ':!ops/events' && git -C <records> commit -m "<work
-  order or 'records'>: records"`. Then run `bakehouse sync`: in records format 2 it pushes the records to the
+  the seal anchors, and committing only when something is staged (the tools may have committed everything already):
+  `git -C <records> add -A -- . ':!ops/events.jsonl' ':!ops/events' && { git -C <records> diff --cached --quiet ||
+  git -C <records> commit -m "<work order or 'records'>: records"; }`. Then run `bakehouse sync`: in records format 2 it pushes the records to the
   other machines and pulls theirs; a line starting `bakehouse sync:` says why it could not, and the commit stays
   local. A record left uncommitted is lost to a `git clean` or a move.
 - **A lane's commands carry its lane and its work order.** Where work runs in lanes, set
