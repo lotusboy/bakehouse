@@ -231,7 +231,7 @@
    ],
    "enforcer": "prompt",
    "proof": "prompt only: no tool, hook or review brief checks it",
-   "note": "S16 M6: only seal anchors commit in the records worktree; S16 fix2 P2-2: the PM's add leaves out the ops ledger, which the anchors commit by path (the census ends this sentence at the pathspec `.`)"
+   "note": "S16 M6: only seal anchors commit in the records worktree; 0.12.0: decision and spend lines commit themselves in records format 2; S16 fix2 P2-2: the PM's add leaves out the ops ledger, which the anchors commit by path (the census ends this sentence at the pathspec `.`)"
   },
   {
    "id": "pm-25",

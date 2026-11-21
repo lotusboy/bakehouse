@@ -205,16 +205,21 @@ points. One function does it for every caller: `runtime/records_sync.py` `sync`.
      or `spend/ledger/<writer>.jsonl`, with a plain subject such as `decisions: ask d20261121-f1d97f
      (decision.sh)`. It holds this writer's ops ledger lock around the commit, as every seal anchor and close
      commit does, so the commit never lands in the middle of a merge or another lane's anchor. Then it syncs,
-     outside the lock. A commit that fails is one line on stderr, naming why; the line stays in the file, the
+     outside the lock. The commit is never signed, as the sync's own local steps are not. A commit that
+     finds its line already committed by another call's commit (two asks at once, say) is not a failure: it
+     says nothing and syncs. A commit that fails is one line on stderr, naming why; the line stays in the file, the
      next commit of that file carries it; the file is unstaged again, so it never goes into another
      commit (a merge's, say); and that time there is no sync. A sync that fails is its one
      `bakehouse sync:` line on stderr. Neither changes the tool's exit code or its stdout. So each line
-     waits for a sync: normally under a second, at most the 20-second bound. A refused ask
+     waits for a sync: normally under a second, at most the 20-second bound. A sync skipped because another
+     sync holds the sync lock leaves the line local until the next fixed point; `bakehouse status` shows it in
+     `sync.waiting`. A backfill makes one commit and one sync per line. A refused ask
      writes no ask line, so it commits nothing (its `gate-refused` line is in the ops files, left to the
      anchors). `DECISIONS.md` is never committed: setup's `.gitignore` names it.
    - At session start (`runtime/session-start.py`). The session always starts, whatever the sync does.
    - `bakehouse sync [--repo <folder>]`, run by hand. It moves commits only: anything else in the records
-     worktree (a run folder, say) is committed first, with `bakehouse record commit`, as before.
+     worktree (a run folder, say) is committed first, with `bakehouse record commit`, as before. The PM
+     skill's records commit (`skills/pm/SKILL.md`) also runs `bakehouse sync` after it.
 2. **The steps.** In the records worktree, the sync:
    1. takes the sync lock, the file `bakehouse-sync.lock` in the records worktree's git folder. When
       another sync holds it, this sync skips. Only `bakehouse sync` says so. Lanes on one machine share
