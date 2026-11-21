@@ -4,15 +4,20 @@ commits nothing. Every remote is a local bare repository. Standard library only.
 python3 -m unittest runtime/tests/test_records_self_commit.py
 """
 
+import concurrent.futures
+import fcntl
 import json
 import re
+import subprocess
 import sys
+import time
 import unittest
 from pathlib import Path
 
 TESTS = Path(__file__).resolve().parent
 sys.path.insert(0, str(TESTS))
 import test_records_sync as trs  # noqa: E402 - a module, so its tests are not collected here again
+import ops_ledger  # noqa: E402 - runtime/, on the path through test_records_sync
 
 ASK = ("--category", "spend", "--option", "yes", "--option", "no", "--recommendation", "yes",
        "--confidence", "0.9", "--evidence-kind", "measured", "--evidence", "WIP.md")
@@ -143,6 +148,8 @@ class OnlyItsFile(Base):
         self.assertEqual(self.note("second").returncode, 0)  # the ops file, modified
         (self.records / "notes").mkdir()
         (self.records / "notes" / "loose.txt").write_text("x\n")  # untracked
+        (self.records / "staged.txt").write_text("s\n")
+        self.g(self.records, "add", "--", "staged.txt")  # staged by someone else
         before = self.rgit("rev-parse", "HEAD")
         self.ask(self.repo)
         self.assertEqual(self.count(self.records, before), 1)
@@ -150,7 +157,9 @@ class OnlyItsFile(Base):
         dirty = [x.strip() for x in self.rgit("status", "--porcelain").splitlines()]
         self.assertIn(f"M {ops}", dirty)
         self.assertIn("?? notes/", dirty)
-        self.assertEqual(self.g(self.records, "diff", "--cached", "--name-only"), "")
+        self.assertIn("A  staged.txt", self.rgit("status", "--porcelain").splitlines())  # still staged
+        self.assertEqual(self.g(self.records, "diff", "--cached", "--name-only"), "staged.txt")
+        self.assertNotIn("staged.txt", self.g(self.records, "ls-tree", "-r", "--name-only", "HEAD").split())
 
 
 class Offline(Base):
@@ -202,6 +211,115 @@ class CannotCommit(Base):
         self.assertEqual([e["id"] for e in self.rows(self.wfile("decisions_ledger"))], [did])
         staged = self.g(self.records, "diff", "--cached", "--name-only").split()
         self.assertNotIn("decisions/ledger/alpha.jsonl", staged)  # unstaged again: it stays out of the merge commit
+
+
+class MoreLines(Base):
+    """An outcome line and a spend.sh wave open line each commit themselves."""
+
+    def test_an_outcome_line_commits_itself(self):
+        self.origin_setup()
+        self.sync(self.repo)
+        did = self.ask(self.repo).stdout.strip()
+        before = self.rgit("rev-parse", "HEAD")
+        p = self.tool("decision.sh", "outcome", "--repo", self.repo, did, "--verdict", "held", "--by", "the run")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(self.count(self.records, before), 1)
+        self.assertEqual(self.subject(self.records), f"decisions: outcome {did} (decision.sh)")
+        self.assertEqual(self.tip(), self.rgit("rev-parse", "HEAD"))
+
+    def test_a_wave_open_line_commits_itself(self):
+        self.origin_setup()
+        self.sync(self.repo)
+        before = self.rgit("rev-parse", "HEAD")
+        p = self.tool("spend.sh", "wave", "open", "w1", "--ceiling", "10", "--repo", self.repo)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(self.count(self.records, before), 1)
+        self.assertEqual(self.names(self.records), ["spend/ledger/alpha.jsonl"])
+        self.assertEqual(self.subject(self.records), "spend: wave-open w1 (spend.sh)")
+        self.assertEqual(self.tip(), self.rgit("rev-parse", "HEAD"))
+
+
+class AtOnce(Base):
+    """M1: asks at once in one records worktree. A later commit that finds its line already committed by an earlier
+    one says nothing and syncs."""
+
+    def test_asks_at_once_say_no_not_committed_and_every_line_is_in_head_and_on_the_hub(self):
+        self.origin_setup()
+        self.sync(self.repo)
+        for rnd in range(2):
+            with concurrent.futures.ThreadPoolExecutor(5) as ex:
+                ps = list(ex.map(lambda i: self.ask(self.repo, f"Q{rnd}-{i}?", ok=False), range(5)))
+            for p in ps:
+                self.assertEqual(p.returncode, 0, p.stderr)
+                self.assertNotIn("not committed", p.stderr)
+        rel = self.wfile("decisions_ledger").relative_to(self.records).as_posix()
+        self.assertEqual(len(self.g(self.records, "show", f"HEAD:{rel}").splitlines()), 10)
+        self.assertEqual(self.rgit("status", "--porcelain", "--", rel), "")
+        # a sync skipped while another held the sync lock leaves its commit for the next fixed point: this ask
+        self.ask(self.repo, "Last?")
+        self.assertEqual(self.tip(), self.rgit("rev-parse", "HEAD"))
+        self.assertEqual(len(self.g(self.origin, "show", f"bakehouse-records:{rel}").splitlines()), 11)
+
+
+class Signing(Base):
+    """L1: commit_own's commit runs without signing, as the sync's own local steps do."""
+
+    def test_an_ask_is_committed_with_gpgsign_on_and_a_failing_signer(self):
+        self.origin_setup()
+        self.sync(self.repo)
+        self.g(self.records, "config", "commit.gpgsign", "true")
+        self.g(self.records, "config", "gpg.program", "false")
+        before = self.rgit("rev-parse", "HEAD")
+        p = self.ask(self.repo)
+        self.assertNotIn("not committed", p.stderr)
+        self.assertEqual(self.count(self.records, before), 1)
+        self.assertEqual(self.names(self.records), ["decisions/ledger/alpha.jsonl"])
+
+
+class Locks(Base):
+    """The writer lock is held around the commit; the decisions lock is free while the sync runs."""
+
+    def test_the_commit_waits_for_the_writer_lock(self):
+        self.origin_setup()
+        self.sync(self.repo)
+        before = self.rgit("rev-parse", "HEAD")
+        lock = ops_ledger.lock_path(self.wfile("ops_ledger"))
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        with lock.open("a") as f:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            p = subprocess.Popen([str(self.rt / "decision.sh"), "ask", "--repo", str(self.repo), "--question",
+                                  "Run it?", *ASK], cwd=self.repo, env=self.env, stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE, text=True)
+            deadline = time.monotonic() + 20
+            while not self.rows(self.wfile("decisions_ledger")) and time.monotonic() < deadline:
+                time.sleep(0.1)
+            self.assertEqual(len(self.rows(self.wfile("decisions_ledger"))), 1)  # the line is written
+            time.sleep(1.5)
+            self.assertEqual(self.rgit("rev-parse", "HEAD"), before)  # and not committed while the lock is held
+            self.assertIsNone(p.poll())
+        out, err = p.communicate(timeout=60)
+        self.assertEqual(p.returncode, 0, err)
+        self.assertEqual(self.count(self.records, before), 1)
+        self.assertEqual(self.names(self.records), ["decisions/ledger/alpha.jsonl"])
+
+    def test_the_decisions_lock_is_free_while_the_sync_runs(self):
+        self.origin_setup()
+        self.sync(self.repo)
+        seen = self.repo.parent / "decisions-lock.txt"
+        lock = self.records / "decisions" / ".ledger.jsonl.lock"
+        hooks = Path(self.g(self.repo, "rev-parse", "--path-format=absolute", "--git-common-dir")) / "hooks"
+        hooks.mkdir(exist_ok=True)
+        (hooks / "pre-push").write_text(  # the sync's push: try the decisions lock without waiting
+            "#!/bin/sh\n"
+            f"{sys.executable} -c 'import fcntl, sys\n"
+            "f = open(sys.argv[1], \"a\")\n"
+            "try:\n    fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB); r = \"free\"\n"
+            "except OSError:\n    r = \"held\"\n"
+            f"open(sys.argv[2], \"w\").write(r)' '{lock}' '{seen}'\n")
+        (hooks / "pre-push").chmod(0o755)
+        self.ask(self.repo)
+        self.assertEqual(seen.read_text(), "free")
+        self.assertEqual(self.tip(), self.rgit("rev-parse", "HEAD"))
 
 
 if __name__ == "__main__":

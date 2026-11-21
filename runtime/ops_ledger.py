@@ -120,11 +120,12 @@ def _top(path: Path):
     return Path(p.stdout.strip()) if p.returncode == 0 else None
 
 
-def anchor(path: Path, line: bytes | None, subject: str, trailer: str | None = "Sealed-line") -> str | None:
+def anchor(path: Path, line: bytes | None, subject: str, trailer: str | None = "Sealed-line",
+           config: tuple = ()) -> str | None:
     """Commit the ledger file, by path only, with the line's trailer (Sealed-line; a close's own commit gives
     Closed-line, which sealed_trailers does not read; None, no trailer: records_sync.commit_own's decision and
-    spend files). None when committed; else why not. git's index lock held by another git command is retried, then
-    reported."""
+    spend files). config: `git -c` arguments for the commit (commit_own's records_sync.LOCAL; a seal gives none).
+    None when committed; else why not. git's index lock held by another git command is retried, then reported."""
     top = _top(path)
     if top is None:
         return f"{path.parent} is not inside a git repository"
@@ -141,6 +142,7 @@ def anchor(path: Path, line: bytes | None, subject: str, trailer: str | None = "
             p = subprocess.run(
                 [
                     "git",
+                    *config,
                     "-C",
                     str(top),
                     "commit",
