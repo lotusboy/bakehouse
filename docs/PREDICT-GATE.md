@@ -92,8 +92,11 @@ report `base` can hold the earlier rounds' code too. Close does not take a chain
 
 1. The round's live first prediction names a `"baseline"` that is a `moves.measured` file of the same
    record folder.
-2. That file has a live (not retired) sealed measured event.
-3. That event's `head` is in the repository.
+2. That file has a live (not retired) sealed measured event. Close reads the latest one.
+3. That event comes before the round's first prediction seal, in the ledger's order. A measurement sealed
+   after the prediction is not the "before" the prediction was made from. So two rounds that chain on each
+   other's later measurements keep the report's `base`.
+4. That event names a `head`, and the `head` is in the repository.
 
 Otherwise the code base is the report's `base`, as before. Close rules 5 and 5b read the round's code
 from its code base to its measured head. So a chained round that changed no code after the earlier
@@ -105,7 +108,9 @@ covered when all of these hold:
 
 1. Its code at its code base and at its measured head (the code-root trees) equals another round's.
 2. That other round's code seal passes rule 5b.
-3. The covered round's prediction is sealed before that covering code commit, in the ledger's order.
+3. That other round's sealed code commit is an ancestor of the covered round's measured head. The same
+   code redone on a line that never held the sealed commit is not covered.
+4. The covered round's prediction is sealed before that covering code commit, in the ledger's order.
    Else close refuses "its prediction was sealed after its first code commit", naming the covering
    commit and its round.
 

@@ -336,6 +336,8 @@ format 2. Without either, nothing changes.
      its fetch brings. Nothing needs pushing for the floor.
    - A branch that is only in a lane clone is read once the lane clone is a remote of the main clone:
      `git -C <main clone> remote add <lane> <lane clone path>`. `--start` then fetches it from disk.
+     `--start` refuses when any remote of the main clone cannot be fetched, so remove the remote of a
+     lane clone that is deleted.
    - A branch that is only on another machine is read when that machine runs `--start`. Each run raises
      the shared floor from its own branches.
    - A later `--start` raises the floor, and never lowers it. When this clone's branches hold an id
