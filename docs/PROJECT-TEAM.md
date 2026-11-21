@@ -149,7 +149,7 @@ machines then never write the same file, so a plain `git pull` merges their reco
      id when it is unset. A refused migration changes nothing, the writer id included.
    - From then on the five legacy files are frozen: no tool appends to them again.
    - It is refused when the records worktree has uncommitted changes to tracked files. The ops ledger
-     is often one of them, because the PM's records commit leaves it to the seal anchors. Commit it by
+     is often one of them, because only the seal anchors and closes commit it. Commit it by
      path first, then run the migration again.
    - It is also refused when a legacy file exists but git does not hold it (untracked). Such a file
      would be frozen on this machine only, and every other clone would then refuse. Commit it first.
@@ -177,9 +177,9 @@ machines then never write the same file, so a plain `git pull` merges their reco
    3. The writer id names a records worktree, not a person. Two people sharing one main clone share
       one id; one person with two main clones has two.
    - `TOOLS.md` is still one file.
-   - The PM's records commit leaves the ops files (`ops/events.jsonl` and `ops/events/`) to the seal
-     anchors and the close's own commit. So an ops line that is neither a seal nor a close (a note, for
-     example) reaches another machine only with that writer's next seal or close.
+   - The ops files (`ops/events.jsonl` and `ops/events/`) are committed only by the seal anchors and the
+     close's own commit. So an ops line that is neither a seal nor a close (a note, for example) reaches
+     another machine only with that writer's next seal or close.
    - Work-order ids are reserved across machines only when the binding has `tracker.reserve`
      ([Work-order ids reserved before use](#work-order-ids-reserved-before-use)). Without it, two
      machines can still pick the same work order id. Decision ids are not reserved.
@@ -199,8 +199,20 @@ points. One function does it for every caller: `runtime/records_sync.py` `sync`.
    - After each seal, revise, retire and seal-code, once the anchor commit is made.
    - After each close. The close first commits its own line, by path, as an anchor does (the commit
      carries a `Closed-line: <sha256 of the line>` trailer). Then it syncs.
+   - After each line `decision.sh` writes (an ask, an answer, an outcome, an unattended start or stop,
+     a backfilled line) and each line `spend.sh` writes (a record, a wave open or close), from bakehouse
+     0.12.0. The tool first commits this writer's file, alone and by path: `decisions/ledger/<writer>.jsonl`
+     or `spend/ledger/<writer>.jsonl`, with a plain subject such as `decisions: ask d20261121-f1d97f
+     (decision.sh)`. It holds this writer's ops ledger lock around the commit, as every seal anchor and close
+     commit does, so the commit never lands in the middle of a merge or another lane's anchor. Then it syncs,
+     outside the lock. A commit that fails is one line on stderr, naming why; the line stays in the file, the
+     next commit of that file carries it, and that time there is no sync. A sync that fails is its one
+     `bakehouse sync:` line on stderr. Neither changes the tool's exit code or its stdout. A refused ask
+     writes no ask line, so it commits nothing (its `gate-refused` line is in the ops files, left to the
+     anchors). `DECISIONS.md` is never committed: setup's `.gitignore` names it.
    - At session start (`runtime/session-start.py`). The session always starts, whatever the sync does.
-   - `bakehouse sync [--repo <folder>]`. The PM's records commit runs it after its commit.
+   - `bakehouse sync [--repo <folder>]`, run by hand. It moves commits only: anything else in the records
+     worktree (a run folder, say) is committed first, with `bakehouse record commit`, as before.
 2. **The steps.** In the records worktree, the sync:
    1. takes the sync lock, the file `bakehouse-sync.lock` in the records worktree's git folder. When
       another sync holds it, this sync skips. Only `bakehouse sync` says so. Lanes on one machine share
@@ -270,7 +282,8 @@ points. One function does it for every caller: `runtime/records_sync.py` `sync`.
      `bakehouse.tokenUser`. These are a path and two names. The token itself is never stored.
    - The file is the user's own `KEY=VALUE` file. A line may start with `export `. A line starting with
      `#` is a comment.
-   - Setup refuses a token file inside the records worktree: the PM's records commit would commit it.
+   - Setup refuses a token file inside the records worktree: a commit there of more than one file by
+     path (a `git add -A`, say) would commit it.
    - At each sync, bakehouse reads the token from the file. It gives the token to git for each network
      command only, through an inline credential helper set with `git -c credential.helper=...`. The
      token travels in that command's environment, never in its arguments, which other users can see.

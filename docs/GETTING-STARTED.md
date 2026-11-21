@@ -371,21 +371,15 @@ clone writes its own records files. bakehouse moves them through the `bakehouse-
 
 ### Working side by side
 
-bakehouse moves the records at each seal and close, at session start, and with `bakehouse sync`.
-Offline, a seal or close still works, and its records go at the next sync. A new reserved id needs the
-remote.
+bakehouse moves the records at each seal and close, after each decision and spend line, at session
+start, and with `bakehouse sync`. Offline, a seal, close, decision or spend line still works, and its
+records go at the next sync. A new reserved id needs the remote.
 
-A sync moves only committed records. Seals, closes and reservations commit themselves. A decision or a
-spend line does not: it reaches the other machines only after it is committed in the records worktree.
-Commit the `decisions` folder, and the `spend` folder once it exists, by path, then sync. Leave `ops`
-to the seals and closes.
-
-```bash
-git -C ../notes-app.bakehouse-records add decisions
-git -C ../notes-app.bakehouse-records add spend   # only once the spend folder exists
-git -C ../notes-app.bakehouse-records commit -m "records: decisions and spend"
-bakehouse sync
-```
+A sync moves only committed records. Seals, closes and reservations commit themselves. From bakehouse
+0.12.0, decisions and spend lines commit themselves too: `decision.sh` and `spend.sh` commit this
+machine's own file, by path, then sync. There is nothing to commit by hand for them. Leave `ops` to the
+seals and closes. A run folder in the records worktree is committed with `bakehouse record commit`, as
+before.
 
 What bakehouse does not do yet, and how to work until it does:
 
