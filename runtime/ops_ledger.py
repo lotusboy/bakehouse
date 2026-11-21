@@ -125,12 +125,14 @@ def anchor(path: Path, line: bytes | None, subject: str, trailer: str | None = "
     """Commit the ledger file, by path only, with the line's trailer (Sealed-line; a close's own commit gives
     Closed-line, which sealed_trailers does not read; None, no trailer: records_sync.commit_own's decision and
     spend files). config: `git -c` arguments for the commit (commit_own's records_sync.LOCAL; a seal gives none).
-    None when committed; else why not. git's index lock held by another git command is retried, then reported."""
+    None when committed; else why not. git's index lock held by another git command is retried, then reported.
+    A failed commit unstages the file again, so no other commit carries the line without its trailer."""
     top = _top(path)
     if top is None:
         return f"{path.parent} is not inside a git repository"
     rel = path.resolve().relative_to(top.resolve()).as_posix()
     why = ""
+    added = False
     for i in range(ANCHOR_TRIES):
         p = subprocess.run(
             ["git", "-C", str(top), "add", "--", rel],
@@ -139,6 +141,7 @@ def anchor(path: Path, line: bytes | None, subject: str, trailer: str | None = "
             check=False,
         )
         if p.returncode == 0:
+            added = True
             p = subprocess.run(
                 [
                     "git",
@@ -163,6 +166,8 @@ def anchor(path: Path, line: bytes | None, subject: str, trailer: str | None = "
         if "index.lock" not in why:
             break
         time.sleep(0.2 * 2**i)
+    if added:  # the line stays on disk, unstaged; its own failure changes nothing
+        subprocess.run(["git", "-C", str(top), "reset", "-q", "--", rel], capture_output=True, check=False)
     return why or "git commit failed"
 
 
