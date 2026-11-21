@@ -1126,6 +1126,7 @@ class Sealed(unittest.TestCase):
             "seal again, so the anchor commits a new line",
         )
         hook.unlink()
+        self.pgit2("add", "--", str(self.ledger.relative_to(self.records)))
         self.pgit2(
             "commit",
             "-q",
