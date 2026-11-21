@@ -1,6 +1,6 @@
 {
   "name": "bakehouse",
-  "version": "0.11.2",
+  "version": "0.12.0",
   "description": "A project team for Claude Code: a PM that plans and delegates, predicted-moves gates, independent review, and a record of every decision.",
   "author": {
     "name": "Steve Loftus"
