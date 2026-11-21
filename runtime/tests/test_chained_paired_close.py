@@ -148,6 +148,58 @@ class Chained(Base):
         self.commit("W-1: fix1 measurement")
         self.assertRefuses(EARLY, NOT_FIRST)
 
+    def test_f1_two_rounds_chained_on_each_other_are_still_refused(self):
+        # each prediction chains on the other round's measurement, sealed after it: neither chain is accepted
+        wo = self.flow()
+        self.commit("W-1: code outside the tool, never sealed", {"src/app.py": "v = 3\n"})
+        h2 = self.head()
+        still = {"noMoves": True, "mustNotMove": ["out:v", "out:w"]}
+        self.commit("W-1: late predictions", {
+            self.r("moves.prediction.fix1.json"): dict(still, baseline="moves.measured.definition.json"),
+            self.r("moves.prediction.definition.json"): dict(still, baseline="moves.measured.fix1.json"),
+            self.r("moves.baseline.extra.json"): {"out:v": 3, "out:w": 5}})
+        self.assertEqual(self.seal("fix1", "moves.prediction.fix1.json"), 0)
+        self.assertEqual(self.seal("definition", "moves.prediction.definition.json"), 0)
+        self.assertEqual(self.seal("extra", "moves.baseline.extra.json"), 0)
+        self.put("moves.measured.definition.json", {"out:v": 3, "out:w": 5})
+        self.measure("fix1", {"out:v": 3, "out:w": 5}, wo, h2)
+        self.measure("definition", {"out:v": 3, "out:w": 5}, wo, h2)
+        self.commit("W-1: measurements")
+        self.assertRefuses(f"round fix1 of W-1: its measurement changed code under the code roots, and {NO_SEAL}",
+                           f"round definition of W-1: its measurement changed code under the code roots, and {NO_SEAL}")
+
+    def test_f3_a_named_measurement_whose_latest_live_seal_has_no_head_keeps_todays_rule(self):
+        wo = self.flow()
+        self.forge({"ts": "2026-11-10T09:40:00+00:00", "kind": "sealed", "task": "W-1", "round": "first",
+                    "fileKind": "measured", "path": self.r("moves.measured.json"),
+                    "sha256": self.sha_of("moves.measured.json"), "commit": self.head()[:7]})
+        self.fix1_chained(wo)
+        self.assertRefuses(EARLY, NOT_FIRST)
+
+    def test_t1_a_chained_round_reads_the_latest_live_measurement_of_its_named_file(self):
+        # the first round's measured file is sealed again, same bytes, at a later head: fix1's code starts there
+        wo = self.flow()
+        self.commit("W-1: more first-round code", {"src/app.py": "v = 2  # tidied\n"})
+        self.assertEqual(self.measure("first", PASS_M, wo, self.head()), 0)
+        self.commit("W-1: first re-measured")
+        self.fix1_chained(wo)
+        self.assertCloses()
+
+    def test_t5_a_named_measurement_whose_head_is_not_in_the_repository_keeps_todays_rule(self):
+        wo = self.flow()
+        self.commit("W-1: first-round tests", {"tests/test_app.py": "assert True\n"})
+        gone = self.head()
+        self.assertEqual(self.measure("first", PASS_M, wo, gone), 0)
+        self.git("commit", "-q", "--amend", "-m", "W-1: first-round tests, reworded")
+        for a in (["reflog", "expire", "--expire=now", "--all"], ["gc", "-q", "--prune=now"]):
+            self.git(*a)
+        self.assertEqual(self.git("cat-file", "-t", gone), "", "the head is gone")
+        self.commit("W-1: first re-measured")
+        self.fix1_chained(wo)
+        rc, out = self.close(EARLY, NOT_FIRST)
+        self.assertEqual(rc, 1, out)
+        self.assertNotIn("is not in this repository", out)
+
 
 class Paired(Base):
     def test_1_a_paired_round_is_covered_by_its_pairs_code_seal(self):
@@ -171,6 +223,65 @@ class Paired(Base):
         self.commit("W-1: more code, outside the tool", {"src/app.py": "v = 3\n"})
         self.assertEqual(self.measure("definition", {"out:v": 3, "out:w": 5}, wo, self.head()), 0)
         self.commit("W-1: definition measurement")
+        self.assertRefuses(f"round definition of W-1: its measurement changed code under the code roots, and {NO_SEAL}")
+
+    def test_t2_a_covering_round_whose_own_code_seal_fails_covers_nothing(self):
+        wo = self.head()
+        self.commit("W-1: predictions", {
+            self.r("moves.prediction.json"): GOOD_P, self.r("moves.baseline.json"): BASE_M,
+            self.r("moves.prediction.definition.json"): GOOD_P, self.r("moves.baseline.definition.json"): BASE_M,
+        })
+        for rnd, n in (("first", ""), ("definition", ".definition")):
+            self.assertEqual(self.seal(rnd, f"moves.prediction{n}.json"), 0)
+            self.assertEqual(self.seal(rnd, f"moves.baseline{n}.json"), 0)
+        self.commit("W-1: the change, outside the tool", {"src/app.py": "v = 2\n"})
+        self.assertEqual(self.code("W-1: a tidy", {"src/extra.py": "x = 1\n"}), 0)
+        h = self.head()
+        self.assertEqual(self.measure("first", PASS_M, wo, h), 0)
+        self.assertEqual(self.measure("definition", PASS_M, wo, h), 0)
+        self.commit("W-1: measurements")
+        self.assertRefuses(NOT_FIRST,
+                           f"round definition of W-1: its measurement changed code under the code roots, and {NO_SEAL}")
+
+    def test_t3_the_same_head_code_from_another_base_code_is_not_covered(self):
+        wo = self.head()
+        self.git("checkout", "-q", "-b", "other")
+        self.commit("W-1: another base, outside the tool", {"src/x.py": "x = 1\n"})
+        other = self.head()
+        self.git("checkout", "-q", self.default)
+        self.commit("W-1: predictions", {
+            self.r("moves.prediction.json"): GOOD_P, self.r("moves.baseline.json"): BASE_M,
+            self.r("moves.prediction.definition.json"): GOOD_P, self.r("moves.baseline.definition.json"): BASE_M,
+        })
+        for rnd, n in (("first", ""), ("definition", ".definition")):
+            self.assertEqual(self.seal(rnd, f"moves.prediction{n}.json"), 0)
+            self.assertEqual(self.seal(rnd, f"moves.baseline{n}.json"), 0)
+        self.assertEqual(self.code("W-1: the change", {"src/app.py": "v = 2\n"}), 0)
+        h = self.head()
+        self.assertEqual(self.measure("first", PASS_M, wo, h), 0)
+        self.assertEqual(self.measure("definition", PASS_M, other, h), 0)
+        self.commit("W-1: measurements")
+        self.assertRefuses(f"round definition of W-1: its measurement changed code under the code roots, and {NO_SEAL}")
+
+    def test_f4_a_covering_code_commit_outside_the_covered_rounds_history_covers_nothing(self):
+        # the definition round's code is the same code, redone on another line that never held the sealed commit
+        wo = self.head()
+        self.commit("W-1: predictions", {
+            self.r("moves.prediction.json"): GOOD_P, self.r("moves.baseline.json"): BASE_M,
+            self.r("moves.prediction.definition.json"): GOOD_P, self.r("moves.baseline.definition.json"): BASE_M,
+        })
+        for rnd, n in (("first", ""), ("definition", ".definition")):
+            self.assertEqual(self.seal(rnd, f"moves.prediction{n}.json"), 0)
+            self.assertEqual(self.seal(rnd, f"moves.baseline{n}.json"), 0)
+        self.git("checkout", "-q", "-b", "redo")
+        self.commit("W-1: the change, redone outside the tool", {"src/app.py": "v = 2\n"})
+        redo = self.head()
+        self.git("checkout", "-q", self.default)
+        self.assertEqual(self.code("W-1: the change", {"src/app.py": "v = 2\n"}), 0)
+        self.assertEqual(self.measure("first", PASS_M, wo, self.head()), 0)
+        self.assertEqual(self.measure("definition", PASS_M, wo, redo), 0)
+        self.commit("W-1: measurements")
+        self.git("merge", "-q", "--no-ff", "redo", "-m", "Merge redo")
         self.assertRefuses(f"round definition of W-1: its measurement changed code under the code roots, and {NO_SEAL}")
 
 
