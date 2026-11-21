@@ -22,17 +22,19 @@ works on one project at a time, on one machine.
   and close.
 - [Tools](docs/TOOLS.md): every script, what it does and what it writes.
 
-## One person per repo
+## People and machines
 
-Run bakehouse in a repo where you are the only person running it, on one machine. Two people running
-bakehouse in one repo is not supported yet.
-
-- Why: each person's main clone, once set up with `bakehouse setup`, has its own `bakehouse-records`
-  branch, and the team writes its records there. bakehouse never pushes that branch, and nothing
-  merges two people's copies of it. Two people would end with two record histories that disagree.
-  Each person's status and gates would see only their own records.
-- What is fine: several sessions, and lane clones, on the same machine. A lane clone set up with
-  `bakehouse setup --pointer <main clone>` writes to the main clone's records, so there is one history.
+- One machine: several sessions, and lane clones, work in one history. A lane clone set up with
+  `bakehouse setup --pointer <main clone>` writes to the main clone's records.
+- Two or more machines, or two or more people, each with their own main clone: the records must be in
+  format 2 (`bakehouse setup migrate`). Then each main clone writes its own records files, and bakehouse
+  moves them through the `bakehouse-records` branch on the remote. Steps:
+  [Getting started, "10. A second machine or a second developer"](docs/GETTING-STARTED.md#10-a-second-machine-or-a-second-developer).
+- In format 1 (a project set up before 0.8.0 and not migrated), run bakehouse on one machine only. Each
+  main clone would keep its own records branch, nothing would move them, and each machine's status and
+  gates would see only its own records.
+- Not yet in bakehouse: nothing stops two people taking the same work item, and nothing records an
+  agreement to change shared code. Section 10 says how to work until it does.
 
 ## One team plugin per repo
 

@@ -412,7 +412,7 @@ format 2. Without either, nothing changes.
 
 A lane is one line of work running beside others in the same project, on the same machine: usually its
 own clone, its own branch and its own session. Lanes let one person run two or three work orders at once.
-They are not a way for two people to share a repo ([README, "One person per repo"](../README.md#one-person-per-repo)).
+A second person, or a second machine, has its own main clone ([README, "People and machines"](../README.md#people-and-machines)).
 
 **The PM decides the lanes.** How many lanes run, which work orders may run side by side, and when a lane
 merges are the project PM's judgement. No tool decides them. Two work orders that change the same files

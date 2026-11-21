@@ -17,8 +17,9 @@ To try bakehouse before you write any of these files, copy the finished project:
 - Python 3.10 or later, and Git 2.42 or later ([README, "Requirements"](../README.md#requirements)).
 - The project in git, with a remote `origin`. Setup asks `origin` whether it already holds the team's
   records branch.
-- You are the only person running bakehouse in this repo, on one machine
-  ([README, "One person per repo"](../README.md#one-person-per-repo)).
+- This guide starts on one machine. A second machine, or a second developer, comes in at
+  [section 10](#10-a-second-machine-or-a-second-developer)
+  ([README, "People and machines"](../README.md#people-and-machines)).
 
 ## 1. Install the plugin
 
@@ -287,6 +288,123 @@ What happens:
 8. `predict-gate.sh close T1` must exit 0. Then the PM opens a pull request. You merge it.
 
 Every step in full: [`commands/change.md`](../commands/change.md), "The steps".
+
+## 10. A second machine or a second developer
+
+A second main clone of the project can be yours on another machine, or another developer's. Each main
+clone writes its own records files. bakehouse moves them through the `bakehouse-records` branch on
+`origin` ([Records sync](PROJECT-TEAM.md#records-sync)).
+
+### Once per project, on the first machine
+
+1. Every machine that runs bakehouse in this project runs the same bakehouse version.
+2. Move the records to format 2:
+
+   ```bash
+   bakehouse setup migrate
+   ```
+
+   When it is refused because the records worktree has uncommitted changes, commit them by path and run
+   it again ([One records file per writer](PROJECT-TEAM.md#one-records-file-per-writer), point 4).
+3. When `origin` does not hold the records branch yet (`git ls-remote --heads origin bakehouse-records`
+   prints nothing), publish it once:
+
+   ```bash
+   git -C ../notes-app.bakehouse-records push -u origin bakehouse-records
+   ```
+
+4. When more than one machine will write new tracker items, reserve their ids. Add `reserve` to the
+   binding's `tracker` block, with the letters that start every id:
+
+   ```json
+   "tracker": {"file": "docs/TRACKER.md", "id": "^T[0-9]+$", "reserve": {"prefix": "T"}}
+   ```
+
+   Commit and push the binding. Add each lane clone of this machine as a remote of the main clone
+   (`git remote add <lane> <the lane clone's folder>`); its branches are then read from disk, and nothing
+   is pushed. Then record the highest id used so far:
+
+   ```bash
+   bakehouse reserve --start
+   ```
+
+5. Check that the records move: `bakehouse sync` prints no `bakehouse sync:` line and exits 0.
+
+### On the new machine
+
+1. Clone the project and open it:
+
+   ```bash
+   git clone <the project's URL> notes-app
+   cd notes-app
+   ```
+
+2. Open a Claude Code session in the clone. The committed `.claude/settings.json` names the
+   marketplace. If `claude plugin list` does not show `bakehouse`, run the install command in
+   [README, "Install"](../README.md#install), step 1.
+3. If git cannot push to `origin` without asking for a login, write a token file outside the project:
+   one line, `<NAME>=<the token>`, readable only by you (`chmod 600`). bakehouse reads it at each sync
+   and never stores the token ([Records sync](PROJECT-TEAM.md#records-sync), point 7).
+4. From the session's Bash tool, run setup with a writer name for this main clone (1 to 32 letters,
+   digits or hyphens; for example your name and the machine's):
+
+   ```bash
+   bakehouse setup --writer <name>
+   ```
+
+   With a token file, add `--token-file <path> --token-key <NAME> --token-user <your login>`. Setup
+   finds `bakehouse-records` on `origin` and makes the records worktree from it, so this machine reads
+   the project's records at once.
+5. Check:
+
+   ```bash
+   bakehouse status
+   bakehouse sync
+   ```
+
+   `bakehouse status` lists the work orders and decisions the other machines have pushed. `bakehouse
+   sync` prints no `bakehouse sync:` line.
+6. When the binding has `tracker.reserve`, run `bakehouse reserve --start` once here too. When the
+   recorded floor already covers this machine's branches, it changes nothing and says so. From then on,
+   take each new id from `bakehouse reserve` before the tracker item is written; the PM does this.
+7. Each lane clone on this machine: `bakehouse setup --pointer <this main clone>`, as on the first.
+
+### Working side by side
+
+bakehouse moves the records at each seal and close, at session start, and with `bakehouse sync`.
+Offline, a seal or close still works, and its records go at the next sync. A new reserved id needs the
+remote.
+
+A sync moves only committed records. Seals, closes and reservations commit themselves. A decision or a
+spend line does not: it reaches the other machines only after it is committed in the records worktree.
+Commit the `decisions` folder, and the `spend` folder once it exists, by path, then sync. Leave `ops`
+to the seals and closes.
+
+```bash
+git -C ../notes-app.bakehouse-records add decisions
+git -C ../notes-app.bakehouse-records add spend   # only once the spend folder exists
+git -C ../notes-app.bakehouse-records commit -m "records: decisions and spend"
+bakehouse sync
+```
+
+What bakehouse does not do yet, and how to work until it does:
+
+1. **Two people can take the same work item.** Nothing stops it. Agree who takes which. The simplest
+   split is by product: each product on its own branch.
+2. **Only one person runs the health and driver passes** (`/bakehouse:health` and the driver signal).
+   Each pass rewrites one register file, so two people running them conflict at the next sync.
+3. **A change to shared code** (code that another developer's product also uses). Nothing records or
+   enforces an agreement. Until a later release does:
+   1. Before the work order, the developer who wants the change agrees it with each other developer
+      whose product uses that code, in a message or a call.
+   2. The PM records the agreement as a decision on the work order: the question names the other
+      developer, the date and what was agreed, and the owner answers it. Commit it and sync, as above;
+      the other machines' `bakehouse status` then shows it.
+   3. The same ask declares the change with `--change --owners 2 --area <the shared code>`. Two owners
+      fire the altitude trigger, so the ask needs an architect check: an `--architect-option`, or a
+      recorded architect run ([Decision triggers](PROJECT-TEAM.md#decision-triggers)).
+
+   A developer who skips step 1 is not stopped.
 
 ## Read next
 
