@@ -126,11 +126,14 @@ def anchor(path: Path, line: bytes | None, subject: str, trailer: str | None = "
     Closed-line, which sealed_trailers does not read; None, no trailer: records_sync.commit_own's decision and
     spend files). config: `git -c` arguments for the commit (commit_own's records_sync.LOCAL; a seal gives none).
     None when committed; else why not. git's index lock held by another git command is retried, then reported.
-    A failed commit unstages the file again, so no other commit carries the line without its trailer."""
+    A failed commit puts the file's index entry back as it was (none, HEAD's, a hand-staged change or a merge's
+    stages), so no commit of other files carries the line without its trailer."""
     top = _top(path)
     if top is None:
         return f"{path.parent} is not inside a git repository"
     rel = path.resolve().relative_to(top.resolve()).as_posix()
+    saved = subprocess.run(["git", "-C", str(top), "ls-files", "-s", "-z", "--", rel],
+                           capture_output=True, check=False).stdout  # the index entry (or stages) before the add
     why = ""
     added = False
     for i in range(ANCHOR_TRIES):
@@ -166,8 +169,13 @@ def anchor(path: Path, line: bytes | None, subject: str, trailer: str | None = "
         if "index.lock" not in why:
             break
         time.sleep(0.2 * 2**i)
-    if added:  # the line stays on disk, unstaged; its own failure changes nothing
-        subprocess.run(["git", "-C", str(top), "reset", "-q", "--", rel], capture_output=True, check=False)
+    if added:  # the line stays on disk; the index entry is put back; its own failure changes nothing
+        if saved:  # a mode-0 entry first removes the path's entry, so stages 1 to 3 can go back too
+            subprocess.run(["git", "-C", str(top), "update-index", "-z", "--index-info"],
+                           input=b"0 " + b"0" * len(saved.split(b" ")[1]) + f"\t{rel}\0".encode() + saved,
+                           capture_output=True, check=False)  # the zero id as long as the entry's (sha1 or sha256)
+        else:
+            subprocess.run(["git", "-C", str(top), "rm", "--cached", "-q", "--", rel], capture_output=True, check=False)
     return why or "git commit failed"
 
 

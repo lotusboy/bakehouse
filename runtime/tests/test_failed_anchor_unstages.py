@@ -78,6 +78,62 @@ class FailedAnchor(twf.Base):
         self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
         self.assertEqual(self.staged(), ["other.md"])
 
+    def test_a_seal_refused_during_a_merge_keeps_the_merged_ledger_for_the_merge_commit(self):
+        # F1: format 1, a hand merge open in the records worktree; the ledger merged cleanly and is staged
+        self.commit("W-1: prediction", {self.r("moves.prediction.json"): tsc.GOOD_P,
+                                        self.r("moves.baseline.json"): tsc.BASE_M})
+        self.assertEqual(self.seal("first", "moves.prediction.json"), 0)
+        self.assertEqual(self.note("the other side's line").returncode, 0)
+        self.rgit("checkout", "-q", "-b", "side")
+        (self.records / "a.txt").write_text("theirs\n")
+        self.rgit("add", "--", "a.txt", "ops/events.jsonl")
+        self.rgit("commit", "-q", "-m", "theirs")
+        self.rgit("checkout", "-q", "bakehouse-records")
+        (self.records / "a.txt").write_text("ours\n")
+        self.rgit("add", "--", "a.txt")
+        self.rgit("commit", "-q", "-m", "ours")
+        self.rgit("merge", "-q", "side")  # a.txt conflicts; the ledger takes the other side's line
+        self.assertEqual(self.rgit("diff", "--name-only", "--diff-filter=U"), "a.txt")
+        staged = self.rgit("show", ":ops/events.jsonl")
+        self.assertIn("the other side's line", staged)
+        p = self.gate("seal", "W-1", "first", str(self.repo / self.r("moves.baseline.json")))
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn("ANCHOR REFUSED", p.stderr)
+        self.assertEqual(self.rgit("show", ":ops/events.jsonl"), staged)  # the index entry is put back as it was
+        (self.records / "a.txt").write_text("resolved\n")
+        self.rgit("add", "a.txt")
+        self.rgit("commit", "-q", "--no-edit")
+        self.assertEqual(len(self.rgit("rev-list", "--parents", "-1", "HEAD").split()), 3)  # the merge commit
+        self.assertIn("the other side's line", self.rgit("show", "HEAD:ops/events.jsonl"))
+
+    def test_a_change_to_the_ledger_staged_by_hand_stays_staged(self):
+        # F3: the ledger's index entry before the anchor is put back, not set to HEAD's
+        self.commit("W-1: prediction", {self.r("moves.prediction.json"): tsc.GOOD_P,
+                                        self.r("moves.baseline.json"): tsc.BASE_M})
+        self.assertEqual(self.seal("first", "moves.prediction.json"), 0)
+        self.assertEqual(self.note("staged by hand").returncode, 0)
+        self.rgit("add", "--", "ops/events.jsonl")
+        staged = self.rgit("ls-files", "-s", "--", "ops/events.jsonl")
+        self.failing_signer()
+        p = self.gate("seal", "W-1", "first", str(self.repo / self.r("moves.baseline.json")))
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertEqual(self.rgit("ls-files", "-s", "--", "ops/events.jsonl"), staged)
+
+    def test_a_refused_seal_on_a_ledger_in_head_stays_out_of_the_pms_commit(self):
+        # F4: the ledger is in HEAD; a second seal is refused; the PM's commit leaves the file modified, unstaged
+        self.commit("W-1: prediction", {self.r("moves.prediction.json"): tsc.GOOD_P,
+                                        self.r("moves.baseline.json"): tsc.BASE_M})
+        self.assertEqual(self.seal("first", "moves.prediction.json"), 0)
+        head = self.rgit("rev-parse", "HEAD")
+        self.failing_signer()
+        self.assertEqual(self.seal("first", "moves.baseline.json"), 1)
+        self.failing_signer(False)
+        twf.pm_commit(self, self.records)
+        self.assertNotIn("ops/events.jsonl", self.rgit("log", "--format=", "--name-only", f"{head}..HEAD").split())
+        self.assertNotIn("ops/events.jsonl", self.staged())
+        self.assertEqual(self.rgit("status", "--porcelain", "--", "ops/events.jsonl"), "M ops/events.jsonl")
+        self.assertIn(WHY, self.notes())
+
     def test_a_seal_whose_commit_succeeds_is_unchanged(self):
         self.migrate("--writer", "alpha")
         self.commit("W-1: prediction", {self.r("moves.prediction.json"): tsc.GOOD_P})
