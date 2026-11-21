@@ -106,6 +106,26 @@ class FailedAnchor(twf.Base):
         self.assertEqual(len(self.rgit("rev-list", "--parents", "-1", "HEAD").split()), 3)  # the merge commit
         self.assertIn("the other side's line", self.rgit("show", "HEAD:ops/events.jsonl"))
 
+    def test_a_refused_anchor_on_a_ledger_in_conflict_keeps_its_three_stages(self):
+        # the ledger itself in conflict: its stages 1 to 3 come back exactly, with no stage 0 beside them
+        import ops_ledger
+        led = self.records / "ops" / "events.jsonl"
+        led.parent.mkdir(parents=True, exist_ok=True)
+        led.write_text('{"n": 0}\n')
+        self.rgit("add", "--", "ops/events.jsonl")
+        self.rgit("commit", "-q", "-m", "base")
+        self.rgit("checkout", "-q", "-b", "side")
+        led.write_text('{"n": 0}\n{"theirs": 1}\n')
+        self.rgit("commit", "-q", "-am", "theirs")
+        self.rgit("checkout", "-q", "bakehouse-records")
+        led.write_text('{"n": 0}\n{"ours": 1}\n')
+        self.rgit("commit", "-q", "-am", "ours")
+        self.rgit("merge", "-q", "side")  # the ledger conflicts
+        before = self.rgit("ls-files", "-s", "--", "ops/events.jsonl")
+        self.assertEqual(sorted(x.split()[2] for x in before.splitlines()), ["1", "2", "3"])
+        self.assertIsNotNone(ops_ledger.anchor(led, b'{"new": 1}', "W-1: a seal"))  # a partial commit in a merge
+        self.assertEqual(self.rgit("ls-files", "-s", "--", "ops/events.jsonl"), before)
+
     def test_a_change_to_the_ledger_staged_by_hand_stays_staged(self):
         # F3: the ledger's index entry before the anchor is put back, not set to HEAD's
         self.commit("W-1: prediction", {self.r("moves.prediction.json"): tsc.GOOD_P,
