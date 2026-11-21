@@ -333,8 +333,11 @@ format 2. Without either, nothing changes.
    - Every id at or under the floor counts as taken. One file covers every id used before
      reservations.
    - It reads only the branches of this clone: its local branches, and the remote-tracking branches
-     its fetch brings. A branch that is only on another machine, or only in a lane clone, is not read.
-     So push every branch (every lane clone's too), and run `--start` on each machine.
+     its fetch brings. Nothing needs pushing for the floor.
+   - A branch that is only in a lane clone is read once the lane clone is a remote of the main clone:
+     `git -C <main clone> remote add <lane> <lane clone path>`. `--start` then fetches it from disk.
+   - A branch that is only on another machine is read when that machine runs `--start`. Each run raises
+     the shared floor from its own branches.
    - A later `--start` raises the floor, and never lowers it. When this clone's branches hold an id
      above the recorded floor, it commits the new `reservations/FLOOR` and pushes it, the same way a
      reservation is pushed (point 3, step 4). Otherwise it changes nothing and says so.
@@ -397,8 +400,9 @@ format 2. Without either, nothing changes.
    - `reserve` does not write the tracker row. The PM writes it, on the product branch, as before.
    - Ids already used are not rewritten, and get no reservation file: the floor covers them.
    - Decision ids are not reserved.
-   - The floor is only as good as the branches `--start` could read: a branch that was never pushed,
-     or is only in a lane clone, counts only when `--start` runs where it is.
+   - The floor is only as good as the branches `--start` could read. A branch only in a lane clone
+     counts once that lane clone is a remote of the main clone. A branch only on another machine counts
+     when `--start` runs on that machine.
    - Without `fcntl` (native Windows) there is no sync lock and no writer lock, as for the sync: two
      reserves on one machine at once can then pick the same id, and the push race decides.
 

@@ -85,6 +85,33 @@ v5, say) names that file in its prediction: `"baseline": "moves.measured.built-v
 guesses it from the file names. Without the field, the round is measured against
 `moves.baseline.json`, which is the wrong "before" for a chained round.
 
+**A chained round's code base, at close.** The measure report's `base` names the commit the measurement
+read. A project's measure script may read the work order's base for every round, so a chained round's
+report `base` can hold the earlier rounds' code too. Close does not take a chained round's code from that
+`base`. Its code base is the `head` of the measurement its prediction chains on, when all of these hold:
+
+1. The round's live first prediction names a `"baseline"` that is a `moves.measured` file of the same
+   record folder.
+2. That file has a live (not retired) sealed measured event.
+3. That event's `head` is in the repository.
+
+Otherwise the code base is the report's `base`, as before. Close rules 5 and 5b read the round's code
+from its code base to its measured head. So a chained round that changed no code after the earlier
+round's head (a tests-only round, say) needs no code seal.
+
+**A paired round, at close.** Two rounds can measure one code commit: a corpus round and a definition
+round, say. Only one of them seals that code commit. The other round has no code seal of its own. It is
+covered when all of these hold:
+
+1. Its code at its code base and at its measured head (the code-root trees) equals another round's.
+2. That other round's code seal passes rule 5b.
+3. The covered round's prediction is sealed before that covering code commit, in the ledger's order.
+   Else close refuses "its prediction was sealed after its first code commit", naming the covering
+   commit and its round.
+
+A round with no code seal whose code matches no such round is refused as before: no code commit of the
+round is sealed.
+
 It reports six sections:
 
 1. Predicted, and it happened.
@@ -538,17 +565,20 @@ then refuses, naming each:
    sealed. records-check judges the same rule and reports `hash-mismatch`. A seal written before the
    field existed is not judged.
 5. **A round's prediction is sealed before its code.** Its first seal's commit is an ancestor of the
-   round's measured base; or, if not, every file under the code roots that the round's measurement
-   changed (base to head) reads the same at the seal's commit as at the base.
+   round's code base; or, if not, every file under the code roots that the round's measurement
+   changed (code base to head) reads the same at the seal's commit as at the code base. The code base is
+   the report's `base`, or, for a chained round, the `head` of the sealed measurement it chains on (see
+   "A chained round's code base, at close").
 5b. **A round's first code commit is sealed, after its prediction.** When a round's
-   latest measurement changed code under the code roots (base to head), the round needs a code seal:
+   latest measurement changed code under the code roots (code base to head), the round needs a code seal:
    the engineer commits the round's first code through `predict-gate.sh seal-code <work-order> <round>
    [--repo DIR] -- <git commit args>`, which runs `git commit` on the staged code (it does not read
    `-a`) and seals that commit as a `sealed` event with fileKind `code`, its parent and its code-root
    trees, anchored like every seal; a second code seal of the round is refused. Close refuses when the
    round has no code seal, when the round's prediction seal comes after its code seal in the
    ledger's order, and when the sealed commit is not the round's first code change (the code just before
-   it differs from the measured base). The ledger's order is the sealer's own, so a prediction sealed
+   it differs from the code base). A paired round with no code seal of its own is covered by the code
+   seal of the round that measured the same code (see "A paired round, at close"). The ledger's order is the sealer's own, so a prediction sealed
    after its lane code refuses even though the PM seals in the main checkout. The round's prediction
    seal is the first seal of its live chain, decided by `retire_of`: after a retire and a new seal,
    rule 5b judges the new seal, not the retired one.
