@@ -70,8 +70,8 @@ class TestRecordsAndLanes(unittest.TestCase):
 
     def test_m6_the_pm_commits_the_records_after_each_close_and_before_the_session_ends(self):
         b = bullet(self.pm, "The records folder is always committed: after each close, and before the session ends.")
-        self.assertIn("`git -C <records> add -A -- . ':!ops/events.jsonl' ':!ops/events' && git -C <records> commit -m "
-                      "\"<work order or 'records'>: records\"`", b)
+        self.assertIn("`git -C <records> add -A -- . ':!ops/events.jsonl' ':!ops/events' && { git -C <records> diff "
+                      "--cached --quiet || git -C <records> commit -m \"<work order or 'records'>: records\"; }`", b)
         self.assertEqual(self.pm.count("git -C <records> add -A"), 1)
 
     def test_p2_2_the_records_commit_stages_everything_but_the_ops_ledger(self):
