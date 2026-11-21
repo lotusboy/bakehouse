@@ -116,6 +116,12 @@ def append(project, event):
     p.parent.mkdir(parents=True, exist_ok=True)
     with p.open("a", encoding="utf-8") as f:
         f.write(json.dumps(event, ensure_ascii=False) + "\n")
+    if locator.records_format(project.records) != locator.FORMAT:
+        return  # format 1 commits nothing, and needs no more of the runtime than locator
+    # records format 2: this writer's file, committed by path and synced (records_sync.commit_own)
+    import records_sync
+    what = event.get("agent") or event.get("wave") or ""
+    records_sync.commit_own(project.records, p, f"spend: {event.get('event')} {what} (spend.sh)")
 
 
 def tokens_arg(v):

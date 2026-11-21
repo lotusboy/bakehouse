@@ -506,8 +506,8 @@ def set_token(records: Path, given) -> bool:
     path, key, user = given
     path = str(Path(path).expanduser().absolute())
     if Path(records).resolve() in [Path(path).resolve(), *Path(path).resolve().parents]:
-        say(f"the token file {path} is inside the records worktree {records}, where the PM's records commit would "
-            "commit it. Refused, nothing stored: keep it outside the records worktree")
+        say(f"the token file {path} is inside the records worktree {records}, where a commit of more than one file "
+            "(a `git add -A`, say) would commit it. Refused, nothing stored: keep it outside the records worktree")
         return False
     for k, v in zip(records_sync.TOKEN_CONFIG, (path, key, user)):
         p = git(records, "config", "--local", k, v)

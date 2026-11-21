@@ -201,6 +201,13 @@ def write_whole(path, text):
 def append(project, event):
     with locked(project):
         _append(project, event)
+    if locator.records_format(project.records) != locator.FORMAT:
+        return  # format 1 commits nothing, and needs no more of the runtime than locator
+    # records format 2: this writer's file, committed by path and synced (records_sync.commit_own)
+    import records_sync
+    what = event.get("id") or event.get("action") or ""
+    records_sync.commit_own(project.records, project.write_file("decisions_ledger"),
+                            f"decisions: {event.get('kind')} {what} (decision.sh)")
 
 
 def _append(project, event):

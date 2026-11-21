@@ -4,8 +4,9 @@ Standard library only. docs/PROJECT-TEAM.md, "Records sync", is the reference.
   bakehouse sync [--repo <folder>]   (default folder: the current one)
 
 sync(records) is the one sync step every caller shares: after a seal, revise or retire (predict-gate.py, after the
-anchor commit), after a close (which commits its own line first), at session start (session-start.py), and
-`bakehouse sync` (the PM's records commit runs it). In the records worktree it:
+anchor commit), after a close (which commits its own line first), after each decision.sh and spend.sh line (commit_own
+commits that writer's file first), at session start (session-start.py), and `bakehouse sync`. In the records
+worktree it:
 
 1. takes the sync lock, a file in the records worktree's git folder; when another sync holds it, it skips. Lanes on
    one machine share the records worktree, so they share the lock;
@@ -366,6 +367,28 @@ def quiet(records) -> str | None:
     except Exception as e:  # noqa: BLE001 - a sync never changes the tool's own result
         return f"bakehouse sync: failed: {e!r}. The records commits stay local; the next sync tries again."
     return r.line if r.state == "failed" else None
+
+
+def commit_own(records, path, subject: str) -> None:
+    """Records format 2: after decision.sh or spend.sh appends a line to this writer's file `path`, commit that file
+    alone, by path (ops_ledger.anchor, no trailer), under this writer's ops ledger lock, as the seal anchors and close
+    commits are; then sync, outside the lock. Format 1: nothing. A commit that fails is one line on stderr, and no
+    sync: the line stays in the file and the next commit of it carries it. A sync that fails is its one line on
+    stderr. Never raises, so the tool's own exit code and stdout stay as they are."""
+    try:
+        if locator.records_format(records) != locator.FORMAT:
+            return
+        with writer_lock(records):
+            why = ops_ledger.anchor(Path(path), None, subject, trailer=None)
+    except Exception as e:  # noqa: BLE001 - the commit never changes the tool's result
+        why = repr(e)
+    if why:
+        print(f"bakehouse: the line is in {path} but not committed ({detail(why)}); the next commit of that file "
+              "carries it", file=sys.stderr)
+        return
+    line = quiet(records)
+    if line:
+        print(line, file=sys.stderr)
 
 
 def status(records) -> dict | None:
