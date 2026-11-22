@@ -161,8 +161,8 @@ def main(argv, root) -> int:
         print(json.dumps({"format": 1, "team": False}) if a.json else
               f"{a.repo or Path.cwd()}: no team here (no .team/binding.json)")
         return locator.NO_TEAM
-    full = [Path(os.path.normpath(project.root / p)) for p in a.paths]  # below: by way of a symlinked folder too
-    paths = [os.path.relpath(os.path.realpath(p.parent) / Path(p.name), project.root) for p in full]
+    full = [project.root / p for p in a.paths]  # realpath: by way of a symlinked folder too
+    paths = [os.path.relpath(os.path.join(os.path.realpath(p.parent), p.name), project.root) for p in full]
     for given, p in zip(a.paths, paths):
         if p.split(os.sep)[0] == "..":
             ap.error(f"{given} is outside the repository {project.root}")
