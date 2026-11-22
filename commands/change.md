@@ -48,6 +48,10 @@ work names its own working branch there. If the item has no `branch:` line, the 
 it opens its own branch (step 5). The job works only on the branch that line names. It never opens a
 second branch for the same item, and it never copies a work order from one branch to another.
 
+The item may carry a **`ground:` line**: the files or folders the change is expected to touch, written
+before any edit. If it has none, the PM writes it in step 4. It stays as written: where the change
+really went is in git.
+
 Beside them, too, the item carries a **`serves:` line**: the outcome this change moves for the
 owner, in the owner's own terms, with a count of the in-scope items it reaches. "In scope" is what
 the owner needs now; where the repo's gate list has a scope gate, that gate says how to count. A
@@ -249,7 +253,8 @@ Find where this work order stands before doing anything else. Run `git fetch` fi
    order. Offer to write the missing field with them.
 3. **Put it to the owner** as one message, in this order: the `need`; the `evidence`; the `layer`;
    the gates that prove it and the rest of the job's list; the `expected` moves and the `mustNotMove`
-   outputs; the `serves` line and its count; the branch the job will work on (the `branch:` line, or the one it will open); the size in hours and tokens; one question: go or not. A
+   outputs; the `serves` line and its count; the `ground:` line and what
+   `bakehouse ground --not {id} <its paths>` prints; the branch the job will work on (the `branch:` line, or the one it will open); the size in hours and tokens; one question: go or not. A
    work order from a repo procedure was already decided there; the go here is the go on the spend
    and the branch.
 4. **A dry run stops here** and fills the briefs.
@@ -544,6 +549,7 @@ A shortcut taken on purpose (right for today's inputs, with a known limit) gets 
   line: shortcut: <the limit>, <when to upgrade>. Never without the upgrade condition.
 Expected moves: [work order: expected].
 Must not move: [work order: mustNotMove].
+Ground (expected, not a limit): [tracker: the item's ground: line].
 Serves: [tracker: the item's serves: line]. The FIRST line of your prediction and of your result is
 a count of what the change touches or is judged on, in scope against out of scope; the result also
 says what moved in a live output, as a number ("nothing" is said plainly).

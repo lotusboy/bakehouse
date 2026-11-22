@@ -9,7 +9,7 @@ import time
 import unittest
 from pathlib import Path
 
-from test_status import BAKEHOUSE, IDENT, chained
+from test_status import BAKEHOUSE, IDENT, ROOT, chained
 
 
 def event(kind, task):
@@ -292,6 +292,14 @@ commits with no work-order id, last 14 days: 1
         usage = subprocess.run([str(BAKEHOUSE)], capture_output=True, text=True, env=self.env).stderr
         self.assertIn("|ground|", usage)
         self.assertIn("bakehouse ground", BAKEHOUSE.read_text())
+
+    def test_the_change_job_reads_it(self):
+        change = (ROOT / "commands" / "change.md").read_text()
+        step = change[change.index("### 4. The work order"):change.index("### 5. The branch")]
+        self.assertIn("`bakehouse ground --not {id}", step)
+        self.assertIn("`ground:` line", change[:change.index("### 4. The work order")])
+        brief = change[change.index("### Engineer brief"):change.index("### Reviewer brief")]
+        self.assertIn("[tracker: the item's ground: line]", brief)
 
 
 if __name__ == "__main__":
