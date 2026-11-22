@@ -49,8 +49,8 @@ it opens its own branch (step 5). The job works only on the branch that line nam
 second branch for the same item, and it never copies a work order from one branch to another.
 
 The item may carry a **`ground:` line**: the files or folders the change is expected to touch, written
-before any edit. If it has none, the PM writes it in step 4. It stays as written: where the change
-really went is in git.
+before any edit, as quoted paths from the repository root with spaces between. If it has none, the PM
+writes it in step 4. It stays as written: where the change really went is in git.
 
 Beside them, too, the item carries a **`serves:` line**: the outcome this change moves for the
 owner, in the owner's own terms, with a count of the in-scope items it reaches. "In scope" is what

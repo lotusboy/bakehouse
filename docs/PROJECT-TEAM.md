@@ -1682,9 +1682,11 @@ that is not a folder inside a git repository.
 
 `bakehouse ground <path>...` shows which work orders changed a file or folder, from git: commits in the code
 roots, each owned by the first tracker id in its subject, over the whole history. `/bakehouse:change` shows it
-to the owner with the work order. It judges nothing: its 14 days (`--days`) are how far back it shows. Named
+to the owner with the work order. It judges nothing: its 14 days (`--days`) are how far back it shows, by the
+day a commit was written, which a rebase keeps. A path outside the code roots is not counted, and it says so. Named
 limits: a renamed file's history starts at the rename; a lane's commits show once its branch is in this clone,
-or on a remote this clone has fetched; merge commits are not counted.
+or on a remote this clone has fetched; merge commits are not counted; a shallow clone's oldest commit seems to
+change every file; a revert counts for the work order it names.
 
 ## How bakehouse's tools are designed
 

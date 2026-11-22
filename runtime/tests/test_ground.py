@@ -87,7 +87,10 @@ class Ground(unittest.TestCase):
         self.assertEqual((one["paths"][0]["workOrders"], one["noId"]), (["A2b", "A1"], 1))
         self.assertEqual([p["workOrders"] for p in two["paths"]], [["BD31", "BD7"], ["BD7"]])
         self.assertEqual(two["noId"], 1)
-        self.assertEqual(self.path("docs/x.md")["everWorkOrders"], 0, "docs is not a code root")
+        self.assertEqual(self.path("docs/x.md"), {"path": "docs/x.md", "inWorkingTree": True, "inCodeRoots": False},
+                         "docs is not a code root: not counted, which is not a 0")
+        self.assertIn("docs/x.md\n  outside the code roots: not counted\n", self.text("docs/x.md"))
+        self.assertEqual([self.path(p)["inCodeRoots"] for p in (".", "src", "src/parse.py")], [True] * 3)
         self.assertEqual(self.as_json("--repo", str(other), "app")["project"], str(other))
 
     def test_the_text(self):
@@ -98,9 +101,9 @@ class Ground(unittest.TestCase):
         self.ops.write_bytes(chained([event("sealed", "A3")]))
         first = time.strftime("%Y-%m-%d", time.gmtime(self.now - 10 * 86400))
         self.assertEqual(self.text("src/a.py", "src", "src/new.py"), f"""\
-code roots: src
+only the code roots count: src
 src/a.py
-  work orders, last 14 days: 10 (A10, A9, A8, A7, A6, A5, A4, A3 and 2 more), 1 open now; 1st of 2 files
+  work orders, last 14 days: 10 (A10, A9, A8, A7, A6, A5, A4, A3 and 2 more), 1 open now; 1st of 2 files changed
   work orders, ever: 10, first commit {first}
 src
   work orders, last 14 days: 10 (A10, A9, A8, A7, A6, A5, A4, A3 and 2 more), 1 open now
@@ -123,6 +126,14 @@ commits with no work-order id, last 14 days: 1
         self.assertEqual(self.path("src/a.py", "--days", "5")["rank"], None, "no visit in the window, no rank")
         for bad in ("0", "-1", "x"):
             self.assertEqual(self.run_ground("--days", bad, "src/a.py")[0], 2)
+
+    def test_a_copy_of_an_old_commit_is_not_a_visit_lately(self):
+        self.commit("A1: x", "src/a.py", days_ago=40)
+        self.git(self.repo, "switch", "-q", "-c", "lane", "main~")
+        self.git(self.repo, "cherry-pick", "main", days_ago=1)
+        self.assertEqual(self.git(self.repo, "log", "-1", "--since=2.days", "--format=%s").strip(), "A1: x")
+        p = self.path("src/a.py")
+        self.assertEqual((p["workOrders"], p["everWorkOrders"]), ([], 1), "a rebase or cherry-pick keeps the author date")
 
     def test_the_first_id_owns_a_commit_and_a_subject_with_none_is_counted_apart(self):
         self.commit("A1 after A2: x", "src/a.py")
@@ -147,6 +158,7 @@ commits with no work-order id, last 14 days: 1
         p = self.path("src/a.py", "--not", "A1")
         self.assertEqual((p["workOrders"], p["rank"], p["everWorkOrders"], p["firstCommit"]), ([], None, 0, None))
         self.assertIn("without A2", self.text("--not", "A2", "src"))
+        self.assertIn("ever: 0, no other commits\n", self.text("--not", "A1", "src/a.py"))
         self.assertEqual(self.run_ground("--not", "a2", "src")[0], 2, "not an id: it would leave nothing out")
 
     def test_open_is_sealed_and_not_closed(self):
@@ -176,10 +188,17 @@ commits with no work-order id, last 14 days: 1
         self.assertEqual(self.path("src/a/")["path"], "src/a")
         self.assertEqual((self.path("src/a")["rank"], len(self.path("src/a")["mostVisits"])), (None, 3))
         self.assertEqual(self.path("src/ab")["workOrders"], ["A2"])
+        self.commit("A6: x", "src/abc/one.py")
+        self.assertNotIn("A6", self.path("src/ab")["workOrders"], "src/abc is not under src/ab")
+        (self.repo / "link").symlink_to("src")
+        self.assertEqual(self.path("link/ab")["path"], "src/ab")
         self.assertEqual(self.path("src/a/two words.py")["workOrders"], ["A1"])
         self.assertEqual(self.path("src/a/st*r.py")["workOrders"], ["A2"])
         self.assertEqual(self.path("src/a/é.py")["workOrders"], ["A3"])
         self.assertEqual(self.path(".")["workOrders"], self.path("src")["workOrders"])
+        self.git(self.repo, "switch", "-q", "--detach")
+        self.commit("A7: x", "src/detached.py")
+        self.assertEqual(self.path("src/detached.py")["workOrders"], ["A7"], "HEAD counts when no branch holds it")
         odd = self.project("odd", {"tracker": {"id": "^A[0-9]+$"}, "signal": {"codeRoots": ["lib*"]}})
         self.commit("A4: x", "lib*/x.py", repo=odd)
         self.commit("A5: x", "liba/x.py", repo=odd)
@@ -259,6 +278,8 @@ commits with no work-order id, last 14 days: 1
             self.assertNotIn("Traceback", err)
         self.assertIn("outside the repository", self.run_ground("../x")[2])
         self.assertEqual(self.path(str(self.repo / "src"))["path"], "src", "an absolute path inside it is inside")
+        (self.tmp / "way").symlink_to(self.repo)
+        self.assertEqual(self.path(str(self.tmp / "way" / "src"))["path"], "src", "by way of a symlink too")
 
     def test_no_team_setup_needed_and_a_binding_without_the_two_facts(self):
         plain = self.tmp / "plain"

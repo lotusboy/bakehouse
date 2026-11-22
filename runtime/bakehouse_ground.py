@@ -5,12 +5,12 @@ Run through bin/bakehouse. It reads git, the binding and the ops ledger; it writ
 
 Paths are relative to the repository root. A commit counts when it is no merge, is on a branch of this clone, a
 remote branch it has fetched, or HEAD, and touches a code root (locator.code_roots). It belongs to the first
-tracker id in its subject. A visit is one work order with any number of commits in the last N days (default 14:
-how far back to show, not a limit anything is judged by). --not leaves one work order out of every count.
+tracker id in its subject. A visit is one work order with any number of commits written (author date: a rebase
+keeps it) in the last N days (default 14: how far back to show, not a limit anything is judged by). --not leaves one work order out of every count.
 
 The JSON object: format (1), team, project, codeRoots, days, not, noId (the commits in the window with no tracker
 id that touched any of the paths), and paths, each:
-  path, inWorkingTree
+  path, inWorkingTree, inCodeRoots (false: not counted, and nothing below is given)
   workOrders              the visits, the newest first (the text shows 8)
   open                    how many of those are open now, as `bakehouse status` judges it; null when not known
   rank, of                a file with a visit: its place by visits among the files with one; ties share a place
@@ -44,12 +44,12 @@ SHOWN_IDS, SHOWN_FILES = 8, 3
 
 
 def history(root, roots, rx, leave_out) -> list:
-    """[(commit time, its work order or None, the files it changed)]. --full-history: a merge that dropped a side's
+    """[(when it was written, its work order or None, the files it changed)]. --full-history: a merge that dropped a side's
     change does not hide the commit that made it. The other options undo a user's git config."""
     out = subprocess.run(
         ["git", "--literal-pathspecs", "-C", str(root), "log", f"--exclude={locator.RECORDS_BRANCH}", "--branches",
          f"--exclude=*/{locator.RECORDS_BRANCH}", "--remotes", "HEAD", "--no-merges", "--full-history", "--root",
-         "--no-renames", "--no-show-signature", "-z", "--name-only", "--format=/%ct %s", "--", *roots],
+         "--no-renames", "--no-show-signature", "-z", "--name-only", "--format=/%at %s", "--", *roots],
         capture_output=True, check=True, env={**os.environ, "GIT_NO_LAZY_FETCH": "1"}).stdout
     commits = []
     for token in out.decode("utf-8", "surrogateescape").split("\0"):
@@ -80,7 +80,11 @@ def under(file, path) -> bool:
     return path in (".", file) or file.startswith(path + "/")
 
 
-def facts(path, root, commits, start, open_ids) -> dict:
+def facts(path, root, roots, commits, start, open_ids) -> dict:
+    known = {"path": path, "inWorkingTree": os.path.lexists(root / path),
+             "inCodeRoots": any(under(path, r) or under(r, path) for r in map(os.path.normpath, roots))}
+    if not known["inCodeRoots"]:
+        return known
     mine = [c for c in commits if any(under(f, path) for f in c[2])]
     first = datetime.fromtimestamp(min(c[0] for c in mine), timezone.utc).strftime("%Y-%m-%d") if mine else None
     last = {}  # work order: its latest commit here in the window
@@ -94,7 +98,7 @@ def facts(path, root, commits, start, open_ids) -> dict:
     count = {f: len(wos) for f, wos in visits.items()}
     ranked = path in count
     inside = [[f, n] for f, n in sorted(count.items(), key=lambda x: (-x[1], x[0])) if under(f, path)]
-    return {"path": path, "inWorkingTree": os.path.lexists(root / path),
+    return {**known,
             "workOrders": sorted(last, key=last.get, reverse=True),
             "open": None if open_ids is None else len(open_ids & last.keys()),
             "rank": 1 + sum(n > count[path] for n in count.values()) if ranked else None,
@@ -110,9 +114,12 @@ def ordinal(n) -> str:
 
 def plain(s) -> str:
     lately = f"last {s['days']} days"
-    out = [f"code roots: {', '.join(s['codeRoots'])}" + (f"; without {s['not']}" if s["not"] else "")]
+    out = [f"only the code roots count: {', '.join(s['codeRoots'])}" + (f"; without {s['not']}" if s["not"] else "")]
     for p in s["paths"]:
         out.append(p["path"])
+        if not p["inCodeRoots"]:
+            out.append("  outside the code roots: not counted")
+            continue
         if not p["inWorkingTree"] and not p["firstCommit"]:
             out.append("  no history, and not in the working tree")
             continue
@@ -121,11 +128,11 @@ def plain(s) -> str:
             more = f" and {len(ids) - SHOWN_IDS} more" if len(ids) > SHOWN_IDS else ""
             line += f" ({', '.join(ids[:SHOWN_IDS])}{more}), "
             line += "open not known" if p["open"] is None else f"{p['open']} open now"
-        out.append(line + (f"; {ordinal(p['rank'])} of {p['of']} files" if p["rank"] else ""))
+        out.append(line + (f"; {ordinal(p['rank'])} of {p['of']} files changed" if p["rank"] else ""))
         if p["mostVisits"]:
             out.append("  most visits: " + ", ".join(f"{f} {n}" for f, n in p["mostVisits"]))
         out.append(f"  work orders, ever: {p['everWorkOrders']}, "
-                   + (f"first commit {p['firstCommit']}" if p["firstCommit"] else "no commits"))
+                   + (f"first commit {p['firstCommit']}" if p["firstCommit"] else f"no {'other ' if s['not'] else ''}commits"))
     if s["noId"]:
         out.append(f"commits with no work-order id, {lately}: {s['noId']}")
     return "\n".join(out)
@@ -154,7 +161,8 @@ def main(argv, root) -> int:
         print(json.dumps({"format": 1, "team": False}) if a.json else
               f"{a.repo or Path.cwd()}: no team here (no .team/binding.json)")
         return locator.NO_TEAM
-    paths = [os.path.relpath(os.path.normpath(project.root / p), project.root) for p in a.paths]
+    full = [Path(os.path.normpath(project.root / p)) for p in a.paths]  # below: by way of a symlinked folder too
+    paths = [os.path.relpath(os.path.realpath(p.parent) / Path(p.name), project.root) for p in full]
     for given, p in zip(a.paths, paths):
         if p.split(os.sep)[0] == "..":
             ap.error(f"{given} is outside the repository {project.root}")
@@ -179,7 +187,7 @@ def main(argv, root) -> int:
     open_ids, why = open_work_orders(project)
     start = time.time() - a.days * 86400
     s = {"format": 1, "team": True, "project": str(project.root), "codeRoots": roots, "days": a.days,
-         "not": a.leave_out, "paths": [facts(p, project.root, commits, start, open_ids) for p in paths],
+         "not": a.leave_out, "paths": [facts(p, project.root, roots, commits, start, open_ids) for p in paths],
          "noId": sum(not wo and at >= start and any(under(f, p) for f in files for p in paths)
                      for at, wo, files in commits)}
     sys.stdout.reconfigure(errors="surrogateescape")  # a file name that is not UTF-8
