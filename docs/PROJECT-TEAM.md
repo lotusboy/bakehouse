@@ -1457,6 +1457,11 @@ The ask event records `triggers`: the names that fired, in that order (`altitude
 `altitude` at a cluster), or an empty list. An older ask event without the field reads as before. A
 refused ask writes no ask event; its gate-refused event is written as before.
 
+**The outcome line.** At fix round 2 or later, an ask that is recorded also prints one line on stderr,
+`decision: outcome: ...`. It names the decision the round follows (the task's latest ask at a lower
+round, or else its latest ask) and the command that records how it turned out. No line when that
+decision has an outcome. It is not a trigger: it refuses nothing and records nothing.
+
 **A declared change.** `--change` says the question proposes a code change on `--task` (a fix or a
 design change). `--fix-round` implies it. The asker declares it; the tool does not detect it from
 words, because a word trigger fires on the wrong questions and is met by rewording (0.6.2). The word

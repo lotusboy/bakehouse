@@ -277,7 +277,8 @@ def cmd_ask(a):
     ts = stamp()
     did = a.id or "d" + ts[:10].replace("-", "") + "-" + hashlib.sha1(
         f"{ts}{project.root}{a.question}{random.random()}".encode()).hexdigest()[:6]
-    if did in fold(read_events(project)):
+    earlier = fold(read_events(project))
+    if did in earlier:
         fail(f"id {did} already exists in {name_of(project)}", "decision:id-exists")
     ev = {"kind": "ask", "id": did, "ts": ts, "stream": name_of(project), "project": a.project or None,
           "category": a.category, "question": a.question, "options": a.option,
@@ -294,7 +295,28 @@ def cmd_ask(a):
     if loose:
         ev["backfilled"] = True
     append(project, ev)
+    outcome_line(a, earlier)
     print(did)
+
+
+def outcome_line(a, earlier):
+    """At fix round 2 or later, one line naming the decision this round follows, when its outcome is not recorded
+    (0.14.2): the moment an ending shows is the moment to ask for it. Not a trigger; refuses and records nothing.
+    earlier: the ledger folded, as it was before this ask."""
+    if not a.task or a.recheck or (a.fix_round or 0) < 2:
+        return
+    asks = [e for e in by_time([d["ask"] for d in earlier.values()])
+            if str(e.get("task") or "").lower() == a.task.lower()]
+    rounds = [e for e in asks if isinstance(e.get("fixRound"), int) and 0 < e["fixRound"] < a.fix_round]
+    if not asks:
+        return
+    last = (rounds or asks)[-1]
+    if earlier[last["id"]]["outcomes"]:
+        return
+    was = f" (fix round {last['fixRound']})" if rounds else ""
+    print(f"decision: outcome: fix round {a.fix_round} of {a.task} follows {last['id']}{was}, whose outcome is not"
+          f" recorded. When you know how it turned out: decision.sh outcome {last['id']}"
+          f" --verdict {'|'.join(VERDICTS)} --by \"<what showed it>\"", file=sys.stderr)
 
 
 def meaningful(value, words=3):
