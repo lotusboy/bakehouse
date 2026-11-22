@@ -20,6 +20,8 @@ def event(kind, task):
 class Ground(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp()).resolve()
+        # no background work by git after a commit: the likely cause of test_nothing_is_written's one failure on CI
+        (self.tmp / ".gitconfig").write_text("[maintenance]\n\tauto = false\n[gc]\n\tauto = 0\n")
         self.env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(self.tmp),
                     "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": str(self.tmp / ".gitconfig"),
                     "BAKEHOUSE_MACHINE_DIR": str(self.tmp / "machine"), **IDENT}
@@ -307,7 +309,8 @@ commits with no work-order id, last 14 days: 1
         before = snapshot()
         self.text("src", "src/a.py", "src/new.py")
         self.as_json("src")
-        self.assertEqual(snapshot(), before)
+        after = snapshot()
+        self.assertEqual(after, before, [p for p in {**before, **after} if before.get(p) != after.get(p)])
 
     def test_the_command_is_listed(self):
         usage = subprocess.run([str(BAKEHOUSE)], capture_output=True, text=True, env=self.env).stderr
