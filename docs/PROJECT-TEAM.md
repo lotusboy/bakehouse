@@ -1678,6 +1678,14 @@ object), or holds a line whose shape status cannot use; stderr names it. 1 also:
 not a ledger. 2: bad usage, or a `--repo`
 that is not a folder inside a git repository.
 
+## Who has been there lately
+
+`bakehouse ground <path>...` shows which work orders changed a file or folder, from git: commits in the code
+roots, each owned by the first tracker id in its subject, over the whole history. `/bakehouse:change` shows it
+to the owner with the work order. It judges nothing: its 14 days (`--days`) are how far back it shows. Named
+limits: a renamed file's history starts at the rename; a lane's commits show once its branch is in this clone,
+or on a remote this clone has fetched; merge commits are not counted.
+
 ## How bakehouse's tools are designed
 
 For whoever adds a tool or changes one.
