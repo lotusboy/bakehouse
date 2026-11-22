@@ -19,7 +19,8 @@ predicted (result and tokens), what happened and the outcome (owner, 2026-09-27 
 use in results, not only stats). A run that went worse or failed, or whose tokens are off the prediction
 by more than half, gets a stub entry in <records>/TOOLS.md for the lesson to be written.
 A wrong agent row is never edited: `record --correct` appends a new row for the same agent id, and
-the latest row for an agent id is the one that counts.
+the latest row for an agent id is the one that counts. Its `tokens` is the agent's total so far; a wave's
+figure is the tokens its agents added while in it (`segments`).
 """
 import argparse
 import datetime
@@ -157,15 +158,42 @@ def agents(events):
     return list(latest.values())
 
 
+def segments(events):
+    """agent -> [[wave, amount], ...]: the tokens the agent added in each wave it was in, from its rows in ledger
+    order. A row's `tokens` is the agent's total so far. Amounts are never negative, and an agent's sum to its
+    latest total."""
+    out = {}
+    for e in events:
+        if e["event"] != "agent":
+            continue
+        wave, tokens, segs = e.get("wave"), e["tokens"], out.setdefault(e["agent"], [])
+        before = sum(n for _, n in segs)
+        if segs and (wave == segs[-1][0] or tokens <= before):
+            before -= segs.pop()[1]  # a corrected figure, or a wrong wave put right: it replaces the last segment
+        segs.append([wave, tokens - before])
+        while len(segs) > 1 and segs[-1][1] < 0:  # fewer than the segments before it held: taken from them
+            short = segs.pop()[1]
+            segs[-1][1] += short
+    return out
+
+
+def share(segs, wave):
+    """The tokens of one agent's segments that are in the wave (None: in no wave)."""
+    return sum(n for w, n in segs if w == wave)
+
+
 def wave_summary(events, name):
     w = waves(events)[name]
-    rows = [a for a in agents(events) if a.get("wave") == name]
-    spent = sum(a["tokens"] for a in rows)
+    segs = segments(events)
+    rows = [(a, share(segs[a["agent"]], name)) for a in agents(events)]
+    rows = [{"agent": a["agent"], "label": a.get("label"), "kind": a.get("kind"), "tokens": n, "total": a["tokens"],
+             "source": a.get("source"), "ts": a.get("ts")} for a, n in rows if n]
+    spent = sum(r["tokens"] for r in rows)
     frac = spent / w["ceiling"]
     level = "over" if frac >= STOP else "warn" if frac >= WARN else "ok"
     return {"wave": name, "ceiling": w["ceiling"], "spent": spent, "fraction": round(frac, 4), "level": level,
             "open": w["closed"] is None, "opened": w["opened"], "closed": w["closed"],
-            "agents": [{k: a.get(k) for k in ("agent", "label", "kind", "tokens", "source", "ts")} for a in rows]}
+            "agents": rows}
 
 
 def flag(s):
@@ -313,12 +341,17 @@ def cmd_record(a):
            "why": a.why, "predicted": a.predicted, "predictedTokens": a.predicted_tokens,
            "result": a.result, "outcome": a.outcome, "steppedBack": getattr(a, "stepped_back", None)}
     append(project, row)
-    if needs_lesson(a):
-        print(stub_lesson(project, a))
+    ev = read_events(project)
+    segs = segments(ev)[a.agent]
+    here = share(segs, a.wave)
+    if needs_lesson(a, here):
+        print(stub_lesson(project, a, here))
     print(f"recorded {a.agent} ({a.label}): {a.tokens:,} tokens, {a.source}"
           + (f", wave {a.wave}" if a.wave else ", no wave open"))
+    if len(segs) > 1:
+        print(f"{a.agent}: {here:,} of its {a.tokens:,} tokens are in {'this' if a.wave else 'no'} wave")
     if a.wave:
-        s = wave_summary(read_events(project), a.wave)
+        s = wave_summary(ev, a.wave)
         print(f"wave {a.wave}: {bar(s['fraction'])} {s['spent']:,} / {s['ceiling']:,} ({s['fraction'] * 100:.0f}%)")
         msg = flag(s)
         if msg:
@@ -327,21 +360,23 @@ def cmd_record(a):
         print(mirror_to_ops(project, a))
 
 
-def needs_lesson(a):
+def needs_lesson(a, here):
+    """here: the agent's share in this wave, which is what the round's own estimate is compared with."""
     if a.outcome is None:
         return False
-    off = a.predicted_tokens and abs(a.tokens - a.predicted_tokens) > a.predicted_tokens / 2
+    off = a.predicted_tokens and abs(here - a.predicted_tokens) > a.predicted_tokens / 2
     return a.outcome in ("worse", "failed") or bool(off)
 
 
-def stub_lesson(project, a):
+def stub_lesson(project, a, here):
     path = project.tool_lessons
     if not path.exists():
         return f"TOOLS.md: {name_of(project)} has none; no lesson stub written"
+    used = f"{a.tokens:,}" if here == a.tokens else f"{here:,} of its {a.tokens:,}"
     entry = (f"\n### {stamp()[:10]} — {a.task or '-'} — {a.label} ({a.kind}, {a.agent})\n"
              f"- **Why this tool:** {a.why}\n"
              f"- **Predicted:** {a.predicted}; {a.predicted_tokens:,} tokens.\n"
-             f"- **Actual:** {a.result}; {a.tokens:,} tokens ({a.source}); outcome {a.outcome}.\n"
+             f"- **Actual:** {a.result}; {used} tokens ({a.source}); outcome {a.outcome}.\n"
              f"- **Lesson:** TODO — what to do differently with this tool, or the tool this shows we need.\n")
     with path.open("a", encoding="utf-8") as f:
         f.write(entry)
@@ -379,11 +414,15 @@ def cmd_status(a):
 def cmd_report(a):
     project = resolve_project(a.repo)
     label = name_of(project)
-    rows = [r for r in agents(read_events(project)) if not a.since or r["ts"][:10] >= a.since]
+    ev = read_events(project)
+    segs = segments(ev)
+    rows = [r for r in agents(ev) if not a.since or r["ts"][:10] >= a.since]
     by = {"day": defaultdict(int), "wave": defaultdict(int), "kind": defaultdict(int), "source": defaultdict(int)}
     for r in rows:
         by["day"][r["ts"][:10]] += r["tokens"]
-        by["wave"][r.get("wave") or "(no wave)"] += r["tokens"]
+        for wave, n in segs[r["agent"]]:
+            if n:
+                by["wave"][wave or "(no wave)"] += n
         by["kind"][r["kind"]] += r["tokens"]
         by["source"][r["source"]] += r["tokens"]
     total = sum(r["tokens"] for r in rows)
@@ -406,7 +445,7 @@ def main():
     r.add_argument("--agent", required=True, help="the agent id from the completion notification")
     r.add_argument("--label", required=True, help="a short name for what it did")
     r.add_argument("--tokens", required=True, type=tokens_arg, help="subagent_tokens from the notification: the agent's total so far, not one run's share;"
-                   " for a continued agent, record its new total with --correct (the latest row for an agent id counts)")
+                   " for a continued agent, record its new total with --correct (its wave gets only what it added)")
     r.add_argument("--wave", help="default: the one open wave, if exactly one is open")
     r.add_argument("--kind", choices=KINDS, help="the role the agent ran as; required on a first record")
     r.add_argument("--source", choices=SOURCES, default="harness",
@@ -416,7 +455,7 @@ def main():
     r.add_argument("--note")
     r.add_argument("--why", help="why this tool was chosen over the alternatives")
     r.add_argument("--predicted", help="the result predicted before the run")
-    r.add_argument("--predicted-tokens", type=tokens_arg, help="the tokens predicted before the run")
+    r.add_argument("--predicted-tokens", type=tokens_arg, help="the tokens predicted for this round, never a running total")
     r.add_argument("--result", help="what actually happened, measured")
     r.add_argument("--outcome", choices=OUTCOMES)
     r.add_argument("--stepped-back", help="a second architect run for --task: the step-back done first")
@@ -428,7 +467,7 @@ def main():
     w = sub.add_parser("wave", help="open or close a wave")
     w.add_argument("action", choices=("open", "close"))
     w.add_argument("name", nargs="?")
-    w.add_argument("--ceiling", type=tokens_arg)
+    w.add_argument("--ceiling", type=tokens_arg, help="the round's own size, never a running total")
     w.add_argument("--repo", help="the project's repository folder; default: the current folder")
     w.set_defaults(fn=cmd_wave)
 
@@ -441,7 +480,7 @@ def main():
 
     h = sub.add_parser("headroom", help="exit 0 when the wave's spend plus an agent's estimate fits its ceiling")
     h.add_argument("wave")
-    h.add_argument("--est", required=True, type=tokens_arg, help="the next agent's estimated tokens")
+    h.add_argument("--est", required=True, type=tokens_arg, help="the next agent's estimated tokens for this round, never a running total")
     h.add_argument("--repo", help="the project's repository folder; default: the current folder")
     h.set_defaults(fn=cmd_headroom)
 
