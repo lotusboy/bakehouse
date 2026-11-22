@@ -82,6 +82,16 @@ class Rule(unittest.TestCase):
         self.assertEqual(spent(("a", 100, "w1"), ("a", 130, "w2"), ("a", 100, "w2")),
                          {"w1": (100, {"a": (100, 100)}), "w2": (0, {})})
 
+    def test_nothing_left_in_the_last_wave_is_still_its_last_segment(self):
+        # so a correction to another wave moves that nothing, not what the wave before it holds
+        self.assertEqual(spent(("a", 100, "w1"), ("a", 130, "w2"), ("a", 100, "w2"), ("a", 100, "w3")),
+                         {"w1": (100, {"a": (100, 100)}), "w2": (0, {}), "w3": (0, {})})
+
+    def test_a_row_with_no_wave_key_is_in_no_wave(self):
+        old = row("a", 100, None)
+        del old["wave"]
+        self.assertEqual(spend.segments([old, row("a", 130, "w1")]), {"a": [[None, 100], ["w1", 30]]})
+
     def test_back_to_an_earlier_wave(self):
         self.assertEqual(spent(("a", 100, "w1"), ("a", 130, "w2"), ("a", 180, "w1")),
                          {"w1": (150, {"a": (150, 180)}), "w2": (30, {"a": (30, 180)})})
@@ -238,7 +248,9 @@ class Commands(Scratch):
         self.assertEqual((r["kind"], r["source"]), ({"engineer": 137}, {"harness": 137}))
         r = self.report("--since", "2026-01-02")  # b goes; every wave a spent in stays
         self.assertEqual((r["total"], r["wave"]), (130, {"w1": 100, "w2": 30}))
-        self.again("a", 130, "w1", "--note", "n", env=new)  # nothing left in w2: no line for it
+        self.again("a", 100, "w2", "--note", "n", env=new)  # nothing left in w2: no line for it
+        self.assertEqual(self.report()["wave"], {"w1": 107})
+        self.again("a", 130, "w1", "--note", "n", env=new)
         self.assertEqual(self.report()["wave"], {"w1": 137})
 
     def backfill(self, agent, tokens, wave, env):
