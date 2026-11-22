@@ -1,5 +1,6 @@
-"""`bakehouse ground`: which work orders changed the given files or folders lately, from git. Standard library only.
-Run through bin/bakehouse. It reads git, the binding and the ops ledger; it writes nothing and uses no network.
+"""`bakehouse ground`: which work orders changed the given files or folders lately, from git, and what
+reviews found there. Standard library only. Run through bin/bakehouse. It reads git, the binding, the ops ledger and
+the findings files in the run folders; it writes nothing and uses no network.
 
   bakehouse ground [--json] [--days N] [--not <work order>] [--repo <folder>] <path>...
 
@@ -16,6 +17,12 @@ id that touched any of the paths), and paths, each:
   rank, of                a file with a visit: its place by visits among the files with one; ties share a place
   mostVisits              any other path: the 3 files in it with the most, [file, visits]
   everWorkOrders, firstCommit   over the whole history; firstCommit is a date (UTC), or null
+  findings                only where there are any, in the code roots or not: the serious review findings (ANDON, P0,
+                          P1) ever made there: count, earlier (of them, in code that BASE had), foundBy (the work
+                          orders whose reviews found them, the newest first; the text shows 8)
+and findingsUnread, only when there are any: the serious findings in run folders dated in the window with no Site line
+that names a file git has had on one of those branches, or none. A re-check beside a finding's file that repeats its id
+is the same finding: each line as the latest round that has it gives it.
 
 Exit 0; 1 the ops ledger is broken (the rest is printed) or git failed; 2 bad usage, or a binding without
 tracker.id or code roots; 3 no team here; 4 setup needed.
@@ -27,10 +34,11 @@ import argparse
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import bakehouse_status
@@ -41,18 +49,32 @@ records_check = importlib.util.module_from_spec(_records)
 _records.loader.exec_module(records_check)
 
 SHOWN_IDS, SHOWN_FILES = 8, 3
+RUN = re.compile(r"([0-9]{4}-[0-9]{2}-[0-9]{2})(?![0-9])(.*)", re.S)  # its date, and the rest of its name
+FENCE = re.compile(r"\s*(`{3,}(?!.*`)|~{3,})(.*)")
+HEADING = re.compile(r" {0,3}(#{1,6})\s+(.*)")
+FINDING = re.compile(r"[*_`(\[]*([A-Z][A-Z0-9.-]*[0-9][a-z]?)(?![A-Za-z0-9])")  # the id a finding's heading starts with
+SEVERITY = re.compile(r"\b(?:ANDON|P[0-3])\b")
+SERIOUS = ("ANDON", "P0", "P1")  # agents/reviewer.md, "Severity"
+# a line of a finding, with any bullet, bold or backtick marks
+LINE = re.compile(r"\s*(?:[0-9]+[.)])?[\s*+\-_`]*(Site|Origin)[*_`]*:(?:__\s)?(.*)", re.I)
+MARKS = " \t\r*`"
+
+
+def git_log(root, *args) -> list:
+    """`git log -z` over the branches that count. The options undo a user's git config."""
+    out = subprocess.run(
+        ["git", "--literal-pathspecs", "-C", str(root), "log", f"--exclude={locator.RECORDS_BRANCH}", "--branches",
+         f"--exclude=*/{locator.RECORDS_BRANCH}", "--remotes", "HEAD", "--full-history", "--root", "--no-renames",
+         "--no-show-signature", "-z", "--name-only", *args],
+        capture_output=True, check=True, env={**os.environ, "GIT_NO_LAZY_FETCH": "1"}).stdout
+    return out.decode("utf-8", "surrogateescape").split("\0")
 
 
 def history(root, roots, rx, leave_out) -> list:
     """[(when it was written, its work order or None, the files it changed)]. --full-history: a merge that dropped a side's
-    change does not hide the commit that made it. The other options undo a user's git config."""
-    out = subprocess.run(
-        ["git", "--literal-pathspecs", "-C", str(root), "log", f"--exclude={locator.RECORDS_BRANCH}", "--branches",
-         f"--exclude=*/{locator.RECORDS_BRANCH}", "--remotes", "HEAD", "--no-merges", "--full-history", "--root",
-         "--no-renames", "--no-show-signature", "-z", "--name-only", "--format=/%at %s", "--", *roots],
-        capture_output=True, check=True, env={**os.environ, "GIT_NO_LAZY_FETCH": "1"}).stdout
+    change does not hide the commit that made it."""
     commits = []
-    for token in out.decode("utf-8", "surrogateescape").split("\0"):
+    for token in git_log(root, "--no-merges", "--format=/%at %s", "--", *roots):
         if token.startswith("/"):  # a commit: git never prints a file name that starts with a slash
             at, subject = token[1:].split(" ", 1)
             m, files = rx.search(subject), []
@@ -74,6 +96,91 @@ def open_work_orders(project):
         return {w["workOrder"] for w in bakehouse_status.ops_part(rows, None)[0]}, None
     except Exception as e:  # noqa: BLE001 - any line shape status cannot use, as status reports it
         return None, f"the ledger {files[0]} holds a line status cannot use ({e!r})"
+
+
+def run_folders(project, binding, rx) -> list:
+    """[(its work order, its date, the folder)]; a linked folder is not followed."""
+    try:
+        base, name, mode = locator.runs_location(project, binding)
+        if mode == "tree" and locator.reviews_problem(name):
+            return []
+        folders = [e for e in os.scandir(Path(base) / name) if e.is_dir(follow_symlinks=False)]
+    except (OSError, ValueError, locator.BadRuns):
+        return []
+    runs = []
+    for e in folders:
+        m = RUN.match(e.name)
+        wo = m and rx.search(m.group(2))
+        try:
+            if wo:
+                runs.append((wo.group(), date.fromisoformat(m.group(1)), e.path))
+        except ValueError:  # no such day
+            pass
+    return runs
+
+
+def findings_in(text, wo) -> list:
+    """One findings file: [{id, severity, and its first site and origin lines, as written}]."""
+    found, now, level, fence = [], None, 0, None
+    for line in text.split("\n"):
+        mark, head = FENCE.match(line), HEADING.match(line)
+        if fence:
+            if mark and mark.group(1).startswith(fence) and not mark.group(2).strip():
+                fence = None
+        elif mark:
+            fence = mark.group(1)
+        elif head:
+            depth, title = len(head.group(1)), head.group(2)
+            m = FINDING.match(title)
+            severity = m and (SEVERITY.search(title, m.end()) or SEVERITY.search(m.group(1)))
+            title_of_the_file = m and depth == 1 and m.group(1) == wo
+            if severity and not SEVERITY.fullmatch(m.group(1)) and not title_of_the_file:
+                now, level = {"id": m.group(1), "severity": severity.group()}, depth
+                found.append(now)
+            elif depth <= level:
+                now = None
+        elif now is not None and (m := LINE.match(line)):
+            now.setdefault(m.group(1).lower(), m.group(2).strip(MARKS))
+    return found
+
+
+def serious_findings(project, runs) -> list:
+    """[(its work order, its run folder's date, its site: a path, "" for none, or None when not readable, earlier)]."""
+    latest = {}  # (work order, date, the findings file's folder, id): a finding
+    for wo, day, folder in runs:
+        for at, _, names in os.walk(folder):
+            rounds = [(re.fullmatch(r"findings-fix([0-9]+)\.md", n), n) for n in names
+                      if n.startswith("findings") and n.endswith(".md")]
+            for _, n in sorted((int(m.group(1)) if m else 0, n) for m, n in rounds):
+                try:
+                    data = Path(at, n).read_bytes() if Path(at, n).is_file() else b""  # never a pipe
+                except OSError:
+                    continue
+                for f in findings_in(data.decode("utf-8-sig", "surrogateescape"), wo):
+                    latest[wo, day, at, f["id"]] = {**latest.get((wo, day, at, f["id"]), {}), **f}
+    serious = [(key, f) for key, f in latest.items() if f["severity"] in SERIOUS]
+    had = set(git_log(project.root, "-c", "--format=")) if serious else set()  # -c: a merge's own files too
+    return [(key[0], key[1], site(f.get("site", ""), had), bool(re.match(r"earlier\b", f.get("origin", ""), re.I)))
+            for key, f in serious]
+
+
+def site(text, had):
+    """The path a Site line names: the line as written, else up to a backtick, a line number, or a space."""
+    for cut in ("$", "`", ":", r"\s"):
+        path = os.path.normpath(re.split(cut, text, maxsplit=1)[0].rstrip(MARKS + ",;.:") or ".")
+        if path in had:
+            return path
+    return "" if re.split(r"[\s*`,;.:]", text, maxsplit=1)[0].lower() == "none" else None
+
+
+def at_path(path, serious):
+    """The `findings` of one path, or None."""
+    mine = [f for f in serious if f[2] and under(f[2], path)]
+    last = {}  # work order: the date of its newest run folder that found one here
+    for wo, day, _, _ in mine:
+        last[wo] = max(day, last.get(wo, day))
+    return {"count": len(mine), "earlier": sum(f[3] for f in mine),
+            "foundBy": sorted(last, key=lambda wo: (last[wo], len(wo), wo), reverse=True)} if mine else None
 
 
 def under(file, path) -> bool:
@@ -112,29 +219,40 @@ def ordinal(n) -> str:
     return f"{n}{'th' if n % 100 in (11, 12, 13) else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
 
 
+def shown(ids) -> str:
+    return ", ".join(ids[:SHOWN_IDS]) + (f" and {len(ids) - SHOWN_IDS} more" if len(ids) > SHOWN_IDS else "")
+
+
+def visits_text(p, s, lately) -> list:
+    if not p["inCodeRoots"]:
+        return [f"  outside the code roots: not counted{' for work orders' if 'findings' in p else ''}"]
+    if not p["inWorkingTree"] and not p["firstCommit"]:
+        return ["  no history, and not in the working tree"]
+    line = f"  work orders, {lately}: {len(p['workOrders'])}"
+    if p["workOrders"]:
+        line += f" ({shown(p['workOrders'])}), "
+        line += "open not known" if p["open"] is None else f"{p['open']} open now"
+    out = [line + (f"; {ordinal(p['rank'])} of {p['of']} files changed" if p["rank"] else "")]
+    if p["mostVisits"]:
+        out.append("  most visits: " + ", ".join(f"{f} {n}" for f, n in p["mostVisits"]))
+    return [*out, f"  work orders, ever: {p['everWorkOrders']}, "
+            + (f"first commit {p['firstCommit']}" if p["firstCommit"] else f"no {'other ' if s['not'] else ''}commits")]
+
+
 def plain(s) -> str:
     lately = f"last {s['days']} days"
-    out = [f"only the code roots count: {', '.join(s['codeRoots'])}" + (f"; without {s['not']}" if s["not"] else "")]
+    out = [f"only the code roots count{' for work orders' if any('findings' in p for p in s['paths']) else ''}: "
+           + ", ".join(s["codeRoots"]) + (f"; without {s['not']}" if s["not"] else "")]
     for p in s["paths"]:
-        out.append(p["path"])
-        if not p["inCodeRoots"]:
-            out.append("  outside the code roots: not counted")
-            continue
-        if not p["inWorkingTree"] and not p["firstCommit"]:
-            out.append("  no history, and not in the working tree")
-            continue
-        line, ids = f"  work orders, {lately}: {len(p['workOrders'])}", p["workOrders"]
-        if ids:
-            more = f" and {len(ids) - SHOWN_IDS} more" if len(ids) > SHOWN_IDS else ""
-            line += f" ({', '.join(ids[:SHOWN_IDS])}{more}), "
-            line += "open not known" if p["open"] is None else f"{p['open']} open now"
-        out.append(line + (f"; {ordinal(p['rank'])} of {p['of']} files changed" if p["rank"] else ""))
-        if p["mostVisits"]:
-            out.append("  most visits: " + ", ".join(f"{f} {n}" for f, n in p["mostVisits"]))
-        out.append(f"  work orders, ever: {p['everWorkOrders']}, "
-                   + (f"first commit {p['firstCommit']}" if p["firstCommit"] else f"no {'other ' if s['not'] else ''}commits"))
+        out += [p["path"], *visits_text(p, s, lately)]
+        f = p.get("findings")
+        if f:
+            earlier = f", {f['earlier']} of them in earlier code" if f["earlier"] else ""
+            out.append(f"  serious review findings: {f['count']}{earlier} (found by {shown(f['foundBy'])})")
     if s["noId"]:
         out.append(f"commits with no work-order id, {lately}: {s['noId']}")
+    if s.get("findingsUnread"):
+        out.append(f"serious review findings, {lately}, with no Site line that can be read: {s['findingsUnread']}")
     return "\n".join(out)
 
 
@@ -181,6 +299,7 @@ def main(argv, root) -> int:
         ap.error(f"--not {a.leave_out} is not a work-order id of this project")
     try:
         commits = history(project.root, roots, rx, a.leave_out)
+        serious = serious_findings(project, [r for r in run_folders(project, binding, rx) if r[0] != a.leave_out])
     except subprocess.CalledProcessError as e:
         print(f"bakehouse ground: git log failed: {os.fsdecode(e.stderr).strip()}", file=sys.stderr)
         return 1
@@ -190,6 +309,13 @@ def main(argv, root) -> int:
          "not": a.leave_out, "paths": [facts(p, project.root, roots, commits, start, open_ids) for p in paths],
          "noId": sum(not wo and at >= start and any(under(f, p) for f in files for p in paths)
                      for at, wo, files in commits)}
+    for p in s["paths"]:
+        found = at_path(p["path"], serious)
+        if found:
+            p["findings"] = found
+    unread = sum(where is None and day >= date.fromtimestamp(start) for _, day, where, _ in serious)
+    if unread:
+        s["findingsUnread"] = unread
     sys.stdout.reconfigure(errors="surrogateescape")  # a file name that is not UTF-8
     print(json.dumps(s, indent=2) if a.json else plain(s))
     if why:
