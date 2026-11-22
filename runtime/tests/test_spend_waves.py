@@ -67,6 +67,9 @@ class Rule(unittest.TestCase):
                          {"w1": (100, {"a": (100, 130)}), "w2": (0, {}), "w3": (30, {"a": (30, 130)})})
         self.assertEqual(spent(("a", 100, "w1"), ("a", 130, "w2"), ("a", 120, "w3")),
                          {"w1": (100, {"a": (100, 120)}), "w2": (0, {}), "w3": (20, {"a": (20, 120)})})
+        # two rounds in one wave are one segment: both move
+        self.assertEqual(spent(("a", 100, "w1"), ("a", 130, "w1"), ("a", 130, "w2")),
+                         {"w1": (0, {}), "w2": (130, {"a": (130, 130)})})
 
     def test_fewer_tokens_than_the_earlier_segments_held(self):
         self.assertEqual(spent(("a", 100, "w1"), ("a", 130, "w2"), ("a", 80, "w2")),
@@ -86,6 +89,13 @@ class Rule(unittest.TestCase):
         # so a correction to another wave moves that nothing, not what the wave before it holds
         self.assertEqual(spent(("a", 100, "w1"), ("a", 130, "w2"), ("a", 100, "w2"), ("a", 100, "w3")),
                          {"w1": (100, {"a": (100, 100)}), "w2": (0, {}), "w3": (0, {})})
+
+    def test_the_same_row_again_changes_nothing(self):
+        # also when it is a figure below what the earlier segments held
+        for rows in ([("a", 100, "w1"), ("a", 130, "w2"), ("a", 80, "w2")], [("a", 100, "w1"), ("a", 130, "w2"), ("a", 80, "w3")],
+                     [("a", 100, "w1"), ("a", 130, "w2"), ("a", 150, "w3"), ("a", 60, "w3")], [("a", 100, "w1"), ("a", 100, "w2")]):
+            with self.subTest(rows=rows):
+                self.assertEqual(spent(*rows, rows[-1]), spent(*rows))
 
     def test_a_row_with_no_wave_key_is_in_no_wave(self):
         old = row("a", 100, None)
@@ -274,6 +284,40 @@ class Commands(Scratch):
         self.run_("wave", "close", "w1")
         self.run_("wave", "close", "w2")
         self.assertIn("\na: 5,000 of its 25,000 tokens are in no wave\n", self.again("a", 25000).stdout)
+
+    def test_record_says_nothing_of_a_share_that_is_the_whole(self):
+        self.wave("w1", 100000)
+        self.wave("w2", 100000)
+        self.first("a", 10000, "w1")
+        self.again("a", 15000, "w2")
+        self.assertNotIn("tokens are in", self.again("a", 15000, "w1").stdout)  # all of it is in w1 again
+
+    def test_record_says_what_another_wave_lost(self):
+        for name in ("w1", "w2", "w3"):
+            self.wave(name, 100000)
+        self.first("a", 10000, "w1")
+        line = "no longer count in"
+        self.assertNotIn(line, self.again("a", 12000, "w1").stdout)
+        self.assertNotIn(line, self.again("a", 15000, "w2").stdout)
+        self.assertNotIn(line, self.again("a", 14000, "w2").stdout)  # the same wave
+        self.assertIn("\na: 2,000 of its tokens no longer count in wave w2\n", self.again("a", 13000, "w3").stdout)
+        p = self.again("a", 9000, "w3").stdout  # fewer than w1 held
+        self.assertIn("\na: 3,000 of its tokens no longer count in wave w1\n", p)
+        self.assertEqual(p.count(line), 1)
+        self.first("d", 10000, "w1")
+        self.again("d", 15000, "w2")
+        self.again("d", 18000, "w1")  # w1 entered a second time: one line for it
+        p = self.again("d", 18000, "w3").stdout
+        self.assertIn("\nd: 3,000 of its tokens no longer count in wave w1\n", p)
+        self.assertEqual(p.count(line), 1)
+        self.first("b", 10000, "w1")  # its round's own count given in place of its total
+        self.assertIn("\nb: 10,000 of its tokens no longer count in wave w1\n", self.again("b", 9000, "w2").stdout)
+        for name in ("w1", "w2", "w3"):
+            self.run_("wave", "close", name)
+        self.first("c", 10000)
+        self.run_("wave", "open", "w4", "--ceiling", "100000")
+        self.assertIn("\nc: 10,000 of its tokens no longer count outside any wave\n",
+                      self.again("c", 10000).stdout)
 
     def test_a_lesson_compares_the_waves_share_with_the_estimate(self):
         self.tools.write_text("# TOOLS\n")

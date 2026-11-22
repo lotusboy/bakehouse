@@ -314,7 +314,7 @@ them, and each tool's header comment is its full reference.
   next update. At 100%, dispatch nothing more in that wave until the owner raises the ceiling or the wave
   closes. `--tokens` is that agent's total so far: when an agent is continued, record its new total with
   `spend.sh record --correct`; its wave gets only what it added. A ceiling, an estimate and a
-  `--predicted-tokens` are always the round's own size, never a running total, also when shown to the owner.
+  `--predicted-tokens` are always for this wave alone, never a running total, also when shown to the owner.
 - **Turns are estimated, like tokens.** Before each dispatch, state the turns the brief needs against the
   agent type's cap (`maxTurns` in ${CLAUDE_PLUGIN_ROOT}/agents/<name>.md), and put that cap, not a larger number, in the
   brief. A brief that does not fit is split across agents or cut before it starts. An agent that stops at

@@ -171,9 +171,10 @@ def segments(events):
         if segs and (wave == segs[-1][0] or tokens <= before):
             before -= segs.pop()[1]  # a corrected figure, or a wrong wave put right: it replaces the last segment
         segs.append([wave, tokens - before])
-        while len(segs) > 1 and segs[-1][1] < 0:  # fewer than the segments before it held: taken from them
-            short = segs.pop()[1]
-            segs[-1][1] += short
+        for i in range(len(segs) - 1, 0, -1):  # fewer than the segments before it held: taken from them
+            if segs[i][1] < 0:
+                segs[i - 1][1] += segs[i][1]
+                segs[i][1] = 0
     return out
 
 
@@ -340,6 +341,7 @@ def cmd_record(a):
            "note": a.note, "corrects": bool(a.correct), "backfilled": bool(os.environ.get("SPEND_TS")),
            "why": a.why, "predicted": a.predicted, "predictedTokens": a.predicted_tokens,
            "result": a.result, "outcome": a.outcome, "steppedBack": getattr(a, "stepped_back", None)}
+    was = segments(ev).get(a.agent, [])
     append(project, row)
     ev = read_events(project)
     segs = segments(ev)[a.agent]
@@ -348,8 +350,12 @@ def cmd_record(a):
         print(stub_lesson(project, a, here))
     print(f"recorded {a.agent} ({a.label}): {a.tokens:,} tokens, {a.source}"
           + (f", wave {a.wave}" if a.wave else ", no wave open"))
-    if len(segs) > 1:
+    if here != a.tokens:
         print(f"{a.agent}: {here:,} of its {a.tokens:,} tokens are in {'this' if a.wave else 'no'} wave")
+    for wave in dict.fromkeys(w for w, _ in was if w != a.wave):
+        lost = share(was, wave) - share(segs, wave)
+        if lost:
+            print(f"{a.agent}: {lost:,} of its tokens no longer count {f'in wave {wave}' if wave else 'outside any wave'}")
     if a.wave:
         s = wave_summary(ev, a.wave)
         print(f"wave {a.wave}: {bar(s['fraction'])} {s['spent']:,} / {s['ceiling']:,} ({s['fraction'] * 100:.0f}%)")
@@ -361,7 +367,7 @@ def cmd_record(a):
 
 
 def needs_lesson(a, here):
-    """here: the agent's share in this wave, which is what the round's own estimate is compared with."""
+    """here: the agent's share in this wave, which is what its estimate for the wave is compared with."""
     if a.outcome is None:
         return False
     off = a.predicted_tokens and abs(here - a.predicted_tokens) > a.predicted_tokens / 2
@@ -455,7 +461,7 @@ def main():
     r.add_argument("--note")
     r.add_argument("--why", help="why this tool was chosen over the alternatives")
     r.add_argument("--predicted", help="the result predicted before the run")
-    r.add_argument("--predicted-tokens", type=tokens_arg, help="the tokens predicted for this round, never a running total")
+    r.add_argument("--predicted-tokens", type=tokens_arg, help="the tokens predicted for the agent in this wave alone, never a running total")
     r.add_argument("--result", help="what actually happened, measured")
     r.add_argument("--outcome", choices=OUTCOMES)
     r.add_argument("--stepped-back", help="a second architect run for --task: the step-back done first")
@@ -467,7 +473,7 @@ def main():
     w = sub.add_parser("wave", help="open or close a wave")
     w.add_argument("action", choices=("open", "close"))
     w.add_argument("name", nargs="?")
-    w.add_argument("--ceiling", type=tokens_arg, help="the round's own size, never a running total")
+    w.add_argument("--ceiling", type=tokens_arg, help="for this wave alone, never a running total")
     w.add_argument("--repo", help="the project's repository folder; default: the current folder")
     w.set_defaults(fn=cmd_wave)
 
@@ -480,7 +486,7 @@ def main():
 
     h = sub.add_parser("headroom", help="exit 0 when the wave's spend plus an agent's estimate fits its ceiling")
     h.add_argument("wave")
-    h.add_argument("--est", required=True, type=tokens_arg, help="the next agent's estimated tokens for this round, never a running total")
+    h.add_argument("--est", required=True, type=tokens_arg, help="the next agent's estimated tokens in this wave alone, never a running total")
     h.add_argument("--repo", help="the project's repository folder; default: the current folder")
     h.set_defaults(fn=cmd_headroom)
 

@@ -1432,8 +1432,10 @@ added while in it, worked out from each agent's rows in ledger order:
 - A row in another wave with the same tokens or fewer corrects the last wave: what was added there moves.
 - A wave's amount is never below zero: what is missing is taken from the agent's wave before.
 
-The waves, and no wave, always sum to the agents' totals. So a ceiling, an estimate and a
-`--predicted-tokens` are always the round's own size, never a running total, also when shown to the owner.
+The waves, and no wave, always sum to the agents' totals. Only what the agent added last can be corrected, and
+`record` prints a line when a wave loses tokens by it. So a ceiling, an estimate and a `--predicted-tokens`
+(all the agent's rounds in the wave) are always for this wave alone, never a running total, also when shown to
+the owner.
 
 ### Decision triggers
 

@@ -198,11 +198,11 @@
    "file": "skills/pm/SKILL.md",
    "sentences": [
     "- **Spend is measured, not estimated.** When an agent finishes, record the token count the harness reported with `${CLAUDE_PLUGIN_ROOT}/runtime/spend.sh record` — the harness's figure, never the agent's own estimate.",
-    "A ceiling, an estimate and a `--predicted-tokens` are always the round's own size, never a running total, also when shown to the owner."
+    "A ceiling, an estimate and a `--predicted-tokens` are always for this wave alone, never a running total, also when shown to the owner."
    ],
    "enforcer": "prompt",
    "proof": "prompt only: no tool, hook or review brief checks it",
-   "note": "spend.sh records whatever figure it is given; it cannot tell the harness's figure from an estimate, nor a round's size from a running total"
+   "note": "spend.sh records whatever figure it is given; it cannot tell the harness's figure from an estimate, nor a wave's size from a running total"
   },
   {
    "id": "pm-22",
