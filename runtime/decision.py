@@ -285,7 +285,7 @@ def cmd_ask(a):
           "recommendation": a.recommendation or None, "confidence": conf,
           "evidence": {"kind": a.evidence_kind, "pointer": a.evidence or None},
           "blind": a.blind, "autonomous": a.autonomous, "questionsRef": None,
-          "read": [{"path": r, "what": a.read_what} for r in a.read] or None,
+          "read": [{"path": r, "what": w} for r, w in zip(a.read, read_whats(a))] or None,
           "task": a.task or None, "fixRound": a.fix_round, "rechecked": a.rechecked or None,
           "upstream": a.upstream or None, "steppedBack": a.stepped_back or None,
           "recheck": bool(a.recheck), "change": changes(a), "layer": a.layer, "owners": a.owners,
@@ -317,6 +317,14 @@ def outcome_line(a, earlier):
     print(f"decision: outcome: fix round {a.fix_round} of {a.task} follows {last['id']}{was}, whose outcome is not"
           f" recorded. When you know how it turned out: decision.sh outcome {last['id']}"
           f" --verdict {'|'.join(VERDICTS)} --by \"<what showed it>\"", file=sys.stderr)
+
+
+def read_whats(a):
+    """What was looked at in each --read file: as many texts as files, each with its own; one text, with every file;
+    any other count, all of them with every file."""
+    if len(a.read_what) == len(a.read):
+        return a.read_what
+    return ["; ".join(a.read_what) if a.read_what else None] * len(a.read)
 
 
 def meaningful(value, words=3):
@@ -367,7 +375,7 @@ def check_grounding(a, cfg):
             if report or blind_readers_record(path):
                 fail(f"--read {r}: that is an agent's record, not the source; open what it is about",
                      "decision:read-report")
-        if not meaningful(a.read_what, 1):
+        if not a.read_what or not all(meaningful(w, 1) for w in a.read_what):
             fail("--read-what is required: the rows, cells or lines you looked at in the --read file(s)",
                  "decision:read-what")
     text = a.question.lower()
@@ -1001,7 +1009,8 @@ def main():
     s.add_argument("--autonomous", action="store_true", help="decided by the agent without asking")
     s.add_argument("--id")
     s.add_argument("--read", action="append", default=[], help="a source file you opened yourself; repeat")
-    s.add_argument("--read-what", help="the rows, cells or lines you looked at in it")
+    s.add_argument("--read-what", action="append", default=[],
+                   help="the rows, cells or lines you looked at in it; repeat, one per --read in order, or one for all")
     s.add_argument("--task", help="the work order id the question serves")
     s.add_argument("--approves", help="the option that approves a close exception (predict-gate.sh close); one of --option")
     s.add_argument("--fix-round", type=int, help="which fix round of --task this question opens")
