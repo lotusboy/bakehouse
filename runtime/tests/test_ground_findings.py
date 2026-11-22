@@ -142,22 +142,22 @@ class GroundFindings(unittest.TestCase):
                     "## F6 — P1: a dash\nSite: src/a.py:4\n", "### **F7** [P1] bold\nSite: src/a.py:4\n",
                     "## F8 (P2): the P1 path\nSite: src/a.py:4\n", "## F10: no severity\nSite: src/a.py:4\n",
                     "## P1-2: the severity in the id\nSite: src/a.py:4\n", "## P1-3 (P2): x\nSite: src/a.py:4\n",
-                    "## P1 findings\nSite: src/a.py:4\n")
-        self.assertEqual(self.found("src/a.py")[0], 6)
+                    "## P1 findings\nSite: src/a.py:4\n", "## F1a (P1): a letter\nSite: src/a.py:4\n")
+        self.assertEqual(self.found("src/a.py")[0], 7)
         self.assertEqual(self.unread(), 0, "a P2 finding with no site is not counted")
 
     def test_the_origins(self):
         self.review("A3", *[finding(f"F{n}", "P1", "src/a.py:4", o) for n, o in
                             enumerate(("earlier", "earlier A12", "this", "this, not checked against BASE", "elsewhere",
-                                       None), 1)], finding("F7", "P1", "none", "earlier"))
-        self.assertEqual(self.found("src/a.py"), (6, 2, ["A3"]))
+                                       None, "Earlier A2", "earliers"), 1)], finding("F9", "P1", "none", "earlier"))
+        self.assertEqual(self.found("src/a.py"), (8, 3, ["A3"]))
         self.assertEqual(self.unread(), 0, "Site: none is readable")
 
     def test_the_marks_around_a_line(self):
         for n, line in enumerate(("- **Site:** `src/a.py:4`", "Site: src/a.py:4", "* **Site**: src/a.py:4", "**Site: src/a.py:4**",
                                   "`Site: src/a.py:4`", "  - `Site:` src/a.py:4 (the limit check)", "Site: `src/a.py:4`, the check",
                                   "Site: ./src/a.py:4-9", "Site: src/a.py, the check", "- __Site:__ src/a.py:4\r",
-                                  "1. Site: src/a.py:4", "Site: src/a.py."), 1):
+                                  "1. Site: src/a.py:4", "Site: src/a.py.", "site: src/a.py:4"), 1):
             self.review(f"A{n}", f"## F1 (P1): x\n{line}\n- **Origin:** `earlier` A2\n")
             self.assertEqual(self.found("src/a.py"), (n, n, [f"A{i}" for i in range(n, 0, -1)]), line)
         self.review("A20", finding("F1", "P1", "`src/two words.py:3`"), finding("F2", "P1", "src/__init__.py:1"),
@@ -182,10 +182,11 @@ class GroundFindings(unittest.TestCase):
         self.review("A3", finding("F1", "P1"), finding("F2", "P0", "a.py:4"), finding("F3", "ANDON", "src/never.py:4"),
                     finding("F4", "P1", "src/a.py:4"), finding("F5", "P3"), finding("F6", "P1", "/src/a.py"),
                     finding("F7", "P1", "../proj/src/a.py"), finding("F8", "P1", "src"))
-        self.review("A4", finding("F1", "P1"), days_ago=20)
-        self.assertEqual(self.unread(), 6)
-        self.assertEqual(self.unread("--days", "30"), 7)
-        self.assertEqual(self.run_ground("src").splitlines()[-1], UNREAD + "6")
+        for days_ago in (14, 15, 20):  # the first day of the window counts
+            self.review("A4", finding("F1", "P1"), days_ago=days_ago)
+        self.assertEqual(self.unread(), 7)
+        self.assertEqual(self.unread("--days", "30"), 9)
+        self.assertEqual(self.run_ground("src").splitlines()[-1], UNREAD + "7")
         self.assertEqual(self.found("src")[0], 1)
 
     def test_git_had_the_path_in_any_way(self):
