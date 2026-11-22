@@ -379,10 +379,12 @@ def stub_lesson(project, a, here):
     if not path.exists():
         return f"TOOLS.md: {name_of(project)} has none; no lesson stub written"
     used = f"{a.tokens:,}" if here == a.tokens else f"{here:,} of its {a.tokens:,}"
+    why, predicted, result = ("not given" if v is None else v for v in (a.why, a.predicted, a.result))
+    size = "tokens not given" if a.predicted_tokens is None else f"{a.predicted_tokens:,} tokens"
     entry = (f"\n### {stamp()[:10]} — {a.task or '-'} — {a.label} ({a.kind}, {a.agent})\n"
-             f"- **Why this tool:** {a.why}\n"
-             f"- **Predicted:** {a.predicted}; {a.predicted_tokens:,} tokens.\n"
-             f"- **Actual:** {a.result}; {used} tokens ({a.source}); outcome {a.outcome}.\n"
+             f"- **Why this tool:** {why}\n"
+             f"- **Predicted:** {predicted}; {size}.\n"
+             f"- **Actual:** {result}; {used} tokens ({a.source}); outcome {a.outcome}.\n"
              f"- **Lesson:** TODO — what to do differently with this tool, or the tool this shows we need.\n")
     with path.open("a", encoding="utf-8") as f:
         f.write(entry)
