@@ -1587,7 +1587,7 @@ refusals can be counted per tool and per check. The event is ops-event.sh's, wit
 | `decision:read-required` | decision.sh | no `--read` for a category that needs one |
 | `decision:read-file` | decision.sh | a `--read` path is not a file |
 | `decision:read-report` | decision.sh | a `--read` file is an agent's record, not the source |
-| `decision:read-what` | decision.sh | no `--read-what` |
+| `decision:read-what` | decision.sh | no `--read-what`, or one with no word in it |
 | `decision:inference` | decision.sh | the question uses an inference word without `guess:` |
 | `decision:recheck` | decision.sh | `--recheck` misused, or no fix round to review |
 | `decision:upstream` | decision.sh | a fix round with no `--upstream` |

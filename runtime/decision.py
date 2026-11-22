@@ -315,8 +315,8 @@ def outcome_line(a, earlier):
         return
     was = f" (fix round {last['fixRound']})" if rounds else ""
     print(f"decision: outcome: fix round {a.fix_round} of {a.task} follows {last['id']}{was}, whose outcome is not"
-          f" recorded. When you know how it turned out: decision.sh outcome {last['id']}"
-          f" --verdict {'|'.join(VERDICTS)} --by \"<what showed it>\"", file=sys.stderr)
+          f" recorded. When you know how it turned out: decision.sh outcome {last['id']} --verdict VERDICT"
+          f" --by \"what showed it\" (VERDICT: {', '.join(VERDICTS[:-1])} or {VERDICTS[-1]})", file=sys.stderr)
 
 
 def read_whats(a):

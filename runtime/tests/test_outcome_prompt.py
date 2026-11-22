@@ -47,8 +47,8 @@ class Ask(Scratch):
     def line(self, n, did, earlier=None, task="T7"):
         was = f" (fix round {earlier})" if earlier else ""
         return (f"decision: outcome: fix round {n} of {task} follows {did}{was}, whose outcome is not recorded."
-                f" When you know how it turned out: decision.sh outcome {did} --verdict held|reversed|refined"
-                ' --by "<what showed it>"')
+                f" When you know how it turned out: decision.sh outcome {did} --verdict VERDICT"
+                ' --by "what showed it" (VERDICT: held, reversed or refined)')
 
 
 class OutcomeLine(Ask):
@@ -163,10 +163,15 @@ class OutcomeLine(Ask):
     def test_the_lines_own_command_silences_it(self):
         one = self.round_(1).stdout.strip()
         (line,) = self.lines(self.round_(2))
-        did = re.search(r"decision\.sh outcome (\S+) --verdict held", line)[1]
-        self.assertEqual(did, one)
+        cmd = re.search(r": (decision\.sh outcome .*) \(VERDICT: ", line)[1].replace("decision.sh", f"'{self.rt}/decision.sh'")
+        self.assertIn(f"outcome {one} ", cmd)
         two = self.rows()[-1]["id"]
-        self.outcome(did)
+        self.assertNotEqual(self.run_(["sh", "-c", cmd]).returncode, 0)  # as printed: refused, nothing recorded
+        self.assertEqual(len(self.rows()), 2)
+        p = self.run_(["sh", "-c", cmd.replace("VERDICT", "refined")])
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        row = self.rows()[-1]
+        self.assertEqual((row["kind"], row["id"], row["verdict"], row["by"]), ("outcome", one, "refined", "what showed it"))
         self.assertEqual(self.lines(self.round_(3)), [self.line(3, two, 2)])
 
 
