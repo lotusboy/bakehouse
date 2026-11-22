@@ -1053,6 +1053,10 @@ before `rounds.from` (the round names' date, below; one date for both rules) owe
 because older reviews recorded their mutations as prose. A mutation file that exists is checked
 whatever its date.
 
+**Where a finding is, and where it came from.** Each finding in a findings file is headed `## <id>
+(<severity>): <what>` and holds a `Site:` line (a path from the repository root and a line, or `none`) and an
+`Origin:` line (`this`, `earlier` or `elsewhere`). `bakehouse ground` reads them; no check asks for them.
+
 **The round names (`rounds`, declared once in record-contracts.json).** The first review writes
 `findings.md` and `mutations.json`. The re-check of fix round N writes `findings-fix<N>.md` and
 `mutations-fix<N>.json`, beside the first review's files. The mutation runner's batch log for a round
@@ -1683,8 +1687,10 @@ that is not a folder inside a git repository.
 `bakehouse ground <path>...` shows which work orders changed a file or folder, from git: commits in the code
 roots, each owned by the first tracker id in its subject, over the whole history. `/bakehouse:change` shows it
 to the owner with the work order. It judges nothing: its 14 days (`--days`) are how far back it shows, by the
-day a commit was written, which a rebase keeps. A path outside the code roots is not counted, and it says so. Named
-limits: a renamed file's history starts at the rename; a lane's commits show once its branch is in this clone,
+day a commit was written, which a rebase keeps. A path outside the code roots has no work orders counted, and it
+says so. It also shows the serious review findings (ANDON, P0, P1) whose `Site:` is in a path, inside the code roots
+or not, from every findings file in the run folders on disk, and how many in the window have no `Site:` line it can
+read. Named limits: a renamed file's history starts at the rename; a lane's commits show once its branch is in this clone,
 or on a remote this clone has fetched; merge commits are not counted; a shallow clone's oldest commit seems to
 change every file; a revert counts for the work order it names.
 

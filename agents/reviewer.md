@@ -117,5 +117,20 @@ sentence. "Reach:" how many of the work order's measured outputs, or real items 
 users), it changes today: a count, 0 when none; for a new feature, its reach once live (§4). "Layer:"
 the work order's owning layer, or the layer that owns the cause, named (a module, a contract, an
 upstream step); when two places own one rule, name both. Reach and layer leave the severity as it is.
-Disposition is not yours: leave
-it to whoever commissioned the review. Never edit code.
+
+Head each finding `## <id> (<severity>): <what>`, and beside those two lines give it two more:
+
+```
+## F1 (P1): the limit check reads one field
+Site: src/a.py:80
+Origin: earlier A12
+```
+
+- `Site: <path from the repository root>:<line>`: where the fault is, not where it shows. The full
+  path. One site. `none` when it is in no file of this repository.
+- `Origin: this` when the change under review put it there; `Origin: earlier` when BASE has it too,
+  followed by the work order id when known; `Origin: elsewhere` when another layer or repository owns
+  it. Run BASE to tell `this` from `earlier`; when you did not, write `Origin: this, not checked against
+  BASE`.
+
+Disposition is not yours: leave it to whoever commissioned the review. Never edit code.

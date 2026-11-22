@@ -473,6 +473,7 @@ let through.
 Gate commands: [as given to the engineer, resolved from the binding].
 Prose gates to run and record: [preflight: check 4 ids, read from the binding's gate list, or "none"].
 Known suspects: [the engineer's report: its pre-mortem and its found-not-fixed list].
+Give each finding its "Site:" and "Origin:" lines.
 RUN the risky case on real inputs in a scratch dir (a constructed case is fine); say "read, not run"
 where you could not run it.
 Drivers (the scripts you write to run it, measure or attack the change): in drivers/, directly inside

@@ -618,7 +618,8 @@ Prose gates to run and record: [preflight: check 4 ids, read from the binding's 
 Known suspects: [the engineer's report: its found-not-fixed list].
 Serves: [tracker: the item's serves: line]. Open findings.md with your own count of what the change
 touches, in scope against out of scope, and say whether the prediction's first line is true.
-Give each finding its "Reach:" and "Layer:" lines, the layer judged against the owning layer above.
+Give each finding its "Reach:", "Layer:", "Site:" and "Origin:" lines, the layer judged against the
+owning layer above.
 RUN the risky case and the work order's evidence on real inputs in a scratch dir (a constructed case
 is fine); say "read, not run" where you could not run it.
 Drivers (the scripts you write to run it, measure or attack the change): in drivers/, directly inside
