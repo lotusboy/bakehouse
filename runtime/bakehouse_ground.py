@@ -133,8 +133,7 @@ def findings_in(text, wo) -> list:
             depth, title = len(head.group(1)), head.group(2)
             m = FINDING.match(title)
             severity = m and (SEVERITY.search(title, m.end()) or SEVERITY.search(m.group(1)))
-            title_of_the_file = m and depth == 1 and m.group(1) == wo
-            if severity and not SEVERITY.fullmatch(m.group(1)) and not title_of_the_file:
+            if severity and not SEVERITY.fullmatch(m.group(1)) and m.group(1) != wo:  # its own id: a title
                 now, level = {"id": m.group(1), "severity": severity.group()}, depth
                 found.append(now)
             elif depth <= level:
@@ -248,7 +247,7 @@ def plain(s) -> str:
         f = p.get("findings")
         if f:
             earlier = f", {f['earlier']} of them in earlier code" if f["earlier"] else ""
-            out.append(f"  serious review findings: {f['count']}{earlier} (found by {shown(f['foundBy'])})")
+            out.append(f"  serious review findings, ever: {f['count']}{earlier} (found by {shown(f['foundBy'])})")
     if s["noId"]:
         out.append(f"commits with no work-order id, {lately}: {s['noId']}")
     if s.get("findingsUnread"):

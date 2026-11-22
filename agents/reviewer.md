@@ -130,7 +130,7 @@ Origin: earlier A12
   path. One site. `none` when it is in no file of this repository.
 - `Origin: this` when the change under review put it there; `Origin: earlier` when BASE has it too,
   followed by the work order id when known; `Origin: elsewhere` when another layer or repository owns
-  it. Run BASE to tell `this` from `earlier`; when you did not, write `Origin: this, not checked against
-  BASE`.
+  it. BASE is the first commit of the brief's Diff line. Run it to tell `this` from `earlier`; when you
+  did not, write `Origin: this, not checked against BASE`.
 
 Disposition is not yours: leave it to whoever commissioned the review. Never edit code.

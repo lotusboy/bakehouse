@@ -1689,9 +1689,10 @@ roots, each owned by the first tracker id in its subject, over the whole history
 to the owner with the work order. It judges nothing: its 14 days (`--days`) are how far back it shows, by the
 day a commit was written, which a rebase keeps. A path outside the code roots has no work orders counted, and it
 says so. It also shows the serious review findings (ANDON, P0, P1) whose `Site:` is in a path, inside the code roots
-or not, from every findings file in the run folders on disk, and how many in the window have no `Site:` line it can
-read. Named limits: a renamed file's history starts at the rename; a lane's commits show once its branch is in this clone,
-or on a remote this clone has fetched; merge commits are not counted; a shallow clone's oldest commit seems to
+or not, from every findings file in the run folders on disk, over all time, and how many in the window have no `Site:` line
+it can read. They are findings made, not faults open now: a fixed one still counts. A finding is read only under a
+heading that starts with its id and holds its severity; in records mode, only from the records worktree. Named limits: a renamed file's history starts at the rename; a lane's commits
+show once its branch is in this clone, or on a remote this clone has fetched; merge commits are not counted; a shallow clone's oldest commit seems to
 change every file; a revert counts for the work order it names.
 
 ## How bakehouse's tools are designed

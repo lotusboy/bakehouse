@@ -104,7 +104,7 @@ class GroundFindings(unittest.TestCase):
         self.assertEqual(self.found("src/a.py"), (1, 0, ["A12"]))
         self.assertEqual(self.found("packages/card.ts", cwd=other), (2, 1, ["BD31"]), "A12 is not an id there")
         self.assertIn("packages/card.ts\n", self.run_ground("packages/card.ts", cwd=other))
-        self.assertIn("  serious review findings: 2, 1 of them in earlier code (found by BD31)\n",
+        self.assertIn("  serious review findings, ever: 2, 1 of them in earlier code (found by BD31)\n",
                       self.run_ground("packages/card.ts", cwd=other))
 
     def test_the_text(self):
@@ -113,9 +113,9 @@ class GroundFindings(unittest.TestCase):
         self.review("A11", finding("F1", "P1"))
         out = self.run_ground("src/a.py", "src/ab.py")
         one, other = out.split("src/ab.py\n")
-        self.assertIn("\n  serious review findings: 10 (found by A10, A9, A8, A7, A6, A5, A4, A3 and 2 more)\n", one)
+        self.assertIn("\n  serious review findings, ever: 10 (found by A10, A9, A8, A7, A6, A5, A4, A3 and 2 more)\n", one)
         self.assertEqual(out.splitlines()[-1], UNREAD + "1")
-        self.assertNotIn("serious review findings:", other, "no line for a path that has none")
+        self.assertNotIn("serious review findings, ever", other, "no line for a path that has none")
 
     def test_the_newest_review_is_first_and_a_days_ids_go_by_number(self):
         for wo, days_ago in (("A9", 5), ("A10", 5), ("A2", 1), ("A30", 8)):
@@ -171,10 +171,11 @@ class GroundFindings(unittest.TestCase):
     def test_a_line_belongs_to_its_finding(self):
         self.review("A3", "Site: src/ab.py:1\n\n## F1 (P1): x\n```\nSite: src/ab.py:4\n## F8 (P1): y\n```\n"
                     "~~~~text\n~~~\nSite: src/ab.py:4\n~~~~\n### More\nSite: src/a.py:4\nSite: src/ab.py:5\n"
-                    "## Checked\nOrigin: earlier\nSite: src/ab.py:4\n# A3 review: 1 P1\nSite: src/ab.py:4\n")
+                    "## Checked\nOrigin: earlier\nSite: src/ab.py:4\n# A3 review: 1 P1\nSite: src/ab.py:4\n"
+                    "## A3 re-check 2: F1 (P1) is fixed\nSite: src/ab.py:4\n")
         self.assertEqual(self.found("src/a.py"), (1, 0, ["A3"]), "a deeper heading is inside; the next one ends it")
         self.assertIsNone(self.found("src/ab.py"))
-        self.assertEqual(self.unread(), 0, "a fenced heading and the file's own title are no findings")
+        self.assertEqual(self.unread(), 0, "a fenced heading and one that starts with its work order's id are no findings")
 
     def test_the_unread_line(self):
         self.assertNotIn("no Site line", self.run_ground("src"))
@@ -235,7 +236,7 @@ class GroundFindings(unittest.TestCase):
 only the code roots count for work orders: src
 tests/test_a.py
   outside the code roots: not counted for work orders
-  serious review findings: 1 (found by A3)
+  serious review findings, ever: 1 (found by A3)
 """)
         self.assertEqual(self.as_json("tests/test_a.py")["paths"], [
             {"path": "tests/test_a.py", "inWorkingTree": True, "inCodeRoots": False,
@@ -246,7 +247,7 @@ tests/test_a.py
         self.commit("A5: x", "src/lane.py")
         self.git(self.repo, "switch", "-q", "main")
         self.review("A6", finding("F1", "P1", "src/lane.py:1"))
-        self.assertIn("src/lane.py\n  no history, and not in the working tree\n  serious review findings: 1 (found by A6)\n",
+        self.assertIn("src/lane.py\n  no history, and not in the working tree\n  serious review findings, ever: 1 (found by A6)\n",
                       self.run_ground("--not", "A5", "src/lane.py"))
 
     def test_a_project_with_no_findings_is_as_before(self):
@@ -316,7 +317,8 @@ tests/test_a.py
         prompt = (ROOT / "agents" / "reviewer.md").read_text()
         report = " ".join(prompt[prompt.index("## 5. Report"):].split())
         for text in ("Site: ", "Origin: ", "`Origin: this`", "`Origin: earlier`", "`Origin: elsewhere`", "`none`",
-                     "`Origin: this, not checked against BASE`"):
+                     "`Origin: this, not checked against BASE`",
+                     "BASE is the first commit of the brief's Diff line"):
             self.assertIn(text, report)
         for command in ("change", "refactor"):
             text = (ROOT / "commands" / f"{command}.md").read_text()
