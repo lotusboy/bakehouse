@@ -1425,6 +1425,16 @@ agent still running has recorded none. So `--est` is the next agent's estimate p
 every agent still running. The PM runs it before every dispatch while the mode is on, so a run stops
 before its ceiling when the estimates hold.
 
+**A wave's spend.** `record --tokens` is the agent's total so far. A wave's figure is the tokens its agents
+added while in it, worked out from each agent's rows in ledger order:
+- A row in the same wave as the agent's last one corrects what it added there.
+- A row in another wave with more tokens adds the difference to that wave.
+- A row in another wave with the same tokens or fewer corrects the last wave: what was added there moves.
+- A wave's amount is never below zero: what is missing is taken from the agent's wave before.
+
+The waves, and no wave, always sum to the agents' totals. So a ceiling, an estimate and a
+`--predicted-tokens` are always the round's own size, never a running total, also when shown to the owner.
+
 ### Decision triggers
 
 `decision.sh ask` has four triggers (0.11.0). Each prints one line on stderr whenever its rule
