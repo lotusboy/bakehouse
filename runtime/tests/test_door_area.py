@@ -11,13 +11,13 @@ from test_door import finding
 
 
 class DoorArea(test_door.Door):
-    def architect(self, task, days_ago=1):
+    def architect(self, task, days_ago=1, kind="architect"):
         ts = datetime.fromtimestamp(time.time() - days_ago * 86400).astimezone().isoformat(timespec="seconds")
         ledger = self.records() / "spend" / "ledger.jsonl"
         ledger.parent.mkdir(exist_ok=True)
         with ledger.open("a") as out:
             out.write(json.dumps({"ts": ts, "event": "agent", "agent": f"a{time.time_ns()}", "label": "architect: x",
-                                  "tokens": 30000, "wave": None, "kind": "architect", "source": "harness",
+                                  "tokens": 30000, "wave": None, "kind": kind, "source": "harness",
                                   "task": task, "model": "opus", "note": None, "corrects": False,
                                   "backfilled": False}) + "\n")
 
@@ -36,6 +36,11 @@ class DoorArea(test_door.Door):
         self.architect("A2", days_ago=3)
         self.assertEqual(self.covered("src/a.py"), [["A2"]])
         self.assertIn("architect look", self.run_text("src/a.py"))
+
+    def test_another_kind_of_run_does_not(self):
+        self.busy()
+        self.architect("A2", kind="agent")
+        self.assertEqual(self.covered("src/a.py"), [])
 
     def test_an_old_look_does_not(self):
         self.busy()
