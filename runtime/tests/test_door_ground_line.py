@@ -67,6 +67,23 @@ class DoorGroundLine(test_door.Door):
         self.tracker("- id: A7\n- ground: src/a.py\n")
         self.assertEqual(self.paths("--task", "A7"), ["src/a.py"])
 
+    def test_the_newest_branch_wins(self):
+        self.tracker("- id: A8\n", commit=True)
+        self.tracker("- id: A7\n- ground: src/b.py\n", branch="lane/a-old")  # first by name, older by date
+        self.git(self.repo, "checkout", "-q", "-b", "lane/z-new")
+        (self.repo / "docs" / "BACKLOG.md").write_text("- id: A7\n- ground: src/a.py\n")
+        self.git(self.repo, "add", "docs/BACKLOG.md")
+        self.git(self.repo, "commit", "-q", "-m", "newer", env={**self.env, "GIT_COMMITTER_DATE": "@4000000000 +0000"})
+        self.git(self.repo, "checkout", "-q", "main")
+        self.assertEqual(self.paths("--task", "A7"), ["src/a.py"])
+
+    def test_no_paths_and_no_task_with_a_tracker(self):
+        self.tracker("- id: A7\n- ground: src/a.py\n")
+        p = self.run_door()
+        self.assertEqual(p.returncode, 2)
+        self.assertNotIn("Traceback", p.stderr)
+        self.assertIn("--task", p.stderr)
+
     def test_given_paths_still_win(self):
         self.tracker("- id: A7\n- ground: src/b.py\n")
         self.assertEqual(self.paths("--task", "A7", "src/a.py"), ["src/a.py"])
