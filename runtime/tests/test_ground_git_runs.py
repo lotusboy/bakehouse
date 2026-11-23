@@ -182,5 +182,72 @@ class GroundGitRuns(unittest.TestCase):
         self.assertEqual(s["runFolders"], {"read": 1, "onlyInGit": 1})
 
 
+    def test_a_fix_round_only_main_holds_is_read_beside_the_working_trees_first_round(self):
+        self.git(self.repo, "switch", "-q", "old")
+        run = self.review("A3", finding("F1", "P1", "src/a.py:4"), commit="A3 review")
+        self.git(self.repo, "switch", "-q", "main")
+        self.git(self.repo, "merge", "-q", "old")
+        (run / "findings-fix1.md").write_text("# Findings\n\n" + finding("F2", "P1", "src/b.py:1"))
+        self.git(self.repo, "add", "-A")
+        self.git(self.repo, "commit", "-q", "-m", "A3 fix1")
+        self.git(self.repo, "switch", "-q", "old")
+        self.assertFalse((run / "findings-fix1.md").exists())
+        s = self.as_json("src/a.py", "src/b.py")
+        self.assertEqual((self.found(s, 0), self.found(s, 1)), ((1, ["A3"]), (1, ["A3"])))
+        self.assertEqual(s["runFolders"], {"read": 1, "onlyInGit": 0})
+
+    def test_a_newer_lane_tip_does_not_hide_a_fix_round_main_holds(self):
+        run = self.review("A3", finding("F1", "P1", "src/a.py:4"), commit="A3 review")
+        self.git(self.repo, "branch", "lane")
+        (run / "findings-fix1.md").write_text("# Findings\n\n" + finding("F2", "P1", "src/b.py:1"))
+        self.git(self.repo, "add", "-A")
+        self.git(self.repo, "commit", "-q", "-m", "A3 fix1")
+        self.git(self.repo, "switch", "-q", "lane")
+        self.env["GIT_COMMITTER_DATE"] = "2099-01-01T10:00:00+00:00"
+        self.commit("A4: y", "src/c.py")
+        del self.env["GIT_COMMITTER_DATE"]
+        self.git(self.repo, "switch", "-q", "--detach", "old")
+        s = self.as_json("src/a.py", "src/b.py")
+        self.assertEqual((self.found(s, 0), self.found(s, 1)), ((1, ["A3"]), (1, ["A3"])))
+
+    def test_a_leftover_folder_with_no_findings_file_does_not_hide_git_s(self):
+        (self.repo / ".gitignore").write_text("*.log\n")
+        self.git(self.repo, "add", "-A")
+        self.git(self.repo, "commit", "-q", "-m", "ignore logs")
+        self.git(self.repo, "branch", "-f", "old")
+        run = self.review("A3", finding("F1", "P1", "src/a.py:4"), commit="A3 review")
+        (run / "x.log").write_text("x")
+        self.git(self.repo, "switch", "-q", "old")
+        self.assertEqual([p.name for p in run.iterdir()], ["x.log"])
+        s = self.as_json("src/a.py")
+        self.assertEqual(self.found(s), (1, ["A3"]))
+        self.assertEqual(s["runFolders"], {"read": 1, "onlyInGit": 0})
+
+    def test_a_ref_name_that_is_not_utf8_is_no_crash(self):
+        self.review("A3", finding("F1", "P1", "src/a.py:4"), commit="A3 review")
+        oid = self.git(self.repo, "rev-parse", "HEAD").strip()
+        self.git(self.repo, "pack-refs", "--all")
+        with open(self.repo / ".git" / "packed-refs", "ab") as f:
+            f.write(oid.encode() + b" refs/heads/zz\xff\n")
+        self.git(self.repo, "switch", "-q", "old")
+        rc, out, err = self.run_ground("src/a.py")
+        self.assertEqual((rc, err), (0, ""), out)
+        self.assertIn("serious review findings, ever: 1 (found by A3)", out)
+
+    def test_reviews_with_a_trailing_slash_and_a_findings_file_in_a_sub_folder(self):
+        (self.repo / ".team" / "binding.json").write_text(json.dumps({**TREE, "reviews": "notes/done/"}))
+        self.git(self.repo, "commit", "-q", "-am", "slash")
+        self.git(self.repo, "branch", "-f", "old")
+        run = self.review("A3", finding("F1", "P1", "src/a.py:4"), commit="A3 review")
+        (run / "r2").mkdir()
+        (run / "r2" / "findings.md").write_text("# Findings\n\n" + finding("F7", "P1", "src/b.py:1") + finding("F9", "P0"))
+        self.git(self.repo, "add", "-A")
+        self.git(self.repo, "commit", "-q", "-m", "A3 nested")
+        self.git(self.repo, "switch", "-q", "old")
+        s = self.as_json("src/a.py", "src/b.py")
+        self.assertEqual((self.found(s, 0), self.found(s, 1), s.get("findingsUnread")), ((1, ["A3"]), (1, ["A3"]), 1))
+        self.assertEqual(s["runFolders"], {"read": 1, "onlyInGit": 1})
+
+
 if __name__ == "__main__":
     unittest.main()
