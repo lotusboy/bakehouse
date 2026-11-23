@@ -373,8 +373,9 @@ def commit_own(records, path, subject: str, line: str) -> None:
     """Records format 2: after decision.sh or spend.sh appends a line to this writer's file `path`, commit that file
     alone, by path (ops_ledger.anchor, no trailer), under this writer's ops ledger lock, as the seal anchors and close
     commits are, with LOCAL's settings (no signing); then sync, outside the lock. Format 1: nothing. A commit that
-    fails while HEAD's file holds `line`, this call's own line, is a commit (another call's commit took this line
-    too), whether or not a later call's line is in the file by then. A commit that
+    fails while HEAD's file holds `line`, this call's own line, as many times as the file does (and at least once) is
+    a commit (another call's commit took this line too), whether or not a later call's line is in the file by then.
+    A commit that
     fails is one line on stderr, the file unstaged again, and no sync: the line stays in the file and the next commit
     of it carries it. A sync that fails is its one line on stderr. Never raises, so the tool's own exit code and
     stdout stay as they are."""
@@ -384,7 +385,8 @@ def commit_own(records, path, subject: str, line: str) -> None:
         with writer_lock(records):
             why = ops_ledger.anchor(Path(path), None, subject, trailer=None, config=LOCAL)
             rel = Path(path).resolve().relative_to(Path(records).resolve()).as_posix()
-            if why and line.encode("utf-8").rstrip(b"\n") in (ops_ledger.committed(Path(path)) or b"").split(b"\n"):
+            mine = line.encode("utf-8")
+            if why and 0 < Path(path).read_bytes().count(mine) == (ops_ledger.committed(Path(path)) or b"").count(mine):
                 why = None  # already committed, this line with it
             if why:  # anchor staged it: unstage it again, so it never goes into another commit (a merge's, say)
                 git(records, "reset", "-q", "--", rel)

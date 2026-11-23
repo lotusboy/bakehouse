@@ -63,5 +63,70 @@ class Race(trsc.Base):
         self.assertEqual(self.rgit("status", "--porcelain", "--", rel), "")
 
 
+    def test_a_repeated_line_whose_commit_really_fails_says_not_committed(self):
+        """The same row twice (two records in one second): HEAD holds it once, so a refused commit is not taken for one."""
+        self.origin_setup()
+        self.sync(self.repo)
+        self.ask(self.repo, "First?")
+        path = self.wfile("decisions_ledger")
+        rel = path.relative_to(self.records).as_posix()
+        a = '{"ts": "2026-11-23T10:00:00+00:00", "event": "agent", "agent": "x", "tokens": 5}\n'
+        with path.open("a") as f:
+            f.write(a)
+        self.assertNotIn("not committed", self.commit_own(a))
+        with path.open("a") as f:
+            f.write(a)
+        hooks = Path(self.g(self.records, "rev-parse", "--path-format=absolute", "--git-common-dir")) / "hooks"
+        hooks.mkdir(exist_ok=True)
+        (hooks / "pre-commit").write_text("#!/bin/sh\nexit 1\n")
+        (hooks / "pre-commit").chmod(0o755)
+        self.assertIn("not committed", self.commit_own(a))
+        self.assertEqual(self.rgit("status", "--porcelain", "--", rel), "M " + rel)
+
+    def test_a_line_glued_to_a_torn_last_line_and_committed_by_another_call_says_nothing(self):
+        self.origin_setup()
+        self.sync(self.repo)
+        self.ask(self.repo, "First?")
+        path = self.wfile("decisions_ledger")
+        b, c = ('{"kind": "ask", "id": "%s", "question": "caf\u00e9 \u2014 ok?"}\n' % x for x in "bc")
+        with path.open("a", encoding="utf-8") as f:
+            f.write("torn")
+        self.commit_own("torn")
+        with path.open("a", encoding="utf-8") as f:
+            f.write(b + c)
+        self.assertNotIn("not committed", self.commit_own(c))  # takes b's line too
+        self.assertNotIn("not committed", self.commit_own(b))
+
+
+class Callers(trsc.Base):
+    """decision.py and spend.py pass commit_own the very line they wrote, non-ASCII text included."""
+
+    def last_line_and_passed(self, module, name, event):
+        import locator
+        passed = []
+        with mock.patch.dict(os.environ, self.env, clear=True), contextlib.redirect_stderr(io.StringIO()), \
+                mock.patch.object(records_sync, "commit_own", lambda *a: passed.append(a[3])):
+            project = locator.find(self.repo, dict(os.environ))
+            module.append(project, event)
+            written = project.write_file(name).read_text(encoding="utf-8").splitlines(keepends=True)[-1]
+        return written, passed
+
+    def test_decision_and_spend_pass_the_line_they_wrote(self):
+        import decision
+        import spend
+        import json
+        self.origin_setup()
+        self.sync(self.repo)
+        self.ask(self.repo, "First?")  # a real ask, so the second has every field the ledger's readers expect
+        ask = json.loads(self.wfile("decisions_ledger").read_text(encoding="utf-8").splitlines()[-1])
+        ask.update(id="d20261123-000001", question="caf\u00e9 \u2014 go?")
+        for module, name, event in (
+                (decision, "decisions_ledger", ask),
+                (spend, "spend_ledger", {"ts": "2026-11-23T10:00:00+00:00", "event": "agent", "note": "na\u00efve"})):
+            written, passed = self.last_line_and_passed(module, name, event)
+            self.assertEqual(passed, [written])
+            self.assertIn("\u00e9" if module is decision else "\u00ef", written)
+
+
 if __name__ == "__main__":
     unittest.main()
