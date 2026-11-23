@@ -257,6 +257,22 @@ Find where this work order stands before doing anything else. Run `git fetch` fi
    `bakehouse ground --not {id} <its paths>` prints; the branch the job will work on (the `branch:` line, or the one it will open); the size in hours and tokens; one question: go or not. A
    work order from a repo procedure was already decided there; the go here is the go on the spend
    and the branch.
+
+   **The door.** Beside the `ground` lines, the message gives the route and its reasons that
+   `bakehouse door --task {id} <the ground: paths>` prints: fast, normal or look-around (bakehouse
+   `docs/PROJECT-TEAM.md`, "The door"). Record it once per work order:
+   `ops-event.sh door {id} door - - - - - <route> "<its reasons, one line>"`. The PM may raise the
+   route (fast to normal, normal to look-around), saying why in one line; it never lowers it. A change
+   to a contract, a ruling file or a pinned output is at least normal.
+   - **look-around**: before the owner's go, give the `step-back` skill's helicopter view of the area
+     in a few lines, and a Seesaw read: which layer owns the cause (the area, what feeds it, what reads
+     it). Then dispatch one architect check of the area (RESTRUCTURE or REDESIGN, the mode named; about
+     30k tokens; `spend.sh record --kind architect --task {id}`). With its report, the owner gets three
+     options: go as written; go with a minimal change marked `shortcut:` because a redesign is decided;
+     or redesign first (a refactor work order, and this one is held or becomes one of its stages). The
+     step 4.2 check on an architecture decision then applies.
+   - **fast**: the owner's go here also covers the prediction (step 6.2).
+   - **normal**: nothing more.
 4. **A dry run stops here** and fills the briefs.
 
 ### 5. The branch (PM)
@@ -310,6 +326,9 @@ branch), `BASE` and the record folder. Commit by path, with the trailer. Fill th
    - every move in `expected` appears in the prediction;
    - every move in the prediction appears in `expected`;
    - no output in `mustNotMove` is predicted to move.
+
+   On a work order the door sent through fast (step 4.3), when every check passes exactly, report the
+   match and continue without a second ask; any difference is asked as below.
 
    Bring the prediction to the owner as one decision, before any site is switched, with each failed
    check named. A predicted move that `expected` does not name is a new decision, never a detail. On

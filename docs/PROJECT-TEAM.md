@@ -1712,6 +1712,18 @@ heading that starts with its id and holds its severity; in records mode, only fr
 show once its branch is in this clone, or on a remote this clone has fetched; merge commits are not counted; a shallow clone's oldest commit seems to
 change every file; a revert counts for the work order it names.
 
+## The door
+
+At step 4.3 of the change job the PM runs `bakehouse door --task <id> <the ground: paths>`. It gives one of
+three routes. **look-around**: the area has been busy or troubled lately (other work orders, serious findings,
+a second fix round, or an altitude trigger there), so the PM gives a helicopter view and a Seesaw read and runs
+one architect check before the owner's go. **fast**: a small change in a quiet area, so the owner's go on the
+work order also covers a prediction that matches `expected` and `mustNotMove` exactly. **normal**: the job as
+before. The review runs on every route. The six thresholds are under `door` in `runtime/decision-config.json`
+(`days`, `lookVisits`, `lookFindingOrders`, `lookFixRound`, `fastMaxFiles`, `fastMaxVisits`); a project
+overrides any of them in `.team/decision-config.json`, and the door's text names the setting beside each
+reason. The route is recorded once per work order as an ops `door` event.
+
 ## How bakehouse's tools are designed
 
 For whoever adds a tool or changes one.

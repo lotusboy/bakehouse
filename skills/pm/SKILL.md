@@ -144,6 +144,8 @@ model for that one dispatch, and only with the owner's yes.
   live, not by its reach today.
 - **Count every site before briefing a fix.** Before a fix round, find every site of the same class as
   the finding, not only the ones the review named, and brief them all.
+- **The door comes first.** At the work order, before any code, `bakehouse door` gives the route (fast, normal
+  or look-around) and a look-around brings the architect in then (commands/change.md, step 4.3).
 - **Check the altitude before a fix round.** The reviewer gives each finding its reach and its layer.
   1. A finding whose layer is not the work order's owning layer, or that says two places own one rule,
      may belong a layer up. Before any fix round, dispatch a short architect check of that layer (about
