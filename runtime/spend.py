@@ -122,7 +122,8 @@ def append(project, event):
     # records format 2: this writer's file, committed by path and synced (records_sync.commit_own)
     import records_sync
     what = event.get("agent") or event.get("wave") or ""
-    records_sync.commit_own(project.records, p, f"spend: {event.get('event')} {what} (spend.sh)")
+    records_sync.commit_own(project.records, p, f"spend: {event.get('event')} {what} (spend.sh)",
+                            json.dumps(event, ensure_ascii=False) + "\n")
 
 
 def tokens_arg(v):

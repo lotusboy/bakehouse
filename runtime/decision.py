@@ -207,7 +207,8 @@ def append(project, event):
     import records_sync
     what = event.get("id") or event.get("action") or ""
     records_sync.commit_own(project.records, project.write_file("decisions_ledger"),
-                            f"decisions: {event.get('kind')} {what} (decision.sh)")
+                            f"decisions: {event.get('kind')} {what} (decision.sh)",
+                            json.dumps(event, ensure_ascii=False) + "\n")
 
 
 def _append(project, event):
