@@ -162,5 +162,25 @@ class GroundGitRuns(unittest.TestCase):
                          (0, "", "  serious review findings, ever: 1 (found by BD31)"))
 
 
+    def test_the_newest_tip_wins_when_two_branches_hold_a_folder(self):
+        for branch, site, when in (("aaa", "src/a.py:4", "2026-01-01T10:00:00+00:00"),
+                                   ("zzz", "src/b.py:4", "2026-06-01T10:00:00+00:00")):
+            self.env["GIT_COMMITTER_DATE"] = when
+            self.on_branch_only(branch, "A9", finding("F1", "P1", site))
+        del self.env["GIT_COMMITTER_DATE"]
+        s = self.as_json("src/a.py", "src/b.py")
+        self.assertEqual((self.found(s, 0), self.found(s, 1)), (None, (1, ["A9"])), "zzz's tip is the newer")
+        self.assertEqual(s["runFolders"], {"read": 1, "onlyInGit": 1})
+
+    def test_a_detached_head_is_read(self):
+        self.on_branch_only("gone", "A10", finding("F1", "P1", "src/a.py:4"))
+        self.git(self.repo, "switch", "-q", "--detach", "gone")
+        self.git(self.repo, "branch", "-q", "-D", "gone")
+        shutil.rmtree(self.repo / "notes")
+        s = self.as_json("src/a.py")
+        self.assertEqual(self.found(s), (1, ["A10"]), "only HEAD holds it, and the working tree does not")
+        self.assertEqual(s["runFolders"], {"read": 1, "onlyInGit": 1})
+
+
 if __name__ == "__main__":
     unittest.main()
