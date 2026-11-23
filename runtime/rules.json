@@ -582,6 +582,15 @@
    "note": "0.10.0 R2: preflight check 7, when the binding has tracker.reserve and the records are in format 2"
   },
   {
+   "id": "bakehouse-change-73",
+   "file": "commands/change.md",
+   "sentences": [
+    "The PM may raise the route (fast to normal, normal to look-around), saying why in one line; it never lowers it."
+   ],
+   "enforcer": "prompt",
+   "proof": "prompt only: no tool, hook or review brief checks it"
+  },
+  {
    "id": "bakehouse-change-32",
    "file": "commands/change.md",
    "sentences": [
