@@ -361,17 +361,9 @@ def plain(s) -> str:
     return "\n".join(out)
 
 
-def main(argv, root) -> int:
-    ap = argparse.ArgumentParser(prog="bakehouse ground", allow_abbrev=False,
-                                 description="Which work orders changed these files or folders lately.")
-    ap.add_argument("--json", action="store_true")
-    ap.add_argument("--days", type=int, default=14, help="how far back to show (default 14)")
-    ap.add_argument("--not", dest="leave_out", metavar="WORK_ORDER", help="leave this one out of every count")
-    ap.add_argument("--repo", help="default: the current folder")
-    ap.add_argument("paths", nargs="+", metavar="path", help="relative to the repository root")
-    a = ap.parse_intermixed_args(argv)
-    if a.days < 1:
-        ap.error("--days is 1 or more")
+def prepare(ap, a, flag="--not", prog="bakehouse ground"):
+    """(project, binding, its id search, its code roots, the paths relative to its root) for a.repo, a.paths and
+    a.leave_out (given as `flag`), or the exit code once it has said why (bakehouse door reads the same)."""
     if a.repo is not None and (not Path(a.repo).is_dir() or locator.toplevel(a.repo) is None):
         ap.error(f"--repo {a.repo} is not a folder inside a git repository")
     env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"}
@@ -398,21 +390,28 @@ def main(argv, root) -> int:
         if not roots:
             raise ValueError("the binding has no code roots (signal.codeRoots or records.codeRoots)")
     except (OSError, ValueError, records_check.BadInput) as e:
-        print(f"bakehouse ground: {project.binding}: {e}", file=sys.stderr)
+        print(f"{prog}: {project.binding}: {e}", file=sys.stderr)
         return 2
     if a.leave_out is not None and not rx.fullmatch(a.leave_out):
-        ap.error(f"--not {a.leave_out} is not a work-order id of this project")
-    try:
-        commits = history(project.root, roots, rx, a.leave_out)
-        runs, read = run_folders(project, binding, rx)
-        serious = serious_findings(project, [r for r in runs if r[0] != a.leave_out])
-    except subprocess.CalledProcessError as e:
-        print(f"bakehouse ground: git log failed: {os.fsdecode(e.stderr).strip()}", file=sys.stderr)
-        return 1
+        ap.error(f"{flag} {a.leave_out} is not a work-order id of this project")
+    return project, binding, rx, roots, paths
+
+
+def gather(project, binding, rx, roots, paths, days, leave_out, until=None) -> tuple:
+    """(the summary `ground --json` prints, the serious findings, the run folders, why open work orders are not
+    known or None). until (seconds since the epoch, default now): the window ends there; commits written after it
+    and run folders dated after its day are left out. CalledProcessError when git fails."""
+    commits = history(project.root, roots, rx, leave_out)
+    runs, read = run_folders(project, binding, rx)
+    if until is not None:
+        commits = [c for c in commits if c[0] <= until]
+        runs = [r for r in runs if r[1] <= date.fromtimestamp(until)]
+        read = read and (len(runs), sum(not r[4] for r in runs))
+    serious = serious_findings(project, [r for r in runs if r[0] != leave_out])
     open_ids, why = open_work_orders(project)
-    start = time.time() - a.days * 86400
-    s = {"format": 1, "team": True, "project": str(project.root), "codeRoots": roots, "days": a.days,
-         "not": a.leave_out, "paths": [facts(p, project.root, roots, commits, start, open_ids) for p in paths],
+    start = (time.time() if until is None else until) - days * 86400
+    s = {"format": 1, "team": True, "project": str(project.root), "codeRoots": roots, "days": days,
+         "not": leave_out, "paths": [facts(p, project.root, roots, commits, start, open_ids) for p in paths],
          "noId": sum(not wo and at >= start and any(under(f, p) for f in files for p in paths)
                      for at, wo, files in commits)}
     for p in s["paths"]:
@@ -424,6 +423,28 @@ def main(argv, root) -> int:
     unread = sum(where is None and day >= date.fromtimestamp(start) for _, day, where, _ in serious)
     if unread:
         s["findingsUnread"] = unread
+    return s, serious, runs, why
+
+
+def main(argv, root) -> int:
+    ap = argparse.ArgumentParser(prog="bakehouse ground", allow_abbrev=False,
+                                 description="Which work orders changed these files or folders lately.")
+    ap.add_argument("--json", action="store_true")
+    ap.add_argument("--days", type=int, default=14, help="how far back to show (default 14)")
+    ap.add_argument("--not", dest="leave_out", metavar="WORK_ORDER", help="leave this one out of every count")
+    ap.add_argument("--repo", help="default: the current folder")
+    ap.add_argument("paths", nargs="+", metavar="path", help="relative to the repository root")
+    a = ap.parse_intermixed_args(argv)
+    if a.days < 1:
+        ap.error("--days is 1 or more")
+    found = prepare(ap, a)
+    if isinstance(found, int):
+        return found
+    try:
+        s, _, _, why = gather(*found, a.days, a.leave_out)
+    except subprocess.CalledProcessError as e:
+        print(f"bakehouse ground: git log failed: {os.fsdecode(e.stderr).strip()}", file=sys.stderr)
+        return 1
     sys.stdout.reconfigure(errors="surrogateescape")  # a file name that is not UTF-8
     print(json.dumps(s, indent=2) if a.json else plain(s))
     if why:

@@ -16,5 +16,13 @@
     "afterMinutes": 30,
     "bands": [{"maxTokens": 100000, "above": 0.75}, {"maxTokens": 500000, "above": 0.85}],
     "neverCategories": []
+  },
+  "door": {
+    "days": 14,
+    "lookVisits": 3,
+    "lookFindingOrders": 2,
+    "lookFixRound": 2,
+    "fastMaxFiles": 3,
+    "fastMaxVisits": 1
   }
 }

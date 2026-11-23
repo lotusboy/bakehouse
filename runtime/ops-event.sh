@@ -19,7 +19,9 @@
 # append-only and a reader must be able to tell a measurement taken at the time from one recovered
 # later.
 #     kind      agent-run | fan-out | loop | handshake | gate-refused | diagnosis | decision-asked |
-#               decision-answered | status-run | session-start | session-end | work-order-closed | note
+#               decision-answered | status-run | session-start | session-end | work-order-closed | door | note
+#               door: once per work order, by the change job (step 4.3): task the work order, purpose door,
+#               outcome the route `bakehouse door` gave (fast | normal | look-around), note its reasons in one line
 #               (sealed | revised | retired are written only by predict-gate.sh seal | revise | retire)
 #     task      the tracker id of the work, or "-"
 #     purpose   one short phrase
@@ -69,6 +71,13 @@ if gate and kind != "gate-refused":
     sys.exit(f"ops-event: a gate ({gate}) is written only on a gate-refused event, not on {kind}")
 if gate and not re.fullmatch(r"[a-z][a-z0-9-]*:[a-z0-9][a-z0-9-]*", gate):
     sys.exit(f"ops-event: gate {gate!r} is not <tool>:<check> in lower case")
+if kind == "door":
+    if task == "-" or purpose != "door":
+        sys.exit("ops-event: a door event names its work order as task, and its purpose is door")
+    if outcome not in ("fast", "normal", "look-around"):
+        sys.exit(f"ops-event: a door event's outcome is fast, normal or look-around, not {outcome!r}")
+    if not note.strip() or "\n" in note:
+        sys.exit("ops-event: a door event's note is the door's reasons, in one line")
 if outcome == "turn-cap":
     if kind != "agent-run":
         sys.exit(f"ops-event: turn-cap is an agent-run outcome, not a {kind} one")

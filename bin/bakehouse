@@ -6,6 +6,8 @@
   bakehouse status [--json] [--since <ISO time>] [--repo <folder>]   the team's state (runtime/bakehouse_status.py)
   bakehouse ground [--json] [--days N] [--not <work order>] [--repo <folder>] <path>...   which work orders changed
                                   these files or folders lately (runtime/bakehouse_ground.py)
+  bakehouse door [--json] [--task <id>] [--as-of <ISO time>] [--repo <folder>] <path>...   the route a work order on
+                                  these paths takes: fast, normal or look-around (runtime/bakehouse_door.py)
   bakehouse record commit <record folder> -m <message> [-m ...]   check and commit one run folder on the records
                                   branch (runtime/bakehouse_record.py)
   bakehouse sync [--repo <folder>]   fetch, merge and push the records branch, in records format 2
@@ -23,7 +25,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "runtime"))
 COMMANDS = {"record": "bakehouse_record", "sync": "records_sync", "reserve": "reserve", "ground": "bakehouse_ground",
-            "setup": "bakehouse_setup", "status": "bakehouse_status"}
+            "door": "bakehouse_door", "setup": "bakehouse_setup", "status": "bakehouse_status"}
 
 
 def run(argv) -> int:
