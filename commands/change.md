@@ -271,7 +271,9 @@ Find where this work order stands before doing anything else. Run `git fetch` fi
      30k tokens; `spend.sh record --kind architect --task {id}`). With its report, the owner gets three
      options: go as written; go with a minimal change marked `shortcut:` because a redesign is decided;
      or redesign first (a refactor work order, and this one is held or becomes one of its stages). The
-     step 4.2 check on an architecture decision then applies.
+     step 4.2 check on an architecture decision then applies. When the reasons include `look-covered`,
+     the area already had an architect look in the window: read that report and put its options to
+     the owner; dispatch a new check only when the report does not cover this change, saying why.
    - **fast**: the owner's go here also covers the prediction (step 6.2).
    - **normal**: nothing more.
 4. **A dry run stops here** and fills the briefs.

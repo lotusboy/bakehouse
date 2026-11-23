@@ -24,6 +24,8 @@ fast when none of those holds and all of these do:
   fast-counted    every path is in the code roots: ground counts nothing outside them, so such a path has no history
                   the door can read and is never fast (printed only when it fails). A path under the code roots that
                   is not in the working tree yet (a new file, or a misspelt one) counts as one file with no history.
+A look-around also gives look-covered when a work order here, or the one at the door, has an architect run in the
+spend ledger recorded in the window: one architect look per area, so the PM reads that report first.
 normal otherwise. The reasons printed are the look-around rules that hold; for normal, the fast rules that fail; for
 fast, the fast rules. The six settings are under "door" in runtime/decision-config.json; a project overrides them in
 .team/decision-config.json.
@@ -54,6 +56,7 @@ from datetime import date, datetime
 
 import bakehouse_ground as ground
 import decision
+import spend
 
 SETTINGS = ("days", "lookVisits", "lookFindingOrders", "lookFixRound", "fastMaxFiles", "fastMaxVisits")
 FIX = re.compile(r"findings-fix([0-9]+)\.md")
@@ -111,6 +114,19 @@ def altitude(events, here) -> list:
     return [wo for wo in here if wo.lower() in hit]
 
 
+def looks(project, candidates, start, until) -> list:
+    """The candidates (work orders here, and the one at the door) with an architect run in the spend ledger recorded
+    in the window: one look per area, so a look-around there reads that report before asking for another."""
+    want = {w.lower(): w for w in candidates if w}
+    seen = {}
+    for r in spend.read_events(project):
+        w = want.get(str(r.get("task") or "").lower())
+        t = decision.when(r.get("ts")) if r.get("kind") == "architect" and w else None
+        if t is not None and start <= t.timestamp() <= (until if until is not None else float("inf")):
+            seen[w] = max(t.timestamp(), seen.get(w, 0))
+    return sorted(seen, key=seen.get, reverse=True)
+
+
 def file_count(root, paths) -> int:
     total = 0
     for p in paths:
@@ -119,7 +135,7 @@ def file_count(root, paths) -> int:
     return total
 
 
-def route(cfg, here, finders, recent, rounds, alt, files, uncounted=(), unread=0):
+def route(cfg, here, finders, recent, rounds, alt, files, uncounted=(), unread=0, covered=()):
     """(the route, its reasons)."""
     def reason(rule, setting, figure, wos):
         return {"rule": rule, "setting": setting, "threshold": cfg[setting] if setting else None, "figure": figure,
@@ -133,6 +149,8 @@ def route(cfg, here, finders, recent, rounds, alt, files, uncounted=(), unread=0
         (top >= cfg["lookFixRound"], reason("look-fix-round", "lookFixRound", top, at_top)),
         (bool(alt), reason("look-altitude", None, len(alt), alt))) if ok]
     if look:
+        if covered:
+            look.append(reason("look-covered", None, len(covered), list(covered)))
         return "look-around", look
     fast = [(files <= cfg["fastMaxFiles"], reason("fast-files", "fastMaxFiles", files, [])),
             (len(here) <= cfg["fastMaxVisits"], reason("fast-visits", "fastMaxVisits", len(here), here)),
@@ -160,6 +178,7 @@ def said(r, days, uncounted=(), unread=0) -> str:
                           + (f", {unread} of them with no Site line that can be read" if unread else "")
                           if n else f"no serious review finding in {days} days"),
         "fast-fix-round": f"a fix round here{wos}" if n else "no fix round here",
+        "look-covered": f"covered by an architect look in {days} days{wos}: read its report before any new check",
         "fast-counted": f"{n} path{'s' if n != 1 else ''} not counted (outside the code roots): {', '.join(uncounted)}",
     }[r["rule"]]
     return text + setting
@@ -205,7 +224,9 @@ def main(argv, root) -> int:
     rounds = fix_rounds([r for r in runs if r[0] in here], [e for e in events if e.get("task")])
     uncounted = [p["path"] for p in s["paths"] if not p.get("inCodeRoots")]
     unread = s.get("findingsUnread") or 0
-    way, reasons = route(cfg, here, finders, recent, rounds, altitude(events, here), files, uncounted, unread)
+    now = until if until is not None else datetime.now().timestamp()
+    covered = looks(project, here + [a.leave_out or ""], now - cfg["days"] * 86400, until)
+    way, reasons = route(cfg, here, finders, recent, rounds, altitude(events, here), files, uncounted, unread, covered)
     out = {"format": 1, "team": True, "project": str(project.root), "route": way, "reasons": reasons,
            "settings": cfg, "asOf": a.as_of, "task": a.leave_out, "ground": s}
     sys.stdout.reconfigure(errors="surrogateescape")  # a file name that is not UTF-8

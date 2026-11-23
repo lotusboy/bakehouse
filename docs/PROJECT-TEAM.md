@@ -1717,7 +1717,8 @@ change every file; a revert counts for the work order it names.
 At step 4.3 of the change job the PM runs `bakehouse door --task <id> <the ground: paths>`. It gives one of
 three routes. **look-around**: the area has been busy or troubled lately (other work orders, serious findings,
 a second fix round, or an altitude trigger there), so the PM gives a helicopter view and a Seesaw read and runs
-one architect check before the owner's go. **fast**: a small change in a quiet area, so the owner's go on the
+one architect check before the owner's go; one look per area: when a work order there already had an architect
+run in the window, the door says so (`look-covered`) and the PM reads that report first. **fast**: a small change in a quiet area, so the owner's go on the
 work order also covers a prediction that matches `expected` and `mustNotMove` exactly. **normal**: the job as
 before. The review runs on every route. The six thresholds are under `door` in `runtime/decision-config.json`
 (`days`, `lookVisits`, `lookFindingOrders`, `lookFixRound`, `fastMaxFiles`, `fastMaxVisits`); a project
