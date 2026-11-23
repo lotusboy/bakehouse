@@ -260,10 +260,11 @@ Find where this work order stands before doing anything else. Run `git fetch` fi
 
    **The door.** Beside the `ground` lines, the message gives the route and its reasons that
    `bakehouse door --task {id} <the ground: paths>` prints: fast, normal or look-around (bakehouse
-   `docs/PROJECT-TEAM.md`, "The door"). Record it once per work order:
-   `ops-event.sh door {id} door - - - - - <route> "<its reasons, one line>"`. The PM may raise the
-   route (fast to normal, normal to look-around), saying why in one line; it never lowers it. A change
-   to a contract, a ruling file or a pinned output is at least normal.
+   `docs/PROJECT-TEAM.md`, "The door"). The PM may raise the route (fast to normal, normal to
+   look-around), saying why in one line; it never lowers it. A change to a contract, a ruling file or
+   a pinned output is at least normal. Record the route the work order takes, once per work order:
+   `ops-event.sh door {id} door - - - - - <route> "<its reasons, one line>"`; when the PM raised it,
+   the note starts `raised from <the door's route>: <why>`.
    - **look-around**: before the owner's go, give the `step-back` skill's helicopter view of the area
      in a few lines, and a Seesaw read: which layer owns the cause (the area, what feeds it, what reads
      it). Then dispatch one architect check of the area (RESTRUCTURE or REDESIGN, the mode named; about
@@ -327,7 +328,7 @@ branch), `BASE` and the record folder. Commit by path, with the trailer. Fill th
    - every move in the prediction appears in `expected`;
    - no output in `mustNotMove` is predicted to move.
 
-   On a work order the door sent through fast (step 4.3), when every check passes exactly, report the
+   On a work order whose recorded route is fast (step 4.3), when every check passes exactly, report the
    match and continue without a second ask; any difference is asked as below.
 
    Bring the prediction to the owner as one decision, before any site is switched, with each failed

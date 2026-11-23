@@ -21,7 +21,9 @@
 #     kind      agent-run | fan-out | loop | handshake | gate-refused | diagnosis | decision-asked |
 #               decision-answered | status-run | session-start | session-end | work-order-closed | door | note
 #               door: once per work order, by the change job (step 4.3): task the work order, purpose door,
-#               outcome the route `bakehouse door` gave (fast | normal | look-around), note its reasons in one line
+#               outcome the route the work order takes (fast | normal | look-around): the door's, or the PM's
+#               raise of it, the note then starting "raised from <route>: <why>"; note the reasons in one line.
+#               When a work order has more than one, its latest door event is its route
 #               (sealed | revised | retired are written only by predict-gate.sh seal | revise | retire)
 #     task      the tracker id of the work, or "-"
 #     purpose   one short phrase

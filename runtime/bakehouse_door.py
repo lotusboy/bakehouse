@@ -18,8 +18,12 @@ fast when none of those holds and all of these do:
   fast-files      fastMaxFiles or fewer files in the paths (the files git tracks under each; a path git does not
                   track counts as one)
   fast-visits     fastMaxVisits or fewer other work orders here
-  fast-findings   no serious finding on the paths in a run folder dated in the window
+  fast-findings   no serious finding on the paths in a run folder dated in the window, and none in the window
+                  with no Site line that can be read (ground's findingsUnread)
   fast-fix-round  no work order here with any fix round
+  fast-counted    every path is in the code roots: ground counts nothing outside them, so such a path has no history
+                  the door can read and is never fast (printed only when it fails). A path under the code roots that
+                  is not in the working tree yet (a new file, or a misspelt one) counts as one file with no history.
 normal otherwise. The reasons printed are the look-around rules that hold; for normal, the fast rules that fail; for
 fast, the fast rules. The six settings are under "door" in runtime/decision-config.json; a project overrides them in
 .team/decision-config.json.
@@ -60,11 +64,16 @@ def settings(project):
     cfg = decision.config(project).get("door")
     if not isinstance(cfg, dict):
         raise ValueError('"door" is not an object')
+    unknown = sorted(set(cfg) - set(SETTINGS))
+    if unknown:
+        raise ValueError(f'"door" has no setting {", ".join(unknown)} (the settings: {", ".join(SETTINGS)})')
     for k in SETTINGS:
         v = cfg.get(k)
         if not isinstance(v, int) or isinstance(v, bool) or v < (1 if k in ("days", "lookVisits", "lookFixRound",
                                                                                "lookFindingOrders") else 0):
             raise ValueError(f'"door".{k} is {v!r}, not a whole number in range')
+    if cfg["fastMaxVisits"] >= cfg["lookVisits"]:
+        raise ValueError(f'"door".fastMaxVisits ({cfg["fastMaxVisits"]}) must be below lookVisits ({cfg["lookVisits"]})')
     return {k: cfg[k] for k in SETTINGS}
 
 
@@ -110,7 +119,7 @@ def file_count(root, paths) -> int:
     return total
 
 
-def route(cfg, here, finders, recent, rounds, alt, files):
+def route(cfg, here, finders, recent, rounds, alt, files, uncounted=(), unread=0):
     """(the route, its reasons)."""
     def reason(rule, setting, figure, wos):
         return {"rule": rule, "setting": setting, "threshold": cfg[setting] if setting else None, "figure": figure,
@@ -127,14 +136,16 @@ def route(cfg, here, finders, recent, rounds, alt, files):
         return "look-around", look
     fast = [(files <= cfg["fastMaxFiles"], reason("fast-files", "fastMaxFiles", files, [])),
             (len(here) <= cfg["fastMaxVisits"], reason("fast-visits", "fastMaxVisits", len(here), here)),
-            (not recent, reason("fast-findings", None, len(recent), recent)),
+            (not recent and not unread, reason("fast-findings", None, len(recent) + unread, recent)),
             (not with_round, reason("fast-fix-round", None, top, with_round))]
+    if uncounted:  # printed only when it fails: a path ground does not count has no history the door can read
+        fast.append((False, reason("fast-counted", None, len(uncounted), [])))
     if all(ok for ok, _ in fast):
         return "fast", [r for _, r in fast]
     return "normal", [r for ok, r in fast if not ok]
 
 
-def said(r, days) -> str:
+def said(r, days, uncounted=(), unread=0) -> str:
     wos = f" ({ground.shown(r['workOrders'])})" if r["workOrders"] else ""
     setting = f" [{r['setting']} {r['threshold']}]" if r["setting"] else ""
     n = r["figure"]
@@ -145,9 +156,11 @@ def said(r, days) -> str:
         "look-altitude": f"an altitude trigger on an ask of {n} work order{'s' if n != 1 else ''} here{wos}",
         "fast-files": f"{n} file{'s' if n != 1 else ''} in the paths",
         "fast-visits": f"{n} other work order{'s' if n != 1 else ''} here in {days} days{wos}",
-        "fast-findings": (f"serious review findings in {days} days by {n} work order{'s' if n != 1 else ''}{wos}"
+        "fast-findings": (f"serious review findings in {days} days: {n}{wos}"
+                          + (f", {unread} of them with no Site line that can be read" if unread else "")
                           if n else f"no serious review finding in {days} days"),
         "fast-fix-round": f"a fix round here{wos}" if n else "no fix round here",
+        "fast-counted": f"{n} path{'s' if n != 1 else ''} not counted (outside the code roots): {', '.join(uncounted)}",
     }[r["rule"]]
     return text + setting
 
@@ -173,7 +186,8 @@ def main(argv, root) -> int:
     project, _, _, _, paths = found
     try:
         cfg = settings(project)
-    except (OSError, ValueError) as e:  # json.JSONDecodeError is a ValueError
+    except (OSError, ValueError, AttributeError) as e:  # json.JSONDecodeError is a ValueError; AttributeError: a
+        # project config that is not an object (decision.merge)
         print(f"bakehouse door: the door settings ({project.decision_config} over the defaults): {e}", file=sys.stderr)
         return 2
     try:
@@ -189,12 +203,14 @@ def main(argv, root) -> int:
     start = date.fromtimestamp((until if until is not None else datetime.now().timestamp()) - cfg["days"] * 86400)
     recent = list(dict.fromkeys(f[0] for f in sorted(mine, key=lambda f: f[1], reverse=True) if f[1] >= start))
     rounds = fix_rounds([r for r in runs if r[0] in here], [e for e in events if e.get("task")])
-    way, reasons = route(cfg, here, finders, recent, rounds, altitude(events, here), files)
+    uncounted = [p["path"] for p in s["paths"] if not p.get("inCodeRoots")]
+    unread = s.get("findingsUnread") or 0
+    way, reasons = route(cfg, here, finders, recent, rounds, altitude(events, here), files, uncounted, unread)
     out = {"format": 1, "team": True, "project": str(project.root), "route": way, "reasons": reasons,
            "settings": cfg, "asOf": a.as_of, "task": a.leave_out, "ground": s}
     sys.stdout.reconfigure(errors="surrogateescape")  # a file name that is not UTF-8
     print(json.dumps(out, indent=2) if a.json else
-          f"door: {way}: " + "; ".join(said(r, cfg["days"]) for r in reasons))
+          f"door: {way}: " + "; ".join(said(r, cfg["days"], uncounted, unread) for r in reasons))
     if why:
         print(f"bakehouse door: {why}; open work orders are not known", file=sys.stderr)
     return 1 if why else 0
