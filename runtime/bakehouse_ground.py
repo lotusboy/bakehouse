@@ -24,6 +24,12 @@ and findingsUnread, only when there are any: the serious findings in run folders
 that names a file git has had on one of those branches, or none. A re-check beside a finding's file that repeats its id
 is the same finding: each line as the latest round that has it gives it.
 
+In tree mode the run folders are read from the working tree and from the tip of each branch above: a folder name is
+read once, from the working tree when it has it, else from the newest tip (committer date) that holds it, by
+`git ls-tree` and `git cat-file` (an open lane whose branch this clone has not fetched is not seen). runFolders, in
+tree mode only: read (how many run folders were read) and onlyInGit (how many of them only from git; the text gives
+a line when there are any). A ref that cannot be read is left out with one stderr line naming it.
+
 Exit 0; 1 the ops ledger is broken (the rest is printed) or git failed; 2 bad usage, or a binding without
 tracker.id or code roots; 3 no team here; 4 setup needed.
 """
@@ -98,25 +104,112 @@ def open_work_orders(project):
         return None, f"the ledger {files[0]} holds a line status cannot use ({e!r})"
 
 
-def run_folders(project, binding, rx) -> list:
-    """[(its work order, its date, the folder)]; a linked folder is not followed."""
+def git_out(root, *args, data=None) -> bytes:
+    """One read-only git command's output; CalledProcessError when it fails."""
+    return subprocess.run(["git", "--literal-pathspecs", "-C", str(root), *args], input=data, capture_output=True,
+                          check=True, env={**os.environ, "GIT_NO_LAZY_FETCH": "1"}).stdout
+
+
+def ref_tips(root) -> list:
+    """[(its committer date, its commit, the ref)] of the refs git_log reads, the newest first; a ref whose commit
+    cannot be read is left out with one stderr line naming it."""
+    refs = [line.split(" ", 1) for line in git_out(root, "for-each-ref", "--format=%(objectname) %(refname)",
+                                                    "refs/heads", "refs/remotes").decode().splitlines()]
+    refs = [(oid, ref) for oid, ref in refs if ref != f"refs/heads/{locator.RECORDS_BRANCH}"
+            and not (ref.startswith("refs/remotes/") and ref.endswith(f"/{locator.RECORDS_BRANCH}"))]
+    head = subprocess.run(["git", "-C", str(root), "rev-parse", "--verify", "-q", "HEAD"], capture_output=True)
+    refs += [(head.stdout.decode().strip(), "HEAD")] if head.returncode == 0 else []
+    objects = read_objects(root, list(dict.fromkeys(oid for oid, _ in refs)))
+    tips = []
+    for oid, ref in refs:
+        when = re.search(rb"^committer .* ([0-9]+) [-+][0-9]{4}$", objects.get(oid, b""), re.M)
+        if when:
+            tips.append((int(when.group(1)), oid, ref))
+        else:
+            print(f"bakehouse ground: the ref {ref} cannot be read; its run folders are not read", file=sys.stderr)
+    return sorted(tips, key=lambda t: -t[0])
+
+
+def read_objects(root, oids) -> dict:
+    """{object id: its content} by one `git cat-file --batch`; a missing object is left out."""
+    out, objects, at = git_out(root, "cat-file", "--batch", data="".join(f"{o}\n" for o in oids).encode()), {}, 0
+    for oid in oids:
+        end = out.index(b"\n", at)
+        head = out[at:end].split(b" ")
+        if len(head) == 3:
+            size = int(head[2])
+            objects[oid], at = out[end + 1:end + 1 + size], end + 2 + size
+        else:  # "<oid> missing"
+            at = end + 1
+    return objects
+
+
+def git_run_folders(root, name, have) -> dict:
+    """{a run folder's name: its findings files, {(its folder in the run folder, its name): its object id}} of the
+    folders in `name` on the refs git_log reads that are not in `have`: each from the newest ref tip (committer
+    date) that holds it. A linked folder or file is not followed."""
+    prefix, found, listed = os.path.normpath(name) + "/", {}, set()
+    for _, oid, ref in ref_tips(root):
+        if oid in listed:  # another ref at the same commit: nothing new
+            continue
+        listed.add(oid)
+        try:
+            listing = git_out(root, "ls-tree", "-r", "-t", "-z", "--full-tree", oid, "--", prefix)
+        except subprocess.CalledProcessError:
+            print(f"bakehouse ground: the ref {ref} cannot be read; its run folders are not read", file=sys.stderr)
+            continue
+        mine = {}
+        for entry in listing.decode("utf-8", "surrogateescape").split("\0"):
+            meta, _, path = entry.partition("\t")
+            if not path.startswith(prefix) or path == prefix:
+                continue
+            mode, kind, blob = meta.split(" ")
+            folder, _, rest = path[len(prefix):].partition("/")
+            if folder in have or folder in found:
+                continue
+            if not rest and kind == "tree":
+                mine.setdefault(folder, {})
+            elif rest and kind == "blob" and mode in ("100644", "100755") and folder in mine:
+                at, _, n = rest.rpartition("/")
+                if n.startswith("findings") and n.endswith(".md"):
+                    mine[folder][at, n] = blob
+        found.update(mine)
+    return found
+
+
+def run_folders(project, binding, rx) -> tuple:
+    """([(its work order, its date, the folder, None; or from git, its findings files as git_run_folders gives
+    them)], (how many run folders were read, how many of them only from git), or None in records mode). A linked
+    folder is not followed. In tree mode a folder name is read once: the working tree's copy when it has one, else
+    the copy at the newest ref tip that holds it; a lane branch this clone has not fetched is not seen."""
+    mode = None
     try:
         base, name, mode = locator.runs_location(project, binding)
         if mode == "tree" and locator.reviews_problem(name):
-            return []
-        folders = [e for e in os.scandir(Path(base) / name) if e.is_dir(follow_symlinks=False)]
+            return [], (0, 0)
+        try:
+            entries = list(os.scandir(Path(base) / name))
+        except FileNotFoundError:
+            if mode != "tree":
+                raise
+            entries = []
+        folders = [(e.name, e.path, None) for e in entries if e.is_dir(follow_symlinks=False)]
     except (OSError, ValueError, locator.BadRuns):
-        return []
+        return [], (0, 0) if mode == "tree" else None
+    if mode == "tree":
+        have = {e.name for e in entries}
+        folders += [(n, f"{os.path.normpath(name)}/{n}", files)
+                    for n, files in git_run_folders(project.root, name, have).items()]
     runs = []
-    for e in folders:
-        m = RUN.match(e.name)
+    for n, path, files in folders:
+        m = RUN.match(n)
         wo = m and rx.search(m.group(2))
         try:
             if wo:
-                runs.append((wo.group(), date.fromisoformat(m.group(1)), e.path))
+                runs.append((wo.group(), date.fromisoformat(m.group(1)), path, files))
         except ValueError:  # no such day
             pass
-    return runs
+    return runs, (len(runs), sum(r[3] is not None for r in runs)) if mode == "tree" else None
 
 
 def findings_in(text, wo) -> list:
@@ -146,13 +239,22 @@ def findings_in(text, wo) -> list:
 def serious_findings(project, runs) -> list:
     """[(its work order, its run folder's date, its site: a path, "" for none, or None when not readable, earlier)]."""
     latest = {}  # (work order, date, the findings file's folder, id): a finding
-    for wo, day, folder in runs:
-        for at, _, names in os.walk(folder):
+    wanted = [oid for *_, files in runs if files is not None for oid in files.values()]
+    blobs = read_objects(project.root, list(dict.fromkeys(wanted))) if wanted else {}  # one git call for them all
+    for wo, day, folder, files in runs:
+        if files is None:
+            walk = [(at, names, None) for at, _, names in os.walk(folder)]
+        else:
+            walk = [(f"{folder}/{at}", [n for a, n in files if a == at], {n: blobs.get(files[a, n], b"")
+                                                                          for a, n in files if a == at})
+                    for at in dict.fromkeys(a for a, _ in files)]
+        for at, names, data_of in walk:
             rounds = [(re.fullmatch(r"findings-fix([0-9]+)\.md", n), n) for n in names
                       if n.startswith("findings") and n.endswith(".md")]
             for _, n in sorted((int(m.group(1)) if m else 0, n) for m, n in rounds):
                 try:
-                    data = Path(at, n).read_bytes() if Path(at, n).is_file() else b""  # never a pipe
+                    data = data_of[n] if data_of is not None else (
+                        Path(at, n).read_bytes() if Path(at, n).is_file() else b"")  # never a pipe
                 except OSError:
                     continue
                 for f in findings_in(data.decode("utf-8-sig", "surrogateescape"), wo):
@@ -252,6 +354,9 @@ def plain(s) -> str:
         out.append(f"commits with no work-order id, {lately}: {s['noId']}")
     if s.get("findingsUnread"):
         out.append(f"serious review findings, {lately}, with no Site line that can be read: {s['findingsUnread']}")
+    if s.get("runFolders", {}).get("onlyInGit"):
+        out.append(f"run folders read: {s['runFolders']['read']} ({s['runFolders']['onlyInGit']} only in git, "
+                   "not in this working tree)")
     return "\n".join(out)
 
 
@@ -298,7 +403,8 @@ def main(argv, root) -> int:
         ap.error(f"--not {a.leave_out} is not a work-order id of this project")
     try:
         commits = history(project.root, roots, rx, a.leave_out)
-        serious = serious_findings(project, [r for r in run_folders(project, binding, rx) if r[0] != a.leave_out])
+        runs, read = run_folders(project, binding, rx)
+        serious = serious_findings(project, [r for r in runs if r[0] != a.leave_out])
     except subprocess.CalledProcessError as e:
         print(f"bakehouse ground: git log failed: {os.fsdecode(e.stderr).strip()}", file=sys.stderr)
         return 1
@@ -312,6 +418,8 @@ def main(argv, root) -> int:
         found = at_path(p["path"], serious)
         if found:
             p["findings"] = found
+    if read is not None:
+        s["runFolders"] = {"read": read[0], "onlyInGit": read[1]}
     unread = sum(where is None and day >= date.fromtimestamp(start) for _, day, where, _ in serious)
     if unread:
         s["findingsUnread"] = unread
