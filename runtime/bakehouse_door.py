@@ -3,7 +3,12 @@ or look-around. Standard library only. Run through bin/bakehouse. It reads what 
 functions) and the decision ledger's asks (decision.sh's ledger, by the same locator); it writes nothing and uses no
 network.
 
-  bakehouse door [--json] [--task <id>] [--as-of <ISO time>] [--repo <folder>] <path>...
+  bakehouse door [--json] [--task <id>] [--as-of <ISO time>] [--repo <folder>] [<path>...]
+
+With --task and no paths, the paths are the work order's own `ground:` line in the tracker file (binding
+tracker.file): the item runs from its `id:` field line to the next one, and its first `ground:` line counts. The
+working tree's copy is read first, else the newest branch tip that has the item with a line. No line: exit 2, naming
+it, so the line is written before the door runs.
 
 --task leaves that work order out of every count, as `ground --not` does. The window is the setting `days`.
 
@@ -50,6 +55,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 from datetime import date, datetime
@@ -127,6 +133,55 @@ def looks(project, candidates, start, until) -> list:
     return sorted(seen, key=seen.get, reverse=True)
 
 
+def item_ground(text, wo):
+    """The paths of the `ground:` line of the item whose `id:` field is wo, or None: the item runs from its `id:` line
+    to the next `id:` line; its first `ground:` line counts. Quoted paths (" or `) are unquoted."""
+    field = re.compile(r"^[\s>*\-]*id:\s*`?([^\s`]+)`?\s*$", re.I)
+    mine = False
+    for line in text.splitlines():
+        m = field.match(line)
+        if m:
+            mine = m.group(1).lower() == wo.lower()
+            continue
+        g = re.match(r"^[\s>*\-]*ground:\s*(.*)$", line, re.I) if mine else None
+        if g:
+            raw = g.group(1).replace("`", '"')
+            try:
+                words = shlex.split(raw)
+            except ValueError:
+                words = raw.replace('"', " ").split()
+            return [w for w in words if w] or None
+    return None
+
+
+def ground_line(project, binding, wo):
+    """(the paths of wo's `ground:` line, where it was read), or (None, why): the tracker file in the working tree
+    first, else the newest branch tip (committer date) whose copy has the item with a line."""
+    tracker = binding.get("tracker", {}).get("file") if isinstance(binding.get("tracker"), dict) else None
+    if not isinstance(tracker, str) or not tracker:
+        return None, "the binding has no tracker.file, so a work order's ground: line cannot be read: give the paths"
+    try:
+        paths = item_ground((project.root / tracker).read_text(encoding="utf-8", errors="replace"), wo)
+    except OSError:
+        paths = None
+    if paths:
+        return paths, "the working tree"
+    refs = ground.git_out(project.root, "for-each-ref", "--sort=-committerdate", "--format=%(refname)",
+                          "refs/heads", "refs/remotes").decode("utf-8", "surrogateescape").split()
+    for ref in refs:
+        if ref.endswith("/" + ground.locator.RECORDS_BRANCH):
+            continue
+        try:
+            text = ground.git_out(project.root, "show", f"{ref}:{tracker}").decode("utf-8", "replace")
+        except subprocess.CalledProcessError:
+            continue
+        paths = item_ground(text, wo)
+        if paths:
+            return paths, ref
+    return None, (f"{wo} has no ground: line in {tracker}, in the working tree or on any branch: write it first, the "
+                  "files or folders the change is expected to touch (commands/change.md, the work order)")
+
+
 def file_count(root, paths) -> int:
     total = 0
     for p in paths:
@@ -191,7 +246,8 @@ def main(argv, root) -> int:
     ap.add_argument("--task", dest="leave_out", metavar="WORK_ORDER", help="the work order at the door: left out")
     ap.add_argument("--as-of", dest="as_of", metavar="ISO_TIME", help="replay: read nothing after this time")
     ap.add_argument("--repo", help="default: the current folder")
-    ap.add_argument("paths", nargs="+", metavar="path", help="relative to the repository root")
+    ap.add_argument("paths", nargs="*", metavar="path",
+                    help="relative to the repository root; none: the --task work order's own ground: line")
     a = ap.parse_intermixed_args(argv)
     until = None
     if a.as_of is not None:
@@ -199,9 +255,20 @@ def main(argv, root) -> int:
         if t is None:
             ap.error(f"--as-of {a.as_of} is not an ISO time")
         until = t.timestamp()
+    if not a.paths and not a.leave_out:
+        ap.error("give the paths, or --task <work order> to read its ground: line")
     found = ground.prepare(ap, a, "--task", "bakehouse door")
     if isinstance(found, int):
         return found
+    if not a.paths:
+        line, where = ground_line(found[0], found[1], a.leave_out)
+        if not line:
+            print(f"bakehouse door: {where}", file=sys.stderr)
+            return 2
+        a.paths = line
+        found = ground.prepare(ap, a, "--task", "bakehouse door")
+        if isinstance(found, int):
+            return found
     project, _, _, _, paths = found
     try:
         cfg = settings(project)

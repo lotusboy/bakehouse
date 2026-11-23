@@ -1714,7 +1714,8 @@ change every file; a revert counts for the work order it names.
 
 ## The door
 
-At step 4.3 of the change job the PM runs `bakehouse door --task <id> <the ground: paths>`. It gives one of
+At step 4.3 of the change job the PM runs `bakehouse door --task <id>`, which reads the paths from the work order's own `ground:` line
+(and stops, naming the line, when there is none, so the line is written first). It gives one of
 three routes. **look-around**: the area has been busy or troubled lately (other work orders, serious findings,
 a second fix round, or an altitude trigger there), so the PM gives a helicopter view and a Seesaw read and runs
 one architect check before the owner's go; one look per area: when a work order there already had an architect

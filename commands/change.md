@@ -48,9 +48,9 @@ work names its own working branch there. If the item has no `branch:` line, the 
 it opens its own branch (step 5). The job works only on the branch that line names. It never opens a
 second branch for the same item, and it never copies a work order from one branch to another.
 
-The item may carry a **`ground:` line**: the files or folders the change is expected to touch, written
+The item carries a **`ground:` line**: the files or folders the change is expected to touch, written
 before any edit, as quoted paths from the repository root with spaces between. If it has none, the PM
-writes it in step 4. It stays as written: where the change really went is in git.
+writes it in step 4, before the door (step 4.3), which stops without one. It stays as written: where the change really went is in git.
 
 Beside them, too, the item carries a **`serves:` line**: the outcome this change moves for the
 owner, in the owner's own terms, with a count of the in-scope items it reaches. "In scope" is what
@@ -259,7 +259,7 @@ Find where this work order stands before doing anything else. Run `git fetch` fi
    and the branch.
 
    **The door.** Beside the `ground` lines, the message gives the route and its reasons that
-   `bakehouse door --task {id} <the ground: paths>` prints: fast, normal or look-around (bakehouse
+   `bakehouse door --task {id}` prints (it reads the item's own `ground:` line, and stops when there is none): fast, normal or look-around (bakehouse
    `docs/PROJECT-TEAM.md`, "The door"). The PM may raise the route (fast to normal, normal to
    look-around), saying why in one line; it never lowers it. A change to a contract, a ruling file or
    a pinned output is at least normal. Record the route the work order takes, once per work order:
