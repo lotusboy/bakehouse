@@ -146,6 +146,9 @@ model for that one dispatch, and only with the owner's yes.
   the finding, not only the ones the review named, and brief them all.
 - **The door comes first.** At the work order, before any code, `bakehouse door` gives the route (fast, normal
   or look-around) and a look-around brings the architect in then (commands/change.md, step 4.3).
+  The route is the care level: on fast and normal the go on the work order covers the engineer's and
+  the reviewer's spend, fast also covers a matching prediction and gets one diff-scoped reviewer, and no
+  route drops the review, the prediction and its seal, or the close checks.
 - **Check the altitude before a fix round.** The reviewer gives each finding its reach and its layer.
   1. A finding whose layer is not the work order's owning layer, or that says two places own one rule,
      may belong a layer up. Before any fix round, dispatch a short architect check of that layer (about

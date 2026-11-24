@@ -24,7 +24,8 @@ figure from anywhere else. A copied fact would bind every repo to the one it cam
 needs a fact that none of these gives, stop and name the missing field.
 
 **No dispatch without the owner's go on the spend.** Before each agent dispatch, state the estimated
-tokens and wait for the owner's go. The one exception is unattended mode: while it is on, the PM skill's
+tokens and wait for the owner's go. On a fast or normal route, the owner's go on the work order (step 4.3)
+is that go for the engineer and the reviewer of the first round. The other exception is unattended mode: while it is on, the PM skill's
 "When the owner is away" section governs, with a headroom check before each dispatch.
 
 ## The work order
@@ -91,6 +92,8 @@ the job's re-entry state.
 - **The job's branch**: the branch the item's `branch:` line names.
 - **One step.** A change is one work step on one branch, so `{n}` is `1`. Work that needs more than
   one step is more than one work order.
+- **`{route}`**: the care level the work order takes: the route recorded at step 4.3 (fast, normal or
+  look-around), or normal once it rose from fast (step 6.2, step 8).
 - **`BASE`**: the commit the change starts from. On a branch the job opens, it is the head of
   `origin/<default>` when the branch is opened. On a branch the job did not open, it is that
   branch's head when step 5 runs. Record it in the item; never recompute it.
@@ -254,7 +257,9 @@ Find where this work order stands before doing anything else. Run `git fetch` fi
 3. **Put it to the owner** as one message, in this order: the `need`; the `evidence`; the `layer`;
    the gates that prove it and the rest of the job's list; the `expected` moves and the `mustNotMove`
    outputs; the `serves` line and its count; the `ground:` line and what
-   `bakehouse ground --not {id} <its paths>` prints; the branch the job will work on (the `branch:` line, or the one it will open); the size in hours and tokens; one question: go or not. A
+   `bakehouse ground --not {id} <its paths>` prints; the branch the job will work on (the `branch:` line, or the one it will open); the size in hours and tokens, with
+   the spend for the engineer and for the reviewer, each with its ceiling (on fast, the reviewer at about half of
+   normal); one question: go or not. A
    work order from a repo procedure was already decided there; the go here is the go on the spend
    and the branch.
 
@@ -274,8 +279,12 @@ Find where this work order stands before doing anything else. Run `git fetch` fi
      step 4.2 check on an architecture decision then applies. When the reasons include `look-covered`,
      the area already had an architect look in the window: read that report and put its options to
      the owner; dispatch a new check only when the report does not cover this change, saying why.
-   - **fast**: the owner's go here also covers the prediction (step 6.2).
-   - **normal**: nothing more.
+   - **fast**: the owner's go here covers the engineer's and the reviewer's spend (steps 6.1 and 7) and
+     the prediction (step 6.2). The review is the fast form (the [reviewer brief](#reviewer-brief)).
+   - **normal**: the owner's go here covers the engineer's and the reviewer's spend (steps 6.1 and 7).
+     The prediction is its own ask (step 6.2).
+   - On every route, two asks stay: the merge (step 9), and on look-around the spend waits in steps 6.1
+     and 7. The review, the prediction and its seal, and the close checks run on every route.
 4. **A dry run stops here** and fills the briefs.
 
 ### 5. The branch (PM)
@@ -298,7 +307,8 @@ branch), `BASE` and the record folder. Commit by path, with the trailer. Fill th
 1. **Dispatch.** Check that no `{…}` and no `[…]` field is left in the brief. Save the filled brief in
    the record folder it names, as `brief.engineer.first.md`; it is committed with the round's other
    records (the PM skill, "The records the PM keeps"). State the token
-   estimate and wait for the owner's go. Dispatch it with `subagent_type: "role:change:engineer"`,
+   estimate. On fast and normal, the owner's go at step 4.3 covers it: dispatch without a second wait. On
+   look-around, wait for the owner's go. Dispatch it with `subagent_type: "role:change:engineer"`,
    on the branch. The engineer writes the prediction file and commits it by its path before its
    first code edit, then stops and reports. Close refuses a code commit of the work order that no
    round's prediction commit comes before (by commit time; bakehouse `docs/PREDICT-GATE.md`). The role hook sends it back once if the record folder its brief names holds no
@@ -330,8 +340,12 @@ branch), `BASE` and the record folder. Commit by path, with the trailer. Fill th
    - every move in the prediction appears in `expected`;
    - no output in `mustNotMove` is predicted to move.
 
-   On a work order whose recorded route is fast (step 4.3), when every check passes exactly, report the
-   match and continue without a second ask; any difference is asked as below.
+   On a work order whose recorded route is fast (step 4.3), first run
+   `bakehouse door --task {id} --prediction <the prediction file>`. When it prints normal, the route rose
+   at the prediction (its reason `raised-prediction` names the key and the pattern): record it,
+   `ops-event.sh door {id} door - - - - - normal "raised from fast: <key>"`, and the work order goes on
+   as normal from there, so the prediction is asked as below. When the route stays fast and every check
+   passes exactly, report the match and continue without a second ask; any difference is asked as below.
 
    Bring the prediction to the owner as one decision, before any site is switched, with each failed
    check named. A predicted move that `expected` does not name is a new decision, never a detail. On
@@ -371,8 +385,9 @@ branch), `BASE` and the record folder. Commit by path, with the trailer. Fill th
 
 Dispatch the reviewer from this session as soon as the engineer reports. A reviewer started inside
 another agent dies when that agent hands back. Fill the [reviewer brief](#reviewer-brief). Save it
-in the record folder it names, as `brief.reviewer.first.md`, as step 6.1 does. State the
-token estimate and wait for the owner's go. Dispatch it with
+in the record folder it names, as `brief.reviewer.first.md`, as step 6.1 does. On fast, fill its fast
+form. State the token estimate. On fast and normal, the owner's go at step 4.3 covers it: dispatch without
+a second wait. On look-around, wait for the owner's go. Dispatch it with
 `subagent_type: "role:change:reviewer"`. Record the run (owned repos only).
 
 Before you treat any agent's work as lost, check its record folder for `findings.md`, its branch and
@@ -385,6 +400,9 @@ fresh `role:change:engineer` with the findings, the branch and the brief. Each f
 round N saves its filled brief first, as step 6.1 does, as `brief.engineer.fix<N>.md` or
 `brief.reviewer.fix<N>.md`.
 
+- A serious finding (ANDON, P0 or P1) on a fast work order raises it to normal from that point: record
+  `ops-event.sh door {id} door - - - - - normal "raised from fast: <finding id>"`. Its re-check review is
+  the normal form.
 - Fix every ANDON, P0 and P1 finding before the pull request.
 - Fix real P2 and P3 findings too. Skip only the cosmetic.
 - Before the round, check its altitude (`skills/pm/SKILL.md`, "Check the altitude before a fix round"):
@@ -558,6 +576,8 @@ Repo: the working directory's repository; every path below is relative to its ro
 Branch: [tracker: the item's branch: line] from BASE [tracker: BASE]. Work on it. Do not push or
 open a pull request.
 Work order {id}: [work order: need]
+Route: {route}. On fast and normal, run the project's narrower phase 1 if its recipe has one; on
+look-around, the full one.
 Decided: [work order: decided].
 Evidence: [work order: evidence]. Reproduce it on BASE first.
 Owning layer: [work order: layer]. Fix it there; a fix in another layer is an andon.
@@ -659,6 +679,15 @@ gate, verdict, disposition}, a survivor's disposition `open: <finding id>` until
 `test-added <test file>` or `accepted: <reason>` with its reach as a count. If Write is refused, use a
 shell heredoc.
 Turn budget: [PM: turns] of your cap. Leave 15 turns to write findings.md.
+```
+
+**The fast form** (a work order whose route is fast). One reviewer. Add these lines after the `Diff:`
+line, and give the budget stated at step 4.3, about half of normal's:
+
+```text
+Scope: the diff ([tracker: BASE]..[git: the branch head]) and the lines it touches, not the whole area.
+Mutants: your mutant list (mutate.sh --mutants) covers only lines the diff changed.
+Every other part of the review is unchanged: severity, Site:, Origin:, the findings file.
 ```
 
 ## Guardrails

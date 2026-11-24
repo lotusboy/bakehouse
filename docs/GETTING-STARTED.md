@@ -165,6 +165,12 @@ The binding is the project's facts for the team. Write `.team/binding.json`:
   to run for which files. The reviewer uses it to check that the tests catch a deliberate break
   ([The binding](PROJECT-TEAM.md#the-binding), field `mutation`). Preflight checks that the test files
   exist: name your own.
+- `careLimits` is optional: the project's hard limits, the paths and the prediction keys that are never fast
+  ([The door](PROJECT-TEAM.md#the-door)). A hard limit is never fast; the route rises to normal at the
+  prediction when a predicted key matches. Globs are repository-relative, and `**` matches any depth. Two examples:
+  `"careLimits": {"paths": ["src/billing/**", "schema/*.sql"]}` keeps priced code and the database schema off
+  fast; `"careLimits": {"predictionKeys": ["*.price", "*.requestHash"]}` raises a work order to normal when its
+  prediction moves a priced output or a request hash. Without the key there are no limits.
 - Every field, and which ones are required: [The binding](PROJECT-TEAM.md#the-binding).
 
 ## 6. Write the tracker item

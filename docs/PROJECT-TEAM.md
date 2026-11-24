@@ -605,6 +605,7 @@ in the binding, because preflight cannot check it.
 | `leaveAlone` | files no step may edit | no |
 | `records` | `since`: the date the record contracts apply from (`YYYY-MM-DD`); `jobs`: artefacts added to a job's record contract (see "Records against the process"). It may add, never remove. `codeRoots`: the folders whose commits are code, in any binding. It is used when `signal` names no `codeRoots`: a binding with no `signal`, or a `signal` that is a command or a pointer. A rules `signal` that names its own `codeRoots` wins | no; `change` and `refactor` need code roots here or in `signal.codeRoots` |
 | `mainFollows` | `{"branch": "<branch>"}`: the branch engine changes merge into as each work order closes, read in the main clone. With it, a work order's first baseline seals only when that branch is merged into the code checkout's `HEAD`; session start and close say when it has engine commits the branch lacks ("Two product branches that follow one branch") | no |
+| `careLimits` | hard limits, never fast: `{"paths": [<glob>...], "predictionKeys": [<glob>...]}`, globs repository-relative, `**` any depth. `paths`: a door path that matches, or that holds a tracked file that matches, fails `fast-limit`. `predictionKeys`: keys of the prediction file that mark a change only a measure shows; a match raises fast to normal at the prediction ("The door"). A hard limit is never fast; the route rises to normal at the prediction when a predicted key matches. Two examples: `{"paths": ["src/billing/**", "schema/*.sql"]}` (priced code and the database schema); `{"predictionKeys": ["*.price", "*.requestHash"]}` (a priced output, a request hash). A careLimits that is not an object, or a list that is not a list of strings, is exit 2, naming the key | no |
 | `mutation` | what the mutation runner runs for a mutated file: `command`, `env`, `timeout`, `tests` (a list of `{"files": <glob>, "tests": [<path>, ...]}`), `loads` (a command that prints where the tests' environment loads a file from), and `links` (paths in the copy that get a snapshot of a linked git repository; see "The mutation runner") | no |
 
 Placeholders are `{…}` only, from this closed list: `{root}`, `{register}`, `{id}`, `{n}`, `{date}`,
@@ -1716,15 +1717,44 @@ change every file; a revert counts for the work order it names.
 
 At step 4.3 of the change job the PM runs `bakehouse door --task <id>`, which reads the paths from the work order's own `ground:` line
 (and stops, naming the line, when there is none, so the line is written first). It gives one of
-three routes. **look-around**: the area has been busy or troubled lately (other work orders, serious findings,
-a second fix round, or an altitude trigger there), so the PM gives a helicopter view and a Seesaw read and runs
-one architect check before the owner's go; one look per area: when a work order there already had an architect
-run in the window, the door says so (`look-covered`) and the PM reads that report first. **fast**: a small change in a quiet area, so the owner's go on the
-work order also covers a prediction that matches `expected` and `mustNotMove` exactly. **normal**: the job as
-before. The review runs on every route. The six thresholds are under `door` in `runtime/decision-config.json`
+three routes, and the route is the work order's care level: how much care it gets.
+
+A work order "here" changed the paths in the window. A **troubled** work order is one here that, in the
+window, asked a fix round of 2 or more or has a run folder with a serious review finding (ANDON, P0 or P1).
+Only troubled work orders count.
+
+- **look-around**: the area has been troubled lately (`lookVisits` or more troubled work orders, serious
+  findings on the paths in the window from `lookFindingOrders` or more work orders, a fix round of
+  `lookFixRound` in the window, or an altitude trigger there), so the PM gives a helicopter view and a
+  Seesaw read and runs one architect check before the owner's go; one look per area: when a work order
+  there already had an architect run in the window, the door says so (`look-covered`) and the PM reads
+  that report first.
+- **fast**: a small change in a quiet area: `fastMaxFiles` or fewer files, `fastMaxVisits` or fewer
+  troubled work orders here, every path in the code roots, and no hard-limit path (`fast-limit`, the
+  binding's `careLimits`, [The binding](#the-binding)). A hard limit is never fast. When the prediction
+  names a key that matches `careLimits.predictionKeys`, the route rises to normal there
+  (`bakehouse door --task <id> --prediction <moves file>`, reason `raised-prediction`), and a serious
+  finding on a fast work order raises it to normal from that point.
+- **normal**: everything else.
+
+What each level does:
+
+| Step | fast | normal | look-around |
+|---|---|---|---|
+| Owner asks | 2: the work order (covers spend and prediction), the merge | 3: the work order (covers spend), the prediction, the merge | as normal, plus the architect's options |
+| Phase 1 | the narrower phase 1 | the narrower phase 1 | full phase 1 |
+| Prediction and its seal | kept | kept | kept |
+| Review | one reviewer, scoped to the diff, a smaller ceiling | as today | as today |
+| Mutants | on the changed lines only | as today | as today |
+| Architect | none | none | one look per area, or read the covering look |
+| Close checks | all kept | all kept | all kept |
+
+Phase 1 is the project's own recipe: the engineer brief carries `Route: {route}`, and bakehouse defines
+neither phase 1. The review, the prediction and its seal, and the close checks are never dropped. The six
+thresholds are under `door` in `runtime/decision-config.json`
 (`days`, `lookVisits`, `lookFindingOrders`, `lookFixRound`, `fastMaxFiles`, `fastMaxVisits`); a project
 overrides any of them in `.team/decision-config.json`, and the door's text names the setting beside each
-reason. The route is recorded once per work order as an ops `door` event.
+reason. The route is recorded once per work order as an ops `door` event, and again when it rises.
 
 ## How bakehouse's tools are designed
 
