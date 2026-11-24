@@ -12,20 +12,23 @@ it, so the line is written before the door runs.
 
 --task leaves that work order out of every count, as `ground --not` does. The window is the setting `days`.
 
-look-around when any one of these holds (a work order "here" changed the paths in the window):
-  look-visits     lookVisits or more other work orders here
-  look-findings   serious review findings on the paths (ever, as ground counts them), found by lookFindingOrders or
-                  more different work orders
-  look-fix-round  a work order here reached fix round lookFixRound or more: the highest --fix-round of its asks, or
-                  the highest N of a findings-fixN.md in its run folders
+A work order "here" changed the paths in the window. A troubled work order is a work order here that, inside the
+window, asked a fix round of 2 or more (the highest --fix-round of its asks, or the highest N of a findings-fixN.md in
+its run folders), or has a run folder with a serious review finding. Inside the window: the ask recorded in the
+window; the run folder dated in the window.
+
+look-around when any one of these holds:
+  look-visits     lookVisits or more troubled work orders here
+  look-findings   serious review findings on the paths in run folders dated in the window, found by lookFindingOrders
+                  or more different work orders (ground itself still shows findings from any time)
+  look-fix-round  a work order here reached fix round lookFixRound or more in the window
   look-altitude   a work order here had an altitude trigger on an ask: layer out, owners 2 or more, or a cluster
 fast when none of those holds and all of these do:
   fast-files      fastMaxFiles or fewer files in the paths (the files git tracks under each; a path git does not
                   track counts as one)
-  fast-visits     fastMaxVisits or fewer other work orders here
-  fast-findings   no serious finding on the paths in a run folder dated in the window, and none in the window
-                  with no Site line that can be read (ground's findingsUnread)
-  fast-fix-round  no work order here with any fix round
+  fast-visits     fastMaxVisits or fewer troubled work orders here (a serious finding or a fix round 2 or more in
+                  the window makes a work order troubled, so this rule covers them; ground's findingsUnread is still
+                  printed and does not stop fast)
   fast-counted    every path is in the code roots: ground counts nothing outside them, so such a path has no history
                   the door can read and is never fast (printed only when it fails). A path under the code roots that
                   is not in the working tree yet (a new file, or a misspelt one) counts as one file with no history.
@@ -262,16 +265,24 @@ def file_count(root, paths) -> int:
     return total
 
 
-def route(cfg, here, finders, recent, rounds, alt, files, uncounted=(), unread=0, covered=(), limits=(), rise=None):
-    """(the route, its reasons). limits: hard_limits' list; rise: raised's (key, glob) or None."""
+def troubled(here, rounds, serious, start) -> list:
+    """The work orders here that are troubled: rounds (fix_rounds of the window's asks and run folders) 2 or more, or
+    a serious finding (any site) in a run folder dated on or after start."""
+    found = {f[0].lower() for f in serious if f[1] >= start}
+    return [w for w in here if rounds.get(w.lower(), 0) >= 2 or w.lower() in found]
+
+
+def route(cfg, here, trouble, finders, rounds, alt, files, uncounted=(), covered=(), limits=(), rise=None):
+    """(the route, its reasons). here: the work orders here; trouble: those troubled; finders: the work orders whose
+    serious findings on the paths are in the window; rounds: fix rounds in the window; limits: hard_limits' list;
+    rise: raised's (key, glob) or None."""
     def reason(rule, setting, figure, wos, **more):
         return {"rule": rule, "setting": setting, "threshold": cfg[setting] if setting else None, "figure": figure,
                 "workOrders": wos, **more}
     top = max((rounds.get(w.lower(), 0) for w in here), default=0)
     at_top = [w for w in here if rounds.get(w.lower(), 0) == top] if top else []
-    with_round = [w for w in here if rounds.get(w.lower(), 0)]
     look = [r for ok, r in (
-        (len(here) >= cfg["lookVisits"], reason("look-visits", "lookVisits", len(here), here)),
+        (len(trouble) >= cfg["lookVisits"], reason("look-visits", "lookVisits", len(trouble), trouble)),
         (len(finders) >= cfg["lookFindingOrders"], reason("look-findings", "lookFindingOrders", len(finders), finders)),
         (top >= cfg["lookFixRound"], reason("look-fix-round", "lookFixRound", top, at_top)),
         (bool(alt), reason("look-altitude", None, len(alt), alt))) if ok]
@@ -280,9 +291,7 @@ def route(cfg, here, finders, recent, rounds, alt, files, uncounted=(), unread=0
             look.append(reason("look-covered", None, len(covered), list(covered)))
         return "look-around", look
     fast = [(files <= cfg["fastMaxFiles"], reason("fast-files", "fastMaxFiles", files, [])),
-            (len(here) <= cfg["fastMaxVisits"], reason("fast-visits", "fastMaxVisits", len(here), here)),
-            (not recent and not unread, reason("fast-findings", None, len(recent) + unread, recent)),
-            (not with_round, reason("fast-fix-round", None, top, with_round)),
+            (len(trouble) <= cfg["fastMaxVisits"], reason("fast-visits", "fastMaxVisits", len(trouble), trouble)),
             (not limits, reason("fast-limit", None, len(limits), [], limits=list(limits)))]
     if uncounted:  # printed only when it fails: a path ground does not count has no history the door can read
         fast.append((False, reason("fast-counted", None, len(uncounted), [])))
@@ -293,21 +302,17 @@ def route(cfg, here, finders, recent, rounds, alt, files, uncounted=(), unread=0
     return "normal", [r for ok, r in fast if not ok]
 
 
-def said(r, days, uncounted=(), unread=0) -> str:
+def said(r, days, uncounted=()) -> str:
     wos = f" ({ground.shown(r['workOrders'])})" if r["workOrders"] else ""
     setting = f" [{r['setting']} {r['threshold']}]" if r["setting"] else ""
     n = r["figure"]
     text = {
-        "look-visits": f"{n} other work orders here in {days} days{wos}",
-        "look-findings": f"serious review findings on these paths found by {n} work orders{wos}",
+        "look-visits": f"{n} troubled work orders here in {days} days{wos}",
+        "look-findings": f"serious review findings on these paths in {days} days found by {n} work orders{wos}",
         "look-fix-round": f"{', '.join(r['workOrders'])} reached fix round {n}",
         "look-altitude": f"an altitude trigger on an ask of {n} work order{'s' if n != 1 else ''} here{wos}",
         "fast-files": f"{n} file{'s' if n != 1 else ''} in the paths",
-        "fast-visits": f"{n} other work order{'s' if n != 1 else ''} here in {days} days{wos}",
-        "fast-findings": (f"serious review findings in {days} days: {n}{wos}"
-                          + (f", {unread} of them with no Site line that can be read" if unread else "")
-                          if n else f"no serious review finding in {days} days"),
-        "fast-fix-round": f"a fix round here{wos}" if n else "no fix round here",
+        "fast-visits": f"{n} troubled work order{'s' if n != 1 else ''} here in {days} days{wos}",
         "look-covered": f"covered by an architect look in {days} days{wos}: read its report before any new check",
         "fast-limit": ("a hard-limit path, never fast: " + ", ".join(f"{f} (careLimits.paths {g})"
                                                                     for f, g in r.get("limits") or [])
@@ -378,22 +383,23 @@ def main(argv, root) -> int:
         return 1
     events = [e for e in asks(project, until) if str(e.get("task") or "").lower() != (a.leave_out or "").lower()]
     here = list(dict.fromkeys(wo for p in s["paths"] for wo in p.get("workOrders", [])))
-    mine = [f for f in serious if f[2] and any(ground.under(f[2], p) for p in paths)]
-    finders = list(dict.fromkeys(f[0] for f in sorted(mine, key=lambda f: f[1], reverse=True)))
-    start = date.fromtimestamp((until if until is not None else datetime.now().timestamp()) - cfg["days"] * 86400)
-    recent = list(dict.fromkeys(f[0] for f in sorted(mine, key=lambda f: f[1], reverse=True) if f[1] >= start))
-    rounds = fix_rounds([r for r in runs if r[0] in here], [e for e in events if e.get("task")])
-    uncounted = [p["path"] for p in s["paths"] if not p.get("inCodeRoots")]
-    unread = s.get("findingsUnread") or 0
     now = until if until is not None else datetime.now().timestamp()
+    start = date.fromtimestamp(now - cfg["days"] * 86400)  # the window's first day, for run folders
+    mine = [f for f in serious if f[2] and f[1] >= start and any(ground.under(f[2], p) for p in paths)]
+    finders = list(dict.fromkeys(f[0] for f in sorted(mine, key=lambda f: f[1], reverse=True)))
+    lately = [e for e in events if e.get("task") and decision.when(e.get("ts"))
+              and decision.when(e.get("ts")).timestamp() >= now - cfg["days"] * 86400]
+    rounds = fix_rounds([r for r in runs if r[0] in here and r[1] >= start], lately)
+    uncounted = [p["path"] for p in s["paths"] if not p.get("inCodeRoots")]
     covered = looks(project, here + [a.leave_out or ""], now - cfg["days"] * 86400, until)
-    way, reasons = route(cfg, here, finders, recent, rounds, altitude(events, here), files, uncounted, unread, covered,
+    way, reasons = route(cfg, here, troubled(here, rounds, serious, start), finders, rounds, altitude(events, here),
+                         files, uncounted, covered,
                          limits, raised(keys, care["predictionKeys"]))
     out = {"format": 1, "team": True, "project": str(project.root), "route": way, "reasons": reasons,
            "settings": cfg, "asOf": a.as_of, "task": a.leave_out, "ground": s}
     sys.stdout.reconfigure(errors="surrogateescape")  # a file name that is not UTF-8
     print(json.dumps(out, indent=2) if a.json else
-          f"door: {way}: " + "; ".join(said(r, cfg["days"], uncounted, unread) for r in reasons))
+          f"door: {way}: " + "; ".join(said(r, cfg["days"], uncounted) for r in reasons))
     if why:
         print(f"bakehouse door: {why}; open work orders are not known", file=sys.stderr)
     return 1 if why else 0
