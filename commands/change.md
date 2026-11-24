@@ -342,9 +342,10 @@ branch), `BASE` and the record folder. Commit by path, with the trailer. Fill th
    - no output in `mustNotMove` is predicted to move.
 
    On a work order whose recorded route is fast (step 4.3), first run
-   `bakehouse door --task {id} --prediction <the prediction file>`. When its reason is `raised-prediction`
-   (it names the key and the pattern), the route rose at the prediction: record it,
-   `ops-event.sh door {id} door - - - - - normal "raised from fast: <key>"`, and the work order goes on
+   `bakehouse door --task {id} --prediction <the prediction file>`. When its reasons include `raised-prediction`
+   (it names the key and the pattern) or `fast-binding` (the hard limits here are not main's), the route rose at
+   the prediction: record it, `ops-event.sh door {id} door - - - - - normal "raised from fast: <key>"` (for
+   `fast-binding`, `"raised from fast: the binding's hard limits are not main's"`), and the work order goes on
    as normal from there, so the prediction is asked as below, and that ask also states the normal
    reviewer's estimate and ceiling: the go there covers it. Any other result (normal or look-around for
    another reason, from history that changed since step 4.3) leaves the recorded route as it is. When the route stays fast and every check

@@ -60,12 +60,15 @@ The binding compared with main's: the door reads the binding of the folder it ru
 binding, top-level key by top-level key, with .team/binding.json as committed on branch B in the project's main clone
 (the records worktree's repository, so a lane clone whose origin/main is old still compares with the main clone's
 own branch), read with git show and never checked out, fetched or written. B is the binding's mainFollows.branch
-when it has mainFollows, else main when the main clone has a local branch main, else master when it has one. A key
+when the main clone has that local branch, else main when it has a local branch main, else master when it has one
+(a mainFollows that is malformed or names no local branch falls back to main and master: the binding under
+suspicion does not get to turn the comparison off). Values are compared as JSON writes them (1 and true differ). A key
 on one side only differs. When any key differs, the text gains a second line, `door: warning: the binding here
 differs from main's (<clone> <B>) in: <keys>`; when careLimits is one of them, fast-binding fails. No main clone, no
 such branch, no binding committed there, or one that does not parse: the comparison is not made, JSON says why
 (bindingDrift.notMade), the text says nothing and fast is not stopped by it. It never changes a look-around or a
-normal route, nor the exit code. An uncommitted edit to the binding on main's own checkout differs too.
+normal route, nor the exit code. When fast-binding is the only fast rule that fails and --prediction would raise
+fast, the reasons are raised-prediction then fast-binding. An uncommitted edit to the binding on main's own checkout differs too.
 
 --as-of <ISO time> (no offset: local time): the window ends there; commits written after it, run folders dated after
 its day and asks recorded after it are left out, so a past work order's door can be replayed. It cannot undo: a
@@ -248,17 +251,20 @@ def binding_drift(project, binding) -> dict:
     clone = locator.main_clone(project)
     if clone is None:
         return not_made("no main clone: git cannot say which repository holds the records worktree")
-    try:
-        branch = locator.main_follows(binding)
-    except locator.BadMainFollows as e:
-        return not_made(str(e))
-    has = [b for b in ([branch] if branch else ["main", "master"])
-           if locator._git(clone, "rev-parse", "-q", "--verify", f"refs/heads/{b}^{{commit}}")]
+    try:  # the binding under suspicion names the branch, so a mainFollows it cannot use falls back to main, master
+        follows = locator.main_follows(binding)
+    except locator.BadMainFollows:
+        follows = "?"
+    has = [b for b in ([follows] if follows else []) + ["main", "master"]
+           if b != "?" and locator._git(clone, "rev-parse", "-q", "--verify", f"refs/heads/{b}^{{commit}}")]
     if not has:
-        return not_made(f"{clone} has no local branch {branch}" if branch else
-                        f"the binding has no mainFollows and {clone} has no local branch main or master")
+        return not_made(f"the binding has no mainFollows and {clone} has no local branch main or master"
+                        if not follows else f"{clone} has no local branch that mainFollows names, nor main or master")
     branch = has[0]
-    text = locator._git(clone, "show", f"refs/heads/{branch}:.team/binding.json")
+    try:
+        text = locator._git(clone, "show", f"refs/heads/{branch}:.team/binding.json")
+    except ValueError:  # UnicodeDecodeError: git's output is read as text
+        return not_made(f"the .team/binding.json committed on {branch} in {clone} is not UTF-8")
     if text is None:
         return not_made(f"{clone} has no .team/binding.json committed on {branch}")
     try:
@@ -267,8 +273,9 @@ def binding_drift(project, binding) -> dict:
         main = None
     if not isinstance(main, dict):
         return not_made(f"the .team/binding.json committed on {branch} in {clone} is not a JSON object")
-    gone = object()
-    keys = sorted(k for k in set(binding) | set(main) if binding.get(k, gone) != main.get(k, gone))
+    def as_json(b, k):
+        return json.dumps(b[k], sort_keys=True) if k in b else None  # None: the key is on the other side only
+    keys = sorted(k for k in set(binding) | set(main) if as_json(binding, k) != as_json(main, k))
     return {"against": {"clone": str(clone), "branch": branch}, "keys": keys, "notMade": None}
 
 
@@ -364,7 +371,10 @@ def route(cfg, here, trouble, finders, rounds, alt, files, uncounted=(), covered
         if rise:  # a predicted key only a measure shows: normal from here, never look-around
             return "normal", [reason("raised-prediction", None, 1, [], key=rise[0], pattern=rise[1])]
         return "fast", [r for _, r in fast]
-    return "normal", [r for ok, r in fast if not ok]
+    failed = [r for ok, r in fast if not ok]
+    if rise and [r["rule"] for r in failed] == ["fast-binding"]:  # step 6.2 reads raised-prediction: keep it named
+        return "normal", [reason("raised-prediction", None, 1, [], key=rise[0], pattern=rise[1]), *failed]
+    return "normal", failed
 
 
 def said(r, days, uncounted=()) -> str:

@@ -124,6 +124,54 @@ class Binding(unittest.TestCase):
         self.assertEqual(then["bindingDrift"], now["bindingDrift"])
         self.assertEqual((then["route"], [r["rule"] for r in then["reasons"]]), ("normal", ["fast-binding"]))
 
+    # ---------- review fixes F1 to F4 ----------
+
+    def test_a_rise_at_the_prediction_is_still_named_with_fast_binding(self):
+        # F1: main's careLimits gains a path; the branch has only the prediction keys, so the hard limits differ
+        self.git(self.repo, "branch", "old")
+        self.bind({**TREE, "careLimits": {"paths": ["zzz/**"], "predictionKeys": ["premium:*"]}}, "limits")
+        self.git(self.repo, "checkout", "-q", "old")
+        self.bind({**TREE, "careLimits": {"predictionKeys": ["premium:*"]}}, "keys only")
+        moves = self.tmp / "moves.prediction.json"
+        moves.write_text(json.dumps({"moves": [{"what": "premium:case-1", "delta": 1}], "mustNotMove": []}))
+        out = self.door("--prediction", str(moves), "src/a.py")
+        self.assertEqual((out["route"], [r["rule"] for r in out["reasons"]]),
+                         ("normal", ["raised-prediction", "fast-binding"]))
+
+    def test_a_main_follows_naming_no_local_branch_falls_back_to_main(self):
+        # F2: the binding under suspicion cannot turn the comparison off
+        for follows in ({"branch": "gone"}, "main"):  # names no local branch; malformed
+            with self.subTest(follows=follows):
+                self.git(self.repo, "checkout", "-q", "main")
+                self.git(self.repo, "branch", "-f", "old")
+                self.bind({**TREE, "careLimits": LIMITS}, "limits")
+                self.git(self.repo, "checkout", "-q", "old")
+                self.bind({**TREE, "mainFollows": follows}, "follows")
+                out = self.door("src/a.py")
+                self.assertEqual(out["bindingDrift"]["against"], {"clone": str(self.repo), "branch": "main"})
+                self.assertEqual(out["bindingDrift"]["keys"], ["careLimits", "mainFollows"])
+                self.assertEqual((out["route"], [r["rule"] for r in out["reasons"]]), ("normal", ["fast-binding"]))
+                self.git(self.repo, "checkout", "-q", "main")
+                self.git(self.repo, "reset", "-q", "--hard", "HEAD~1")
+
+    def test_a_binding_on_main_that_is_not_utf_8_is_not_compared(self):
+        # F3: no traceback; the comparison is not made and fast is not stopped by it
+        (self.repo / ".team" / "binding.json").write_bytes(b'{"x": "\xff"}')
+        self.git(self.repo, "commit", "-q", "-m", "bad", "--", ".team/binding.json")
+        self.write(TREE)
+        out = self.door("src/a.py")
+        self.assertEqual(out["bindingDrift"]["notMade"],
+                         f"the .team/binding.json committed on main in {self.repo} is not UTF-8")
+        self.assertEqual(out["route"], "fast")
+
+    def test_one_and_true_differ(self):
+        # F4: values compared as JSON writes them
+        self.git(self.repo, "branch", "old")
+        self.bind({**TREE, "k": 1}, "k one")
+        self.git(self.repo, "checkout", "-q", "old")
+        self.bind({**TREE, "k": True}, "k true")
+        self.assertEqual(self.door("src/a.py")["bindingDrift"]["keys"], ["k"])
+
 
 if __name__ == "__main__":
     unittest.main()
