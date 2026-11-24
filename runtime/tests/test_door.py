@@ -118,9 +118,9 @@ class Door(unittest.TestCase):
         self.commit("A1: x", "src/a.py")
         self.review("A1", finding("F1", "P1", "src/a.py:3"))
         self.review("A2", finding("F1", "P2", "src/a.py:3"))  # not serious
-        self.assertEqual(self.route("src/a.py")[0], "fast", "one work order found one: below lookFindingOrders 2")  # 0.16.0: was normal (fast-findings), now fast: 1 troubled work order, fastMaxVisits 1 (owner's care-level rules)
+        self.assertEqual(self.route("src/a.py")[0], "normal", "one work order found one: below lookFindingOrders 2")  # 0.16.0: unchanged from 0.15 (fast-findings) (owner's care-level rules, 11:10: fast keeps no serious finding on these paths in the window)
         self.review("A2", finding("F2", "P0", "src/a.py:9"), days_ago=40)
-        self.assertEqual(self.route("src/a.py")[0], "fast", "older than the window: not counted")  # 0.16.0: was look-findings from a 40-day-old finding, now not counted (owner's care-level rules)
+        self.assertEqual(self.route("src/a.py")[0], "normal", "older than the window: not look-findings")  # 0.16.0: was look-findings from a 40-day-old finding, now not counted; normal from A1's finding (owner's care-level rules, 11:10: fast keeps no serious finding on these paths in the window)
         self.review("A2", finding("F2", "P0", "src/a.py:9"), days_ago=2)  # 0.16.0: was days_ago=40, now in the window (owner's care-level rules)
         self.assertEqual(self.route("src/a.py"), ("look-around", ["look-findings"]))
         self.assertEqual(self.route("src/b.py")[0], "fast", "findings on another file do not count")
@@ -170,8 +170,8 @@ class Door(unittest.TestCase):
 
     def test_a_recent_finding_is_not_fast(self):
         self.review("A5", finding("F1", "P1", "src/a.py:3"))
-        self.assertEqual(self.route("src/a.py"), ("fast", ["fast-files", "fast-visits", "fast-limit"]),
-                         "a finding by a work order not here no longer stops fast")  # 0.16.0: was ("normal", ["fast-findings"]), now fast (owner's care-level rules)
+        self.assertEqual(self.route("src/a.py"), ("normal", ["fast-findings"]),
+                         "a finding on these paths in the window, by a work order not here, stops fast")  # 0.16.0: unchanged from 0.15 (owner's care-level rules, 11:10: fast keeps no serious finding on these paths in the window)
 
     # ---------- settings, --task, --as-of ----------
 
@@ -214,7 +214,7 @@ class Door(unittest.TestCase):
         self.assertEqual(self.route("src/a.py"), ("look-around", ["look-visits", "look-findings", "look-fix-round"]))
         before = datetime.fromtimestamp(time.time() - 4 * 86400).astimezone().isoformat(timespec="seconds")
         out = self.door("--as-of", before, "src/a.py")
-        self.assertEqual((out["route"], out["asOf"]), ("fast", before))  # 0.16.0: was normal, now fast: as of then only A2 is troubled (A1's ask and run folder came after) (owner's care-level rules)
+        self.assertEqual((out["route"], out["asOf"]), ("normal", before))  # 0.16.0: unchanged from 0.15: as of then only A2 is troubled (A1's ask and run folder came after), and A2's finding stops fast (owner's care-level rules, 11:10: fast keeps no serious finding on these paths in the window)
         self.assertEqual(out["ground"]["paths"][0]["workOrders"], ["A2", "A1"])
 
     # ---------- the output ----------
@@ -243,7 +243,7 @@ class Door(unittest.TestCase):
         self.commit("BD7 card", "packages/card.ts", repo=other)
         runs = self.records(other) / "runs"
         self.review("BD7", finding("F1", "P1", "packages/card.ts:9"), base=runs)
-        self.assertEqual(self.route("packages/card.ts", cwd=other)[0], "fast")  # 0.16.0: was normal (fast-findings), now fast: 1 troubled work order, fastMaxVisits 1 (owner's care-level rules)
+        self.assertEqual(self.route("packages/card.ts", cwd=other)[0], "normal")  # 0.16.0: unchanged from 0.15 (fast-findings) (owner's care-level rules, 11:10: fast keeps no serious finding on these paths in the window)
         self.review("BD8", finding("F1", "ANDON", "packages/card.ts:2"), base=runs)
         self.assertEqual(self.route("packages/card.ts", cwd=other), ("look-around", ["look-findings"]))
 

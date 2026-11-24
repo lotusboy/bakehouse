@@ -65,11 +65,11 @@ class Care(unittest.TestCase):
         self.override(lookFindingOrders=5)
         self.commit("A1: x", "src/a.py")
         self.commit("A2: x", "src/a.py")
-        self.review("A1", finding("F1", "P2", "src/a.py:3"))
+        self.review("A1", finding("F1", "P2", "src/z.py:3"))  # sites on another file: fast-findings stays out
         self.assertEqual(self.visits("src/a.py"), ("fast", (0, [])), "P2 is not serious")
-        self.review("A1", finding("F2", "P1", "src/a.py:3"))
-        self.assertEqual(self.visits("src/a.py"), ("fast", (1, ["A1"])))
-        self.review("A2", finding("F1", "P0", "src/a.py:5"))
+        self.review("A1", finding("F2", "P1", "src/z.py:3"))
+        self.assertEqual(self.visits("src/a.py"), ("fast", (1, ["A1"])), "a serious finding at any site: troubled")
+        self.review("A2", finding("F1", "P0", "src/z.py:5"))
         self.assertEqual(self.visits("src/a.py"), ("normal", (2, ["A2", "A1"])))
 
     def test_a_serious_finding_outside_the_window_does_not(self):
@@ -81,14 +81,29 @@ class Care(unittest.TestCase):
         self.assertEqual(out["route"], "fast", "old findings: not troubled, and not look-findings")
         self.assertEqual(out["ground"]["paths"][0]["findings"]["count"], 2, "ground still shows them")
 
-    def test_a_finding_by_a_work_order_not_here_does_not_stop_fast(self):
-        self.review("A5", finding("F1", "P1", "src/a.py:3"))
+    def test_a_finding_with_no_site_does_not_stop_fast(self):
         self.review("A7", "## F1 (P0): bad\nNo site here.\n")
         out = self.door("src/a.py")
         self.assertEqual(out["route"], "fast")
         self.assertEqual(out["ground"]["findingsUnread"], 1, "the unread count is still printed")
         self.assertNotIn("fast-findings", [r["rule"] for r in out["reasons"]])
         self.assertNotIn("fast-fix-round", [r["rule"] for r in out["reasons"]])
+
+    def test_a_finding_on_the_paths_by_a_work_order_not_here_stops_fast(self):
+        # owner, 2026-11-24 11:10: fast keeps no serious finding on these paths in the window, by any work order
+        self.review("A5", finding("F1", "P1", "src/a.py:3"))
+        out = self.door("src/a.py")
+        self.assertEqual((out["route"], [r["rule"] for r in out["reasons"]]), ("normal", ["fast-findings"]))
+        self.assertEqual((out["reasons"][0]["figure"], out["reasons"][0]["workOrders"]), (1, ["A5"]))
+        self.assertEqual(out["ground"]["paths"][0]["workOrders"], [], "A5 is not here")
+        text = subprocess.run([str(BAKEHOUSE), "door", "src/a.py"], cwd=self.repo, capture_output=True, text=True,
+                              env=self.env)
+        self.assertIn("serious review findings on these paths in 14 days (A5)", text.stdout)
+        self.assertEqual(self.route("src/b.py")[0], "fast", "a finding on another file does not stop fast")
+
+    def test_a_finding_on_the_paths_older_than_the_window_does_not_stop_fast(self):
+        self.review("A5", finding("F1", "P1", "src/a.py:3"), days_ago=20)
+        self.assertEqual(self.route("src/a.py"), ("fast", ["fast-files", "fast-visits", "fast-limit"]))
 
     def test_the_fast_reasons(self):
         self.assertEqual(self.route("src/a.py", "src/b.py"), ("fast", ["fast-files", "fast-visits", "fast-limit"]))

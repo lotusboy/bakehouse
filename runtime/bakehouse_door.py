@@ -29,6 +29,8 @@ fast when none of those holds and all of these do:
   fast-visits     fastMaxVisits or fewer troubled work orders here (a serious finding or a fix round 2 or more in
                   the window makes a work order troubled, so this rule covers them; ground's findingsUnread is still
                   printed and does not stop fast)
+  fast-findings   no serious review finding on the paths in a run folder dated in the window, by any work order,
+                  here or not (printed only when it fails)
   fast-counted    every path is in the code roots: ground counts nothing outside them, so such a path has no history
                   the door can read and is never fast (printed only when it fails). A path under the code roots that
                   is not in the working tree yet (a new file, or a misspelt one) counts as one file with no history.
@@ -293,6 +295,8 @@ def route(cfg, here, trouble, finders, rounds, alt, files, uncounted=(), covered
     fast = [(files <= cfg["fastMaxFiles"], reason("fast-files", "fastMaxFiles", files, [])),
             (len(trouble) <= cfg["fastMaxVisits"], reason("fast-visits", "fastMaxVisits", len(trouble), trouble)),
             (not limits, reason("fast-limit", None, len(limits), [], limits=list(limits)))]
+    if finders:  # printed only when it fails: a serious finding on these paths in the window, by any work order
+        fast.append((False, reason("fast-findings", None, len(finders), finders)))
     if uncounted:  # printed only when it fails: a path ground does not count has no history the door can read
         fast.append((False, reason("fast-counted", None, len(uncounted), [])))
     if all(ok for ok, _ in fast):
@@ -319,6 +323,7 @@ def said(r, days, uncounted=()) -> str:
                        if n else "no hard-limit path"),
         "raised-prediction": (f"raised from fast: the prediction moves {r.get('key')} "
                               f"(careLimits.predictionKeys {r.get('pattern')})"),
+        "fast-findings": f"serious review findings on these paths in {days} days{wos}",
         "fast-counted": f"{n} path{'s' if n != 1 else ''} not counted (outside the code roots): {', '.join(uncounted)}",
     }[r["rule"]]
     return text + setting

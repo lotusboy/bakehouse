@@ -1730,7 +1730,8 @@ Only troubled work orders count.
   there already had an architect run in the window, the door says so (`look-covered`) and the PM reads
   that report first.
 - **fast**: a small change in a quiet area: `fastMaxFiles` or fewer files, `fastMaxVisits` or fewer
-  troubled work orders here, every path in the code roots, and no hard-limit path (`fast-limit`, the
+  troubled work orders here, no serious finding on the paths in the window by any work order, here or
+  not (`fast-findings`), every path in the code roots, and no hard-limit path (`fast-limit`, the
   binding's `careLimits`, [The binding](#the-binding)). A hard limit is never fast. When the prediction
   names a key that matches `careLimits.predictionKeys`, the route rises to normal there
   (`bakehouse door --task <id> --prediction <moves file>`, reason `raised-prediction`), and a serious
