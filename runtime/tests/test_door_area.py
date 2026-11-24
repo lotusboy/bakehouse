@@ -24,6 +24,7 @@ class DoorArea(test_door.Door):
     def busy(self):
         for n in (1, 2, 3):
             self.commit(f"A{n}: x", "src/a.py")
+            self.trouble(f"A{n}")  # 0.16.0: was 3 visits gives look-around, now 3 troubled visits (owner's care-level rules)
 
     def covered(self, *args):
         out = self.door(*args)

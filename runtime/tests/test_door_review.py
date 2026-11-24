@@ -26,9 +26,9 @@ class DoorReview(test_door.Door):
 
     def test_f2_an_unreadable_serious_finding_stops_fast(self):
         self.review("A7", "## F1 (P0): bad\nNo site here.\n")
-        way, rules = self.route("src/a.py")
-        self.assertEqual((way, rules), ("normal", ["fast-findings"]))
-        self.assertIn("no Site line", self.run_door("src/a.py").stdout)
+        out = self.door("src/a.py")
+        self.assertEqual((out["route"], [r["rule"] for r in out["reasons"]]), ("fast", ["fast-files", "fast-visits", "fast-limit"]))  # 0.16.0: was ("normal", ["fast-findings"]), now fast: findingsUnread no longer stops fast (owner's care-level rules)
+        self.assertEqual(out["ground"]["findingsUnread"], 1)  # 0.16.0: was "no Site line" in the text, now the count in --json's ground (owner's care-level rules: keep it printed)
 
     def test_f2_a_readable_finding_elsewhere_still_fast(self):
         self.review("A7", finding("F1", "P0", "src/b.py:1"))

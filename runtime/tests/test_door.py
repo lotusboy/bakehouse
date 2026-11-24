@@ -75,6 +75,11 @@ class Door(unittest.TestCase):
         run.mkdir(parents=True, exist_ok=True)
         (run / file).write_text("# Findings\n\n" + text)
 
+    def trouble(self, work_order, days_ago=1):
+        """Makes a work order troubled: a serious finding in a run folder dated days_ago, at a site outside every path
+        the tests ask about, so no look-findings count moves."""  # 0.16.0: new helper, only troubled work orders count (owner's care-level rules)
+        self.review(work_order, finding("F9", "P1", "elsewhere.py:1"), days_ago=days_ago, file="findings-elsewhere.md")
+
     def ask(self, task, days_ago=1, **fields):
         ts = datetime.fromtimestamp(time.time() - days_ago * 86400).astimezone().isoformat(timespec="seconds")
         ledger = self.records() / "decisions" / "ledger.jsonl"
@@ -99,8 +104,12 @@ class Door(unittest.TestCase):
     def test_visits(self):
         self.commit("A1: x", "src/a.py")
         self.commit("A2: x", "src/a.py")
-        self.assertEqual(self.route("src/a.py"), ("normal", ["fast-visits"]), "2 visits: below lookVisits 3")
+        self.assertEqual(self.route("src/a.py")[0], "fast", "2 untroubled visits count for nothing")  # 0.16.0: new case, untroubled work orders do not count (owner's care-level rules)
+        self.trouble("A1")
+        self.trouble("A2")
+        self.assertEqual(self.route("src/a.py"), ("normal", ["fast-visits"]), "2 troubled visits: below lookVisits 3")  # 0.16.0: was 2 visits, now 2 troubled visits (owner's care-level rules)
         self.commit("A3: x", "src/a.py")
+        self.trouble("A3")  # 0.16.0: was 3 visits gives look-visits, now 3 troubled visits (owner's care-level rules)
         self.assertEqual(self.route("src/a.py"), ("look-around", ["look-visits"]))
         self.commit("A4: x", "src/a.py", days_ago=20)
         self.assertEqual(self.door("src/a.py")["reasons"][0]["workOrders"], ["A3", "A2", "A1"], "outside the window")
@@ -109,15 +118,18 @@ class Door(unittest.TestCase):
         self.commit("A1: x", "src/a.py")
         self.review("A1", finding("F1", "P1", "src/a.py:3"))
         self.review("A2", finding("F1", "P2", "src/a.py:3"))  # not serious
-        self.assertEqual(self.route("src/a.py")[0], "normal", "one work order found one: below lookFindingOrders 2")
+        self.assertEqual(self.route("src/a.py")[0], "fast", "one work order found one: below lookFindingOrders 2")  # 0.16.0: was normal (fast-findings), now fast: 1 troubled work order, fastMaxVisits 1 (owner's care-level rules)
         self.review("A2", finding("F2", "P0", "src/a.py:9"), days_ago=40)
+        self.assertEqual(self.route("src/a.py")[0], "fast", "older than the window: not counted")  # 0.16.0: was look-findings from a 40-day-old finding, now not counted (owner's care-level rules)
+        self.review("A2", finding("F2", "P0", "src/a.py:9"), days_ago=2)  # 0.16.0: was days_ago=40, now in the window (owner's care-level rules)
         self.assertEqual(self.route("src/a.py"), ("look-around", ["look-findings"]))
         self.assertEqual(self.route("src/b.py")[0], "fast", "findings on another file do not count")
 
     def test_fix_round_from_an_ask(self):
         self.commit("A1: x", "src/a.py")
         self.ask("A1", fixRound=1)
-        self.assertEqual(self.route("src/a.py"), ("normal", ["fast-fix-round"]), "round 1: below lookFixRound 2")
+        self.assertEqual(self.route("src/a.py"), ("fast", ["fast-files", "fast-visits", "fast-limit"]),
+                         "round 1: below lookFixRound 2, and not troubled")  # 0.16.0: was ("normal", ["fast-fix-round"]), now fast (owner's care-level rules)
         self.ask("A1", fixRound=2)
         out = self.door("src/a.py")
         self.assertEqual((out["route"], out["reasons"][0]["rule"], out["reasons"][0]["figure"]),
@@ -126,7 +138,7 @@ class Door(unittest.TestCase):
     def test_fix_round_from_a_run_folder(self):
         self.commit("A1: x", "src/a.py")
         self.review("A1", "", file="findings-fix1.md")
-        self.assertEqual(self.route("src/a.py")[0], "normal")
+        self.assertEqual(self.route("src/a.py")[0], "fast")  # 0.16.0: was normal (fast-fix-round), now fast: round 1 is not troubled (owner's care-level rules)
         self.review("A1", "", file="findings-fix2.md")
         self.assertEqual(self.route("src/a.py"), ("look-around", ["look-fix-round"]))
 
@@ -146,24 +158,28 @@ class Door(unittest.TestCase):
     # ---------- fast ----------
 
     def test_fast_and_one_visit_more(self):
-        self.assertEqual(self.route("src/a.py", "src/b.py"), ("fast", ["fast-files", "fast-visits", "fast-findings",
-                                                                       "fast-fix-round"]))
+        self.assertEqual(self.route("src/a.py", "src/b.py"), ("fast", ["fast-files", "fast-visits", "fast-limit"]))  # 0.16.0: was fast-files, fast-visits, fast-findings, fast-fix-round, now fast-files, fast-visits, fast-limit (owner's care-level rules)
         self.commit("A1: x", "src/a.py")
-        self.assertEqual(self.route("src/a.py", "src/b.py")[0], "fast", "one visit: fastMaxVisits 1")
+        self.trouble("A1")  # 0.16.0: was an untroubled visit, now a troubled one (owner's care-level rules)
+        self.assertEqual(self.route("src/a.py", "src/b.py")[0], "fast", "one troubled visit: fastMaxVisits 1")
         self.commit("A2: x", "src/b.py")
+        self.trouble("A2")  # 0.16.0: was 2 visits gives normal, now 2 troubled visits (owner's care-level rules)
         self.assertEqual(self.route("src/a.py", "src/b.py"), ("normal", ["fast-visits"]))
         self.assertEqual(self.route("src/many"), ("normal", ["fast-files"]), "4 files: above fastMaxFiles 3")
         self.assertEqual(self.route("src/new.py")[0], "fast", "a file git does not track counts as one")
 
     def test_a_recent_finding_is_not_fast(self):
         self.review("A5", finding("F1", "P1", "src/a.py:3"))
-        self.assertEqual(self.route("src/a.py"), ("normal", ["fast-findings"]))
+        self.assertEqual(self.route("src/a.py"), ("fast", ["fast-files", "fast-visits", "fast-limit"]),
+                         "a finding by a work order not here no longer stops fast")  # 0.16.0: was ("normal", ["fast-findings"]), now fast (owner's care-level rules)
 
     # ---------- settings, --task, --as-of ----------
 
     def test_a_project_override_moves_a_threshold(self):
         self.commit("A1: x", "src/a.py")
         self.commit("A2: x", "src/a.py")
+        self.trouble("A1")  # 0.16.0: was 2 visits, now 2 troubled visits (owner's care-level rules)
+        self.trouble("A2")
         self.assertEqual(self.route("src/a.py")[0], "normal")
         (self.repo / ".team" / "decision-config.json").write_text(json.dumps({"door": {"lookVisits": 2}}))
         out = self.door("src/a.py")
@@ -180,6 +196,7 @@ class Door(unittest.TestCase):
         self.review("A3", finding("F1", "P1", "src/a.py:3"), file="findings-fix3.md")
         self.review("A1", finding("F1", "P1", "src/a.py:3"))
         self.ask("A3", fixRound=3, layer="out", owners=2)
+        self.trouble("A2")  # 0.16.0: was A2 an untroubled visit, now troubled, so 3 troubled visits (owner's care-level rules)
         self.assertEqual(self.route("src/a.py"), ("look-around", ["look-visits", "look-findings", "look-fix-round",
                                                                   "look-altitude"]))
         out = self.door("--task", "A3", "src/a.py")
@@ -193,10 +210,11 @@ class Door(unittest.TestCase):
         self.review("A2", finding("F1", "P1", "src/a.py:3"), days_ago=6)
         self.review("A1", finding("F1", "P1", "src/a.py:3"), days_ago=1)
         self.ask("A1", days_ago=1, fixRound=2)
+        self.trouble("A3", days_ago=2)  # 0.16.0: was A3 an untroubled visit, now troubled, so 3 troubled visits (owner's care-level rules)
         self.assertEqual(self.route("src/a.py"), ("look-around", ["look-visits", "look-findings", "look-fix-round"]))
         before = datetime.fromtimestamp(time.time() - 4 * 86400).astimezone().isoformat(timespec="seconds")
         out = self.door("--as-of", before, "src/a.py")
-        self.assertEqual((out["route"], out["asOf"]), ("normal", before))
+        self.assertEqual((out["route"], out["asOf"]), ("fast", before))  # 0.16.0: was normal, now fast: as of then only A2 is troubled (A1's ask and run folder came after) (owner's care-level rules)
         self.assertEqual(out["ground"]["paths"][0]["workOrders"], ["A2", "A1"])
 
     # ---------- the output ----------
@@ -205,6 +223,8 @@ class Door(unittest.TestCase):
         for wo in ("A1", "A2", "A3"):
             self.commit(f"{wo}: x", "src/a.py")
         self.ask("A2", fixRound=3)
+        self.trouble("A1")  # 0.16.0: was 3 visits, now 3 troubled visits, so look-visits still shows (owner's care-level rules)
+        self.trouble("A3")
         out = self.door("src/a.py")
         self.assertEqual(set(out), {"format", "team", "project", "route", "reasons", "settings", "asOf", "task",
                                     "ground"})
@@ -215,7 +235,7 @@ class Door(unittest.TestCase):
         self.assertEqual(out["ground"]["paths"][0]["path"], "src/a.py")
         text = subprocess.run([str(BAKEHOUSE), "door", "src/a.py"], cwd=self.repo, capture_output=True, text=True,
                               env=self.env).stdout
-        self.assertEqual(text, "door: look-around: 3 other work orders here in 14 days (A3, A2, A1) [lookVisits 3];"
+        self.assertEqual(text, "door: look-around: 3 troubled work orders here in 14 days (A3, A2, A1) [lookVisits 3];"  # 0.16.0: was "3 other work orders", now "3 troubled work orders" (owner's care-level rules)
                                " A2 reached fix round 3 [lookFixRound 2]\n")
 
     def test_records_mode_reads_the_records_run_folders(self):
@@ -223,7 +243,7 @@ class Door(unittest.TestCase):
         self.commit("BD7 card", "packages/card.ts", repo=other)
         runs = self.records(other) / "runs"
         self.review("BD7", finding("F1", "P1", "packages/card.ts:9"), base=runs)
-        self.assertEqual(self.route("packages/card.ts", cwd=other)[0], "normal")
+        self.assertEqual(self.route("packages/card.ts", cwd=other)[0], "fast")  # 0.16.0: was normal (fast-findings), now fast: 1 troubled work order, fastMaxVisits 1 (owner's care-level rules)
         self.review("BD8", finding("F1", "ANDON", "packages/card.ts:2"), base=runs)
         self.assertEqual(self.route("packages/card.ts", cwd=other), ("look-around", ["look-findings"]))
 
