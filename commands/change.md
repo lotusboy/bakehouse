@@ -267,7 +267,7 @@ Find where this work order stands before doing anything else. Run `git fetch` fi
    `bakehouse door --task {id}` prints (it reads the item's own `ground:` line, and stops when there is none): fast, normal or look-around (bakehouse
    `docs/PROJECT-TEAM.md`, "The door"). The PM may raise the route (fast to normal, normal to
    look-around), saying why in one line; it never lowers it. A change to a contract, a ruling file or
-   a pinned output is at least normal. Record the route the work order takes, once per work order:
+   a pinned output is at least normal. Record the route the work order takes (once here; again only when it rises, at step 6.2 or 8):
    `ops-event.sh door {id} door - - - - - <route> "<its reasons, one line>"`; when the PM raised it,
    the note starts `raised from <the door's route>: <why>`.
    - **look-around**: before the owner's go, give the `step-back` skill's helicopter view of the area
@@ -341,10 +341,12 @@ branch), `BASE` and the record folder. Commit by path, with the trailer. Fill th
    - no output in `mustNotMove` is predicted to move.
 
    On a work order whose recorded route is fast (step 4.3), first run
-   `bakehouse door --task {id} --prediction <the prediction file>`. When it prints normal, the route rose
-   at the prediction (its reason `raised-prediction` names the key and the pattern): record it,
+   `bakehouse door --task {id} --prediction <the prediction file>`. When its reason is `raised-prediction`
+   (it names the key and the pattern), the route rose at the prediction: record it,
    `ops-event.sh door {id} door - - - - - normal "raised from fast: <key>"`, and the work order goes on
-   as normal from there, so the prediction is asked as below. When the route stays fast and every check
+   as normal from there, so the prediction is asked as below, and that ask also states the normal
+   reviewer's estimate and ceiling: the go there covers it. Any other result (normal or look-around for
+   another reason, from history that changed since step 4.3) leaves the recorded route as it is. When the route stays fast and every check
    passes exactly, report the match and continue without a second ask; any difference is asked as below.
 
    Bring the prediction to the owner as one decision, before any site is switched, with each failed

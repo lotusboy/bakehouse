@@ -27,8 +27,8 @@ fast when none of those holds and all of these do:
   fast-files      fastMaxFiles or fewer files in the paths (the files git tracks under each; a path git does not
                   track counts as one)
   fast-visits     fastMaxVisits or fewer troubled work orders here (a serious finding or a fix round 2 or more in
-                  the window makes a work order troubled, so this rule covers them; ground's findingsUnread is still
-                  printed and does not stop fast)
+                  the window makes a work order troubled, so this rule covers them; ground's findingsUnread does not
+                  stop fast: it is in --json under ground, and in ground's own text)
   fast-findings   no serious review finding on the paths in a run folder dated in the window, by any work order,
                   here or not (printed only when it fails)
   fast-counted    every path is in the code roots: ground counts nothing outside them, so such a path has no history
@@ -43,13 +43,16 @@ normal otherwise. The reasons printed are the look-around rules that hold; for n
 fast, the fast rules. The six settings are under "door" in runtime/decision-config.json; a project overrides them in
 .team/decision-config.json.
 
---prediction <moves file> (the predicted-moves gate's moves.prediction.json): when the route would be fast and the
-"what" key of one of its moves matches a glob of the binding's careLimits.predictionKeys (* any text, ? one
-character), the route is normal, with the reason raised-prediction naming the key and the glob. It never lowers a
-route and never raises one to look-around. A prediction file that cannot be read is exit 2.
+--prediction <moves file> (the predicted-moves gate's moves.prediction.json; JSON only): when the route would be fast
+and the "what" key of one of its moves matches a glob of the binding's careLimits.predictionKeys (* any text, ? one
+character), the route is normal, with the reason raised-prediction naming the key and the glob. A "what" that holds
+* or ? is a pattern and could move a limited key, so it raises too, naming the first glob. A prediction with no moves
+(noMoves, or no "moves" key) raises nothing. It never lowers a route and never raises one to look-around. A
+prediction file that cannot be read is exit 2.
 
 The binding's careLimits is optional: {"paths": [<glob>...], "predictionKeys": [<glob>...]}. A careLimits that is not
-an object, or a list that is not a list of non-empty strings, is exit 2, naming the key.
+an object, a key other than paths and predictionKeys, or a list that is not a list of non-empty strings, is exit
+2, naming the key. A folder is written folder/** (a bare folder name matches only a path of that exact name).
 
 --as-of <ISO time> (no offset: local time): the window ends there; commits written after it, run folders dated after
 its day and asks recorded after it are left out, so a past work order's door can be replayed. It cannot undo: a
@@ -57,7 +60,8 @@ findings file written or rewritten after that time in a run folder dated on or b
 findings-fixN.md included); a commit whose author date is earlier than when it was written; a branch deleted since;
 how many work orders are open now; the settings as they are now; the files the paths hold now.
 
-The JSON object: format (1), team, project, route, reasons (each: rule, setting, threshold, figure, workOrders),
+The JSON object: format (1), team, project, route, reasons (each: rule, setting, threshold, figure, workOrders;
+fast-limit also limits, raised-prediction also key and pattern),
 settings, asOf (null when not given), task, and ground (the summary `ground --json` gives for the same paths).
 
 Exit codes as `bakehouse ground`: 0; 1 the ops ledger is broken (the rest is printed) or git failed; 2 bad usage, a
@@ -207,6 +211,9 @@ def care_limits(binding) -> dict:
         return {"paths": [], "predictionKeys": []}
     if not isinstance(v, dict):
         raise ValueError("careLimits is not an object: {\"paths\": [<glob>...], \"predictionKeys\": [<glob>...]}")
+    unknown = sorted(set(v) - {"paths", "predictionKeys"})
+    if unknown:
+        raise ValueError(f"careLimits has an unknown key {unknown[0]!r}: the keys are paths and predictionKeys")
     out = {}
     for k in ("paths", "predictionKeys"):
         x = v.get(k, [])
@@ -244,7 +251,7 @@ def hard_limits(root, paths, globs) -> list:
 def predicted(path) -> list:
     """The "what" key of each move in a prediction file; ValueError (or OSError) when it cannot be read."""
     data = json.loads(Path(path).read_text(encoding="utf-8"))
-    moves = data.get("moves") if isinstance(data, dict) else None
+    moves = (data.get("moves") or []) if isinstance(data, dict) else None  # noMoves: no "moves", or null
     if not isinstance(moves, list) or not all(isinstance(m, dict) and isinstance(m.get("what"), str) for m in moves):
         raise ValueError('it has no "moves" list whose moves each name a "what" key')
     return [m["what"] for m in moves]
@@ -254,6 +261,8 @@ def raised(keys, globs):
     """(the first predicted key that matches a glob of careLimits.predictionKeys, that glob), or None."""
     for k in keys:
         for g in globs:
+            if "*" in k or "?" in k:  # a pattern key could move a limited key: raise
+                return k, g
             if re.fullmatch("".join({"*": ".*", "?": "."}.get(c, re.escape(c)) for c in g), k, re.S):
                 return k, g
     return None

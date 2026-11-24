@@ -112,5 +112,32 @@ class Limits(unittest.TestCase):
             self.assertNotIn("Traceback", p.stderr)
 
 
+    # ---------- the review's findings (0.16.0 F1, F2, F5) ----------
+
+    def test_a_prediction_with_no_moves_leaves_fast(self):
+        self.limits({"predictionKeys": ["*.price"]})
+        f = self.tmp / "moves.prediction.json"
+        for body in ({"noMoves": True, "mustNotMove": ["*"]}, {"moves": None, "noMoves": True, "mustNotMove": ["*"]}):
+            f.write_text(json.dumps(body))
+            p = self.run_door("--prediction", str(f), "src/a.py")
+            self.assertEqual((p.returncode, p.stdout.split(":")[1].strip()), (0, "fast"), (body, p.stderr))
+
+    def test_a_pattern_key_raises(self):
+        self.limits({"predictionKeys": ["*.price"]})
+        out = self.door("--prediction", self.prediction("quote.*"), "src/a.py")
+        self.assertEqual((out["route"], self.reason(out, "raised-prediction")["key"]), ("normal", "quote.*"))
+        out = self.door("--prediction", self.prediction("quote.pric?"), "src/a.py")
+        self.assertEqual((out["route"], self.reason(out, "raised-prediction")["key"]), ("normal", "quote.pric?"))
+        self.limits({})
+        self.assertEqual(self.door("--prediction", self.prediction("quote.*"), "src/a.py")["route"], "fast",
+                         "no predictionKeys: nothing to raise for")
+
+    def test_an_unknown_care_limits_key_exits_2(self):
+        for value in ({"path": ["src/**"]}, {"paths": [], "predictionkeys": ["*"]}):
+            self.limits(value)
+            p = self.run_door("src/a.py")
+            self.assertEqual(p.returncode, 2, value)
+            self.assertIn("unknown key", p.stderr)
+
 if __name__ == "__main__":
     unittest.main()
