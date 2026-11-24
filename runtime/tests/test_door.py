@@ -112,6 +112,7 @@ class Door(unittest.TestCase):
         self.trouble("A3")  # 0.16.0: was 3 visits gives look-visits, now 3 troubled visits (owner's care-level rules)
         self.assertEqual(self.route("src/a.py"), ("look-around", ["look-visits"]))
         self.commit("A4: x", "src/a.py", days_ago=20)
+        self.trouble("A4")  # 0.16.0: new line (owner's yes 12:29): A4 is troubled, so only its 20-day-old commit leaves it out
         self.assertEqual(self.door("src/a.py")["reasons"][0]["workOrders"], ["A3", "A2", "A1"], "outside the window")
 
     def test_findings(self):
