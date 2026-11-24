@@ -1735,7 +1735,9 @@ Only troubled work orders count.
   binding's `careLimits`, [The binding](#the-binding)). A hard limit is never fast. When the prediction
   names a key that matches `careLimits.predictionKeys`, the route rises to normal there
   (`bakehouse door --task <id> --prediction <moves file>`, reason `raised-prediction`), and a serious
-  finding on a fast work order raises it to normal from that point.
+  finding on a fast work order raises it to normal from that point. The door compares its binding with
+  main's (as committed in the main clone), names each setting that differs in a `door: warning:` line, and
+  different hard limits are never fast (`fast-binding`).
 - **normal**: everything else.
 
 What each level does:

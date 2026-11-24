@@ -269,7 +269,8 @@ Find where this work order stands before doing anything else. Run `git fetch` fi
    look-around), saying why in one line; it never lowers it. A change to a contract, a ruling file or
    a pinned output is at least normal. Record the route the work order takes (once here; again only when it rises, at step 6.2 or 8):
    `ops-event.sh door {id} door - - - - - <route> "<its reasons, one line>"`; when the PM raised it,
-   the note starts `raised from <the door's route>: <why>`.
+   the note starts `raised from <the door's route>: <why>`. A `door: warning:` line (the binding here differs
+   from main's) goes into the owner's message as it is.
    - **look-around**: before the owner's go, give the `step-back` skill's helicopter view of the area
      in a few lines, and a Seesaw read: which layer owns the cause (the area, what feeds it, what reads
      it). Then dispatch one architect check of the area (RESTRUCTURE or REDESIGN, the mode named; about

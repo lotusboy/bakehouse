@@ -170,7 +170,9 @@ The binding is the project's facts for the team. Write `.team/binding.json`:
   prediction when a predicted key matches. Globs are repository-relative, and `**` matches any depth. Two examples:
   `"careLimits": {"paths": ["src/billing/**", "schema/*.sql"]}` keeps priced code and the database schema off
   fast; `"careLimits": {"predictionKeys": ["*.price", "*.requestHash"]}` raises a work order to normal when its
-  prediction moves a priced output or a request hash. Without the key there are no limits.
+  prediction moves a priced output or a request hash. Without the key there are no limits. The door reads the
+  binding of the folder it runs in and compares it with main's; run it where main's binding is, or a warning says
+  what differs.
 - Every field, and which ones are required: [The binding](PROJECT-TEAM.md#the-binding).
 
 ## 6. Write the tracker item
