@@ -228,7 +228,7 @@ class Door(unittest.TestCase):
         self.trouble("A3")
         out = self.door("src/a.py")
         self.assertEqual(set(out), {"format", "team", "project", "route", "reasons", "settings", "asOf", "task",
-                                    "ground"})
+                                    "bindingDrift", "ground"})  # 0.16.1: was no bindingDrift, now bindingDrift (owner's yes, the door compares its binding with main's)
         self.assertEqual(set(out["settings"]), {"days", "lookVisits", "lookFindingOrders", "lookFixRound",
                                                 "fastMaxFiles", "fastMaxVisits"})
         for r in out["reasons"]:

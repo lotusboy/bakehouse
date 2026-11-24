@@ -19,6 +19,7 @@ class Limits(unittest.TestCase):
 
     def limits(self, value):
         (self.repo / ".team" / "binding.json").write_text(json.dumps({**TREE, "careLimits": value}))
+        self.git(self.repo, "commit", "-q", "-m", "limits", "--", ".team/binding.json")  # 0.16.1: was written and left uncommitted, now committed on main, so main's binding has the careLimits (owner's yes)
 
     def run_door(self, *args):
         return subprocess.run([str(BAKEHOUSE), "door", *args], cwd=self.repo, capture_output=True, text=True,

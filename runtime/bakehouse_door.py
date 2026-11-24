@@ -37,6 +37,8 @@ fast when none of those holds and all of these do:
   fast-limit      no path is a hard-limit path: none matches a glob of the binding's careLimits.paths, and none holds a
                   tracked file that does (repository-relative globs; ** matches any depth, * and ? stay inside one
                   folder). A failed fast-limit names the path and the glob. A hard limit is never fast.
+  fast-binding    the binding here has main's careLimits (printed only when it fails; see "The binding compared
+                  with main's" below). Different hard limits, or careLimits on one side only, are never fast.
 A look-around also gives look-covered when a work order here, or the one at the door, has an architect run in the
 spend ledger recorded in the window: one architect look per area, so the PM reads that report first.
 normal otherwise. The reasons printed are the look-around rules that hold; for normal, the fast rules that fail; for
@@ -54,15 +56,28 @@ The binding's careLimits is optional: {"paths": [<glob>...], "predictionKeys": [
 an object, a key other than paths and predictionKeys, or a list that is not a list of non-empty strings, is exit
 2, naming the key. A folder is written folder/** (a bare folder name matches only a path of that exact name).
 
+The binding compared with main's: the door reads the binding of the folder it runs in (--repo). It compares that
+binding, top-level key by top-level key, with .team/binding.json as committed on branch B in the project's main clone
+(the records worktree's repository, so a lane clone whose origin/main is old still compares with the main clone's
+own branch), read with git show and never checked out, fetched or written. B is the binding's mainFollows.branch
+when it has mainFollows, else main when the main clone has a local branch main, else master when it has one. A key
+on one side only differs. When any key differs, the text gains a second line, `door: warning: the binding here
+differs from main's (<clone> <B>) in: <keys>`; when careLimits is one of them, fast-binding fails. No main clone, no
+such branch, no binding committed there, or one that does not parse: the comparison is not made, JSON says why
+(bindingDrift.notMade), the text says nothing and fast is not stopped by it. It never changes a look-around or a
+normal route, nor the exit code. An uncommitted edit to the binding on main's own checkout differs too.
+
 --as-of <ISO time> (no offset: local time): the window ends there; commits written after it, run folders dated after
 its day and asks recorded after it are left out, so a past work order's door can be replayed. It cannot undo: a
 findings file written or rewritten after that time in a run folder dated on or before its day (a later fix round's
 findings-fixN.md included); a commit whose author date is earlier than when it was written; a branch deleted since;
-how many work orders are open now; the settings as they are now; the files the paths hold now.
+how many work orders are open now; the settings as they are now; the files the paths hold now; the binding
+compared with main's (it is about the binding now, so --as-of does not change it).
 
 The JSON object: format (1), team, project, route, reasons (each: rule, setting, threshold, figure, workOrders;
-fast-limit also limits, raised-prediction also key and pattern),
-settings, asOf (null when not given), task, and ground (the summary `ground --json` gives for the same paths).
+fast-limit also limits, raised-prediction also key and pattern, fast-binding also against),
+settings, asOf (null when not given), task, bindingDrift ({"against": {"clone", "branch"} or null, "keys": [the
+differing top-level keys, sorted], "notMade": null or why the comparison was not made}), and ground (the summary `ground --json` gives for the same paths).
 
 Exit codes as `bakehouse ground`: 0; 1 the ops ledger is broken (the rest is printed) or git failed; 2 bad usage, a
 binding without tracker.id or code roots, or a door setting that is not a whole number; 3 no team here; 4 setup
@@ -83,6 +98,7 @@ from datetime import date, datetime
 
 import bakehouse_ground as ground
 import decision
+import locator
 import spend
 
 SETTINGS = ("days", "lookVisits", "lookFindingOrders", "lookFixRound", "fastMaxFiles", "fastMaxVisits")
@@ -223,6 +239,39 @@ def care_limits(binding) -> dict:
     return out
 
 
+def binding_drift(project, binding) -> dict:
+    """How the binding here differs from main's (the docstring's "The binding compared with main's"):
+    {"against": {"clone", "branch"} or None, "keys": [the differing top-level keys, sorted], "notMade": None or why}.
+    Reads only: git show in the main clone."""
+    def not_made(why):
+        return {"against": None, "keys": [], "notMade": why}
+    clone = locator.main_clone(project)
+    if clone is None:
+        return not_made("no main clone: git cannot say which repository holds the records worktree")
+    try:
+        branch = locator.main_follows(binding)
+    except locator.BadMainFollows as e:
+        return not_made(str(e))
+    has = [b for b in ([branch] if branch else ["main", "master"])
+           if locator._git(clone, "rev-parse", "-q", "--verify", f"refs/heads/{b}^{{commit}}")]
+    if not has:
+        return not_made(f"{clone} has no local branch {branch}" if branch else
+                        f"the binding has no mainFollows and {clone} has no local branch main or master")
+    branch = has[0]
+    text = locator._git(clone, "show", f"refs/heads/{branch}:.team/binding.json")
+    if text is None:
+        return not_made(f"{clone} has no .team/binding.json committed on {branch}")
+    try:
+        main = json.loads(text)
+    except ValueError:
+        main = None
+    if not isinstance(main, dict):
+        return not_made(f"the .team/binding.json committed on {branch} in {clone} is not a JSON object")
+    gone = object()
+    keys = sorted(k for k in set(binding) | set(main) if binding.get(k, gone) != main.get(k, gone))
+    return {"against": {"clone": str(clone), "branch": branch}, "keys": keys, "notMade": None}
+
+
 def path_glob(pattern):
     """A repository-relative glob as a regular expression: ** any depth, * and ? inside one folder."""
     out, i = "", 0
@@ -283,10 +332,11 @@ def troubled(here, rounds, serious, start) -> list:
     return [w for w in here if rounds.get(w.lower(), 0) >= 2 or w.lower() in found]
 
 
-def route(cfg, here, trouble, finders, rounds, alt, files, uncounted=(), covered=(), limits=(), rise=None):
+def route(cfg, here, trouble, finders, rounds, alt, files, uncounted=(), covered=(), limits=(), rise=None,
+          off=None):
     """(the route, its reasons). here: the work orders here; trouble: those troubled; finders: the work orders whose
     serious findings on the paths are in the window; rounds: fix rounds in the window; limits: hard_limits' list;
-    rise: raised's (key, glob) or None."""
+    rise: raised's (key, glob) or None; off: bindingDrift's against when careLimits differs from main's, else None."""
     def reason(rule, setting, figure, wos, **more):
         return {"rule": rule, "setting": setting, "threshold": cfg[setting] if setting else None, "figure": figure,
                 "workOrders": wos, **more}
@@ -308,6 +358,8 @@ def route(cfg, here, trouble, finders, rounds, alt, files, uncounted=(), covered
         fast.append((False, reason("fast-findings", None, len(finders), finders)))
     if uncounted:  # printed only when it fails: a path ground does not count has no history the door can read
         fast.append((False, reason("fast-counted", None, len(uncounted), [])))
+    if off:  # printed only when it fails: the hard limits here are not main's, so they cannot be trusted for fast
+        fast.append((False, reason("fast-binding", None, 1, [], against=off)))
     if all(ok for ok, _ in fast):
         if rise:  # a predicted key only a measure shows: normal from here, never look-around
             return "normal", [reason("raised-prediction", None, 1, [], key=rise[0], pattern=rise[1])]
@@ -333,6 +385,8 @@ def said(r, days, uncounted=()) -> str:
         "raised-prediction": (f"raised from fast: the prediction moves {r.get('key')} "
                               f"(careLimits.predictionKeys {r.get('pattern')})"),
         "fast-findings": f"serious review findings on these paths in {days} days{wos}",
+        "fast-binding": (f"the hard limits here differ from main's ({(r.get('against') or {}).get('clone')} "
+                         f"{(r.get('against') or {}).get('branch')}): fast needs main's careLimits"),
         "fast-counted": f"{n} path{'s' if n != 1 else ''} not counted (outside the code roots): {', '.join(uncounted)}",
     }[r["rule"]]
     return text + setting
@@ -406,14 +460,19 @@ def main(argv, root) -> int:
     rounds = fix_rounds([r for r in runs if r[0] in here and r[1] >= start], lately)
     uncounted = [p["path"] for p in s["paths"] if not p.get("inCodeRoots")]
     covered = looks(project, here + [a.leave_out or ""], now - cfg["days"] * 86400, until)
+    drift = binding_drift(project, binding)  # the binding now: --as-of does not change it
     way, reasons = route(cfg, here, troubled(here, rounds, serious, start), finders, rounds, altitude(events, here),
                          files, uncounted, covered,
-                         limits, raised(keys, care["predictionKeys"]))
+                         limits, raised(keys, care["predictionKeys"]),
+                         drift["against"] if "careLimits" in drift["keys"] else None)
     out = {"format": 1, "team": True, "project": str(project.root), "route": way, "reasons": reasons,
-           "settings": cfg, "asOf": a.as_of, "task": a.leave_out, "ground": s}
+           "settings": cfg, "asOf": a.as_of, "task": a.leave_out, "bindingDrift": drift, "ground": s}
     sys.stdout.reconfigure(errors="surrogateescape")  # a file name that is not UTF-8
     print(json.dumps(out, indent=2) if a.json else
           f"door: {way}: " + "; ".join(said(r, cfg["days"], uncounted) for r in reasons))
+    if drift["keys"] and not a.json:
+        print(f"door: warning: the binding here differs from main's ({drift['against']['clone']} "
+              f"{drift['against']['branch']}) in: {', '.join(drift['keys'])}")
     if why:
         print(f"bakehouse door: {why}; open work orders are not known", file=sys.stderr)
     return 1 if why else 0
