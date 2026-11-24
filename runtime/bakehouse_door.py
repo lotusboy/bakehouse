@@ -3,7 +3,7 @@ or look-around. Standard library only. Run through bin/bakehouse. It reads what 
 functions) and the decision ledger's asks (decision.sh's ledger, by the same locator); it writes nothing and uses no
 network.
 
-  bakehouse door [--json] [--task <id>] [--as-of <ISO time>] [--repo <folder>] [<path>...]
+  bakehouse door [--json] [--task <id>] [--as-of <ISO time>] [--prediction <moves file>] [--repo <folder>] [<path>...]
 
 With --task and no paths, the paths are the work order's own `ground:` line in the tracker file (binding
 tracker.file): the item runs from its `id:` field line to the next one, and its first `ground:` line counts. The
@@ -29,11 +29,22 @@ fast when none of those holds and all of these do:
   fast-counted    every path is in the code roots: ground counts nothing outside them, so such a path has no history
                   the door can read and is never fast (printed only when it fails). A path under the code roots that
                   is not in the working tree yet (a new file, or a misspelt one) counts as one file with no history.
+  fast-limit      no path is a hard-limit path: none matches a glob of the binding's careLimits.paths, and none holds a
+                  tracked file that does (repository-relative globs; ** matches any depth, * and ? stay inside one
+                  folder). A failed fast-limit names the path and the glob. A hard limit is never fast.
 A look-around also gives look-covered when a work order here, or the one at the door, has an architect run in the
 spend ledger recorded in the window: one architect look per area, so the PM reads that report first.
 normal otherwise. The reasons printed are the look-around rules that hold; for normal, the fast rules that fail; for
 fast, the fast rules. The six settings are under "door" in runtime/decision-config.json; a project overrides them in
 .team/decision-config.json.
+
+--prediction <moves file> (the predicted-moves gate's moves.prediction.json): when the route would be fast and the
+"what" key of one of its moves matches a glob of the binding's careLimits.predictionKeys (* any text, ? one
+character), the route is normal, with the reason raised-prediction naming the key and the glob. It never lowers a
+route and never raises one to look-around. A prediction file that cannot be read is exit 2.
+
+The binding's careLimits is optional: {"paths": [<glob>...], "predictionKeys": [<glob>...]}. A careLimits that is not
+an object, or a list that is not a list of non-empty strings, is exit 2, naming the key.
 
 --as-of <ISO time> (no offset: local time): the window ends there; commits written after it, run folders dated after
 its day and asks recorded after it are left out, so a past work order's door can be replayed. It cannot undo: a
@@ -54,6 +65,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from pathlib import Path
 import re
 import shlex
 import subprocess
@@ -182,6 +194,66 @@ def ground_line(project, binding, wo):
                   "files or folders the change is expected to touch (commands/change.md, the work order)")
 
 
+def care_limits(binding) -> dict:
+    """The binding's careLimits as {"paths": [...], "predictionKeys": [...]} (absent: no limits); ValueError naming
+    the key when its shape is wrong."""
+    v = binding.get("careLimits")
+    if v is None:
+        return {"paths": [], "predictionKeys": []}
+    if not isinstance(v, dict):
+        raise ValueError("careLimits is not an object: {\"paths\": [<glob>...], \"predictionKeys\": [<glob>...]}")
+    out = {}
+    for k in ("paths", "predictionKeys"):
+        x = v.get(k, [])
+        if not isinstance(x, list) or not all(isinstance(e, str) and e for e in x):
+            raise ValueError(f"careLimits.{k} is not a list of globs (non-empty strings)")
+        out[k] = x
+    return out
+
+
+def path_glob(pattern):
+    """A repository-relative glob as a regular expression: ** any depth, * and ? inside one folder."""
+    out, i = "", 0
+    while i < len(pattern):
+        if pattern.startswith("**/", i):
+            out, i = out + "(?:.*/)?", i + 3
+        elif pattern.startswith("**", i):
+            out, i = out + ".*", i + 2
+        else:
+            out, i = out + {"*": "[^/]*", "?": "[^/]"}.get(pattern[i], re.escape(pattern[i])), i + 1
+    return re.compile(out)
+
+
+def hard_limits(root, paths, globs) -> list:
+    """[[the path, or the tracked file under it, that matches, the glob]]: one for each path that is a hard limit."""
+    rxs = [(g, path_glob(g)) for g in globs]
+    out = []
+    for p in paths if rxs else []:
+        files = [p] + [f for f in os.fsdecode(ground.git_out(root, "ls-files", "-z", "--", p)).split("\0") if f]
+        hit = next(([f, g] for f in files for g, rx in rxs if rx.fullmatch(f)), None)
+        if hit:
+            out.append(hit)
+    return out
+
+
+def predicted(path) -> list:
+    """The "what" key of each move in a prediction file; ValueError (or OSError) when it cannot be read."""
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    moves = data.get("moves") if isinstance(data, dict) else None
+    if not isinstance(moves, list) or not all(isinstance(m, dict) and isinstance(m.get("what"), str) for m in moves):
+        raise ValueError('it has no "moves" list whose moves each name a "what" key')
+    return [m["what"] for m in moves]
+
+
+def raised(keys, globs):
+    """(the first predicted key that matches a glob of careLimits.predictionKeys, that glob), or None."""
+    for k in keys:
+        for g in globs:
+            if re.fullmatch("".join({"*": ".*", "?": "."}.get(c, re.escape(c)) for c in g), k, re.S):
+                return k, g
+    return None
+
+
 def file_count(root, paths) -> int:
     total = 0
     for p in paths:
@@ -190,11 +262,11 @@ def file_count(root, paths) -> int:
     return total
 
 
-def route(cfg, here, finders, recent, rounds, alt, files, uncounted=(), unread=0, covered=()):
-    """(the route, its reasons)."""
-    def reason(rule, setting, figure, wos):
+def route(cfg, here, finders, recent, rounds, alt, files, uncounted=(), unread=0, covered=(), limits=(), rise=None):
+    """(the route, its reasons). limits: hard_limits' list; rise: raised's (key, glob) or None."""
+    def reason(rule, setting, figure, wos, **more):
         return {"rule": rule, "setting": setting, "threshold": cfg[setting] if setting else None, "figure": figure,
-                "workOrders": wos}
+                "workOrders": wos, **more}
     top = max((rounds.get(w.lower(), 0) for w in here), default=0)
     at_top = [w for w in here if rounds.get(w.lower(), 0) == top] if top else []
     with_round = [w for w in here if rounds.get(w.lower(), 0)]
@@ -210,10 +282,13 @@ def route(cfg, here, finders, recent, rounds, alt, files, uncounted=(), unread=0
     fast = [(files <= cfg["fastMaxFiles"], reason("fast-files", "fastMaxFiles", files, [])),
             (len(here) <= cfg["fastMaxVisits"], reason("fast-visits", "fastMaxVisits", len(here), here)),
             (not recent and not unread, reason("fast-findings", None, len(recent) + unread, recent)),
-            (not with_round, reason("fast-fix-round", None, top, with_round))]
+            (not with_round, reason("fast-fix-round", None, top, with_round)),
+            (not limits, reason("fast-limit", None, len(limits), [], limits=list(limits)))]
     if uncounted:  # printed only when it fails: a path ground does not count has no history the door can read
         fast.append((False, reason("fast-counted", None, len(uncounted), [])))
     if all(ok for ok, _ in fast):
+        if rise:  # a predicted key only a measure shows: normal from here, never look-around
+            return "normal", [reason("raised-prediction", None, 1, [], key=rise[0], pattern=rise[1])]
         return "fast", [r for _, r in fast]
     return "normal", [r for ok, r in fast if not ok]
 
@@ -234,6 +309,11 @@ def said(r, days, uncounted=(), unread=0) -> str:
                           if n else f"no serious review finding in {days} days"),
         "fast-fix-round": f"a fix round here{wos}" if n else "no fix round here",
         "look-covered": f"covered by an architect look in {days} days{wos}: read its report before any new check",
+        "fast-limit": ("a hard-limit path, never fast: " + ", ".join(f"{f} (careLimits.paths {g})"
+                                                                    for f, g in r.get("limits") or [])
+                       if n else "no hard-limit path"),
+        "raised-prediction": (f"raised from fast: the prediction moves {r.get('key')} "
+                              f"(careLimits.predictionKeys {r.get('pattern')})"),
         "fast-counted": f"{n} path{'s' if n != 1 else ''} not counted (outside the code roots): {', '.join(uncounted)}",
     }[r["rule"]]
     return text + setting
@@ -245,6 +325,9 @@ def main(argv, root) -> int:
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--task", dest="leave_out", metavar="WORK_ORDER", help="the work order at the door: left out")
     ap.add_argument("--as-of", dest="as_of", metavar="ISO_TIME", help="replay: read nothing after this time")
+    ap.add_argument("--prediction", metavar="MOVES_FILE",
+                    help="the work order's prediction: a predicted key that matches careLimits.predictionKeys raises "
+                         "fast to normal")
     ap.add_argument("--repo", help="default: the current folder")
     ap.add_argument("paths", nargs="*", metavar="path",
                     help="relative to the repository root; none: the --task work order's own ground: line")
@@ -269,7 +352,17 @@ def main(argv, root) -> int:
         found = ground.prepare(ap, a, "--task", "bakehouse door")
         if isinstance(found, int):
             return found
-    project, _, _, _, paths = found
+    project, binding, _, _, paths = found
+    try:
+        care = care_limits(binding)
+    except ValueError as e:
+        print(f"bakehouse door: {project.binding}: {e}", file=sys.stderr)
+        return 2
+    try:
+        keys = predicted(a.prediction) if a.prediction is not None else []
+    except (OSError, ValueError) as e:  # json.JSONDecodeError is a ValueError
+        print(f"bakehouse door: --prediction {a.prediction}: {e}", file=sys.stderr)
+        return 2
     try:
         cfg = settings(project)
     except (OSError, ValueError, AttributeError) as e:  # json.JSONDecodeError is a ValueError; AttributeError: a
@@ -279,6 +372,7 @@ def main(argv, root) -> int:
     try:
         s, serious, runs, why = ground.gather(*found, cfg["days"], a.leave_out, until)
         files = file_count(project.root, paths)
+        limits = hard_limits(project.root, paths, care["paths"])
     except subprocess.CalledProcessError as e:
         print(f"bakehouse door: git failed: {os.fsdecode(e.stderr).strip()}", file=sys.stderr)
         return 1
@@ -293,7 +387,8 @@ def main(argv, root) -> int:
     unread = s.get("findingsUnread") or 0
     now = until if until is not None else datetime.now().timestamp()
     covered = looks(project, here + [a.leave_out or ""], now - cfg["days"] * 86400, until)
-    way, reasons = route(cfg, here, finders, recent, rounds, altitude(events, here), files, uncounted, unread, covered)
+    way, reasons = route(cfg, here, finders, recent, rounds, altitude(events, here), files, uncounted, unread, covered,
+                         limits, raised(keys, care["predictionKeys"]))
     out = {"format": 1, "team": True, "project": str(project.root), "route": way, "reasons": reasons,
            "settings": cfg, "asOf": a.as_of, "task": a.leave_out, "ground": s}
     sys.stdout.reconfigure(errors="surrogateescape")  # a file name that is not UTF-8
