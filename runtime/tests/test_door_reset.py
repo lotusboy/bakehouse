@@ -77,7 +77,7 @@ class DoorReset(test_door_area.DoorArea):
 
     def test_an_ask_at_exactly_t_counts(self):
         self.commit("A1: x", "src/a.py")
-        self.look()
+        self.look("A1")
         self.ask_at("A1", self.t - 1, fixRound=2)
         self.assertEqual(self.route("src/a.py")[0], "fast", "an ask a second before T does not count")
         self.ask_at("A1", self.t, fixRound=2)
@@ -87,12 +87,12 @@ class DoorReset(test_door_area.DoorArea):
         self.commit("A1: x", "src/a.py")
         self.ask_at("A1", self.t - 60, layer="out", owners=1)
         self.assertEqual(self.route("src/a.py"), ("look-around", ["look-altitude"]))
-        self.look()
+        self.look("A1")
         self.assertEqual(self.route("src/a.py")[0], "fast")
 
     def test_a_run_folder_dated_t_s_day_counts(self):
         self.commit("A1: x", "src/a.py")
-        self.look()
+        self.look("A1")
         run = self.repo / "notes" / "done" / f"{self.folder_day(self.t - 86400)}-A1-review"
         run.mkdir(parents=True)
         (run / "findings-fix2.md").write_text("# Findings\n")

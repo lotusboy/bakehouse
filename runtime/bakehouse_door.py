@@ -39,8 +39,15 @@ fast when none of those holds and all of these do:
                   folder). A failed fast-limit names the path and the glob. A hard limit is never fast.
   fast-binding    the binding here has main's careLimits (printed only when it fails; see "The binding compared
                   with main's" below). Different hard limits, or careLimits on one side only, are never fast.
-A look-around also gives look-covered when a work order here, or the one at the door, has an architect run in the
-spend ledger recorded in the window: one architect look per area, so the PM reads that report first.
+An architect look resets the area's count. A look is an architect run in the spend ledger, recorded in the window,
+by a work order here or the one at the door; T is the latest. With a look, trouble counts only from T, for the look
+rules and the fast rules alike: asks recorded at or after T (fix rounds, the altitude rule), run folders dated on or
+after T's day (fix rounds from findings-fixN.md, troubled work orders, finders). The work orders here, the files, the
+hard limits, the binding check and --prediction are read as without a look. A look-around then also gives
+look-covered, with since (T): one architect look per area, so the PM reads that report first. When the reset makes
+the route normal or fast (without it the route would be look-around), the reasons gain reset (printed, never
+failing), naming the look's work order and since (T). JSON's countedFrom is T (local time, with its offset), or null
+with no look.
 normal otherwise. The reasons printed are the look-around rules that hold; for normal, the fast rules that fail; for
 fast, the fast rules. The six settings are under "door" in runtime/decision-config.json; a project overrides them in
 .team/decision-config.json.
@@ -78,9 +85,10 @@ how many work orders are open now; the settings as they are now; the files the p
 compared with main's (it is about the binding now, so --as-of does not change it).
 
 The JSON object: format (1), team, project, route, reasons (each: rule, setting, threshold, figure, workOrders;
-fast-limit also limits, raised-prediction also key and pattern, fast-binding also against),
+fast-limit also limits, raised-prediction also key and pattern, fast-binding also against, look-covered and reset
+also since),
 settings, asOf (null when not given), task, bindingDrift ({"against": {"clone", "branch"} or null, "keys": [the
-differing top-level keys, sorted], "notMade": null or why the comparison was not made}), recorded, and ground (the summary `ground --json` gives for the same paths).
+differing top-level keys, sorted], "notMade": null or why the comparison was not made}), recorded, countedFrom, and ground (the summary `ground --json` gives for the same paths).
 
 The door event: with --task, and without --as-of, the door appends one ops event through runtime/ops-event.sh once
 it has printed: kind door, task the work order, purpose door, outcome the route, note the reasons in one line (the
@@ -170,9 +178,10 @@ def altitude(events, here) -> list:
     return [wo for wo in here if wo.lower() in hit]
 
 
-def looks(project, candidates, start, until) -> list:
-    """The candidates (work orders here, and the one at the door) with an architect run in the spend ledger recorded
-    in the window: one look per area, so a look-around there reads that report before asking for another."""
+def looks(project, candidates, start, until) -> dict:
+    """{candidate: the time of its latest look}, latest first: the candidates (work orders here, and the one at the
+    door) with an architect run in the spend ledger recorded in the window. One look per area: trouble counts from
+    the latest one (the reset), and a look-around there reads that report before asking for another."""
     want = {w.lower(): w for w in candidates if w}
     seen = {}
     for r in spend.read_events(project):
@@ -180,7 +189,7 @@ def looks(project, candidates, start, until) -> list:
         t = decision.when(r.get("ts")) if r.get("kind") == "architect" and w else None
         if t is not None and start <= t.timestamp() <= (until if until is not None else float("inf")):
             seen[w] = max(t.timestamp(), seen.get(w, 0))
-    return sorted(seen, key=seen.get, reverse=True)
+    return {w: seen[w] for w in sorted(seen, key=seen.get, reverse=True)}
 
 
 def item_ground(text, wo):
@@ -414,7 +423,8 @@ def said(r, days, uncounted=()) -> str:
         "look-altitude": f"an altitude trigger on an ask of {n} work order{'s' if n != 1 else ''} here{wos}",
         "fast-files": f"{n} file{'s' if n != 1 else ''} in the paths",
         "fast-visits": f"{n} troubled work order{'s' if n != 1 else ''} here in {days} days{wos}",
-        "look-covered": f"covered by an architect look in {days} days{wos}: read its report before any new check",
+        "look-covered": f"covered by an architect look in {days} days{wos}: trouble counted from {r.get('since')}",
+        "reset": f"reset by the architect look of {', '.join(r['workOrders'])}: trouble counted from {r.get('since')}",
         "fast-limit": ("a hard-limit path, never fast: " + ", ".join(f"{f} (careLimits.paths {g})"
                                                                     for f, g in r.get("limits") or [])
                        if n else "no hard-limit path"),
@@ -489,18 +499,35 @@ def main(argv, root) -> int:
     here = list(dict.fromkeys(wo for p in s["paths"] for wo in p.get("workOrders", [])))
     now = until if until is not None else datetime.now().timestamp()
     start = date.fromtimestamp(now - cfg["days"] * 86400)  # the window's first day, for run folders
-    mine = [f for f in serious if f[2] and f[1] >= start and any(ground.under(f[2], p) for p in paths)]
-    finders = list(dict.fromkeys(f[0] for f in sorted(mine, key=lambda f: f[1], reverse=True)))
-    lately = [e for e in events if e.get("task") and decision.when(e.get("ts"))
-              and decision.when(e.get("ts")).timestamp() >= now - cfg["days"] * 86400]
-    rounds = fix_rounds([r for r in runs if r[0] in here and r[1] >= start], lately)
     uncounted = [p["path"] for p in s["paths"] if not p.get("inCodeRoots")]
     covered = looks(project, here + [a.leave_out or ""], now - cfg["days"] * 86400, until)
+    t = max(covered.values()) if covered else None  # the latest architect look here: trouble counts from it
+    since = datetime.fromtimestamp(t).astimezone().isoformat(timespec="seconds") if t is not None else None
+
+    def counted(t):
+        """(troubled, finders, rounds, altitude) counted from t: asks recorded at or after it, run folders dated on
+        or after its day; t None: the whole window, as 0.16.1."""
+        first = start if t is None else max(start, date.fromtimestamp(t))
+        asked = events if t is None else [e for e in events if decision.when(e.get("ts"))
+                                          and decision.when(e.get("ts")).timestamp() >= t]
+        mine = [f for f in serious if f[2] and f[1] >= first and any(ground.under(f[2], p) for p in paths)]
+        finders = list(dict.fromkeys(f[0] for f in sorted(mine, key=lambda f: f[1], reverse=True)))
+        lately = [e for e in asked if e.get("task") and decision.when(e.get("ts"))
+                  and decision.when(e.get("ts")).timestamp() >= max(now - cfg["days"] * 86400, t or 0)]
+        rounds = fix_rounds([r for r in runs if r[0] in here and r[1] >= first], lately)
+        return troubled(here, rounds, serious, first), finders, rounds, altitude(asked, here)
+
     drift = binding_drift(project, binding)  # the binding now: --as-of does not change it
-    way, reasons = route(cfg, here, troubled(here, rounds, serious, start), finders, rounds, altitude(events, here),
-                         files, uncounted, covered,
-                         limits, raised(keys, care["predictionKeys"]),
-                         drift["against"] if "careLimits" in drift["keys"] else None)
+    rest = (files, uncounted, list(covered), limits, raised(keys, care["predictionKeys"]),
+            drift["against"] if "careLimits" in drift["keys"] else None)
+    way, reasons = route(cfg, here, *counted(t), *rest)
+    for r in reasons:
+        if r["rule"] == "look-covered":
+            r["since"] = since
+    if t is not None and way != "look-around" and route(cfg, here, *counted(None), *rest)[0] == "look-around":
+        # the reset made it normal or fast: one reason says so, never failing
+        reasons.append({"rule": "reset", "setting": None, "threshold": None, "figure": 1,
+                        "workOrders": [next(iter(covered))], "since": since})
     text = "; ".join(said(r, cfg["days"], uncounted) for r in reasons)
     note = text[:gate_event.NOTE_CHARS]
     # a work order's door records its route; a replay (--as-of) and a look at paths only (no work order) do not
@@ -508,7 +535,7 @@ def main(argv, root) -> int:
     unrecorded = record(project.root, a.leave_out, way, note) if to_record and a.json else None
     out = {"format": 1, "team": True, "project": str(project.root), "route": way, "reasons": reasons,
            "settings": cfg, "asOf": a.as_of, "task": a.leave_out, "bindingDrift": drift,
-           "recorded": to_record and unrecorded is None, "ground": s}
+           "recorded": to_record and unrecorded is None, "countedFrom": since, "ground": s}
     sys.stdout.reconfigure(errors="surrogateescape")  # a file name that is not UTF-8
     print(json.dumps(out, indent=2) if a.json else f"door: {way}: " + text)
     if drift["keys"] and not a.json:
