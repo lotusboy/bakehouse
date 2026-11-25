@@ -44,10 +44,11 @@ by a work order here or the one at the door; T is the latest. With a look, troub
 rules and the fast rules alike: asks recorded at or after T (fix rounds, the altitude rule), run folders dated on or
 after T's day (fix rounds from findings-fixN.md, troubled work orders, finders). The work orders here, the files, the
 hard limits, the binding check and --prediction are read as without a look. A look-around then also gives
-look-covered, with since (T): one architect look per area, so the PM reads that report first. When the reset makes
-the route normal or fast (without it the route would be look-around), the reasons gain reset (printed, never
-failing), naming the look's work order and since (T). JSON's countedFrom is T (local time, with its offset), or null
-with no look.
+look-covered, with since (T): one architect look per area, so the PM reads that report first. With a look, the
+look-visits and fast-visits text says "since <T>" where it says "in <days> days" without one. When the reset changed
+the route (without it the route would be higher: look-around, or normal where it is now fast), the reasons gain
+reset (printed, never failing), naming the look's work order and since (T). JSON's countedFrom is T (local time,
+with its offset), or null with no look.
 normal otherwise. The reasons printed are the look-around rules that hold; for normal, the fast rules that fail; for
 fast, the fast rules. The six settings are under "door" in runtime/decision-config.json; a project overrides them in
 .team/decision-config.json.
@@ -88,14 +89,23 @@ The JSON object: format (1), team, project, route, reasons (each: rule, setting,
 fast-limit also limits, raised-prediction also key and pattern, fast-binding also against, look-covered and reset
 also since),
 settings, asOf (null when not given), task, bindingDrift ({"against": {"clone", "branch"} or null, "keys": [the
-differing top-level keys, sorted], "notMade": null or why the comparison was not made}), recorded, countedFrom, and ground (the summary `ground --json` gives for the same paths).
+differing top-level keys, sorted], "notMade": null or why the comparison was not made}), recorded, kept, countedFrom,
+and ground (the summary `ground --json` gives for the same paths).
 
-The door event: with --task, and without --as-of, the door appends one ops event through runtime/ops-event.sh once
-it has printed: kind door, task the work order, purpose door, outcome the route, note the reasons in one line (the
-text after "door: <route>: "), cut to gate_event.NOTE_CHARS. With --prediction too, so the latest door event is the
-route. Paths alone (no work order) and a replay (--as-of) record nothing. A write that fails changes neither the
-route printed nor the exit code: one stderr line says why and gives the ops-event.sh line that records it by hand.
-JSON's "recorded" says whether it was written (false when nothing was to be recorded).
+The door event: with --task, and without --as-of, in a repository whose binding says "owned": true, the door
+appends one ops event through runtime/ops-event.sh: kind door, task the work order, purpose door, outcome the route,
+note the reasons in one line (the text after "door: <route>: "), cut to gate_event.NOTE_CHARS. The text is printed
+first, then the event written; with --json the event is written first, so the JSON can say whether it was. With
+--prediction too, so the latest door event is the route. A work order keeps the route it started with: when the
+door gives a route lower than the work order's latest door event (fast < normal < look-around: a PM's raise, an
+earlier look-around), it records that latest route again, the note starting "kept <route>: the door now gives
+<lower>; a work order keeps the route it started with", and the text prints that line after the first
+("door: kept ..."); JSON's "kept" is that route, else null. The first line's route is still the door's own. A higher
+route (a rise at --prediction, new trouble) is recorded as it is. Paths alone (no work order), a replay (--as-of)
+and a binding that is not owned (it keeps no ledger) record nothing and print no line about it. A write that fails
+changes neither the route printed nor the exit code: one stderr line says why and gives the ops-event.sh line, its
+note shell-quoted, that records it by hand. JSON's "recorded" says whether it was written (false when nothing was to
+be recorded).
 
 Exit codes as `bakehouse ground`: 0; 1 the ops ledger is broken (the rest is printed) or git failed; 2 bad usage, a
 binding without tracker.id or code roots, or a door setting that is not a whole number; 3 no team here; 4 setup

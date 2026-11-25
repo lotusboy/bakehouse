@@ -268,7 +268,11 @@ Find where this work order stands before doing anything else. Run `git fetch` fi
    `docs/PROJECT-TEAM.md`, "The door"). The PM may raise the route (fast to normal, normal to
    look-around), saying why in one line; it never lowers it. A change to a contract, a ruling file or
    a pinned output is at least normal. The door records its own route: `bakehouse door --task {id}`
-   appends one door event (the route and its reasons) to the ops ledger. When it prints `the route was not
+   appends one door event (the route and its reasons) to the ops ledger. It never records a route lower
+   than the work order's latest door event: a second run (a resume that redoes this step) that gives a
+   lower route prints `door: kept <route>: the door now gives <lower>; a work order keeps the route it
+   started with` and records the kept route again, so a raise and a look-around stay. In a repository
+   whose binding is not `"owned": true` nothing is recorded (it keeps no ledger). When it prints `the route was not
    recorded`, run the `ops-event.sh` line it gives. The PM records by hand only a raise (here, or at step
    8): `ops-event.sh door {id} door - - - - - <route> "raised from <the door's route>: <why>"`. The
    work order's latest door event is its route. The engineer's dispatch (step 6.1) is refused while the
@@ -284,8 +288,8 @@ Find where this work order stands before doing anything else. Run `git fetch` fi
      the area already had an architect look in the window: read that report and put its options to
      the owner; dispatch a new check only when the report does not cover this change, saying why. The
      door counts trouble only from the latest architect look (`trouble counted from <time>`): this
-     look-around comes from trouble since that look. A `reset` reason on a normal or fast route says the
-     look's reset made it so.
+     look-around comes from trouble since that look (the visits reasons say `since <time>`). A `reset`
+     reason says the look's reset changed the route: without it the route would be higher.
    - **fast**: the owner's go here covers the engineer's and the reviewer's spend (steps 6.1 and 7) and
      the prediction (step 6.2). The review is the fast form (the [reviewer brief](#reviewer-brief)).
    - **normal**: the owner's go here covers the engineer's and the reviewer's spend (steps 6.1 and 7).
@@ -355,7 +359,8 @@ branch), `BASE` and the record folder. Commit by path, with the trailer. Fill th
    `bakehouse door --task {id} --prediction <the prediction file>`. When its reasons include `raised-prediction`
    (it names the key and the pattern) or `fast-binding` (the hard limits here are not main's), the route rose at
    the prediction. This run records itself, like step 4.3's: its route is the work order's route from then on,
-   and the PM records nothing by hand. The work order goes on
+   and the PM records nothing by hand. It never records lower than the work order's latest door event
+   (a `door: kept` line, step 4.3). The work order goes on
    as normal from there, so the prediction is asked as below, and that ask also states the normal
    reviewer's estimate and ceiling: the go there covers it. Any other result (normal or look-around for
    another reason, from history that changed since step 4.3) is recorded too, and is the route from then on: say

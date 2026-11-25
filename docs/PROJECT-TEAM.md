@@ -1646,7 +1646,7 @@ refusals can be counted per tool and per check. The event is ops-event.sh's, wit
 | `dispatch:role-table` | agent-roles.py (PreToolUse) | a `role:` dispatch while a role table it reads cannot be used: the personal `agent-roles.json` cannot be read, does not parse, is not a JSON object or has a `roles` that is not an object, or the binding's `roles` is not an object. The reason names the file and the error |
 | `dispatch:binding-unreadable` | agent-roles.py (PreToolUse) | a dispatch whose decision needs a binding that cannot be read: binding.json does not parse, is not an object, cannot be read or is a dangling symlink, or its `reviews` field is not a safe path or its `runs` field is bad, when the dispatch's `Record folder:` line or its prompt needs that field (a `{reviews}` in a role's `prompt_append`, or the change engineer's prediction marker; the reason names that field and the binding file); the project needs setup (the locator's message; a team dispatch only, as in "Roles"); the project locator cannot be run or does not answer in time. The reason names the cause and what to fix. Its event is kept in `logs/agent-roles.log` in the machine folder (`GATE-EVENT ... kept in this log`) with its cause, because the working folder's ledger is found through the input that failed |
 | `dispatch:record-folder` | agent-roles.py (PreToolUse) | a `Record folder:` line that cannot be decided |
-| `dispatch:door` | agent-roles.py (PreToolUse) | a change engineer's dispatch (`role:change:engineer`, or the change engineer by its plain name) with a `Work order <id>:` line while the project's ops ledger holds no `door` event for that id (commands/change.md step 4.3: `bakehouse door --task <id>` records it), in a project whose ledger holds a door event for any work order (one that has never run the door is not gated). The ledger is read once, both records formats, no git; a ledger that cannot be read lets the dispatch pass with one message. An architect, a reviewer, a dispatch with no `Work order` line and a later engineer on a work order that has a door event (a fix round) are not gated |
+| `dispatch:door` | agent-roles.py (PreToolUse) | a change engineer's dispatch (`role:change:engineer`, or the change engineer by its plain name) with a `Work order <id>:` line while the project's ops ledger holds no `door` event for that id (commands/change.md step 4.3: `bakehouse door --task <id>` records it), in a project whose ledger holds a door event for any work order (one that has never run the door is not gated). The ledger files are read once, both records formats, with no git (finding the records worktree may use git). A ledger file that cannot be read, or no records found, lets the dispatch pass with one message. A line that is not JSON is skipped: with no door event for the id among the other lines the dispatch is refused, the reason naming that line's file; with one it passes. An architect, a reviewer, a dispatch with no `Work order` line and a later engineer on a work order that has a door event (a fix round) are not gated |
 | `stop:prediction` | agent-roles.py (SubagentStop) | a change job stops with no machine prediction |
 | `stop:seal` | agent-roles.py (SubagentStop) | a change job stops with a moves file whose bytes no seal in its project's ops ledger names (sent back once) |
 | `stop:run-record` | agent-roles.py (SubagentStop) | a role with `run_record` stops without writing its record |
@@ -1749,9 +1749,10 @@ when they are dated on or after T's day: fix rounds from `findings-fixN.md`, tro
 serious findings read them. Everything else is read as without a look: the work orders here, the files,
 the hard limits, the binding check and `--prediction`. The look-around rules and the fast rules both read
 the reset count. So a look-around after a look comes from trouble since that look, and `look-covered` says
-`trouble counted from <T>` (JSON: `since`). When the reset makes the route normal or fast (without it the
-route would be look-around), the reasons gain `reset`: printed, never failing, naming the look's work
-order and T. JSON's `countedFrom` is T, or null when there is no look.
+`trouble counted from <T>` (JSON: `since`). With a look, the visits reasons say `since <T>` where they
+say `in 14 days` without one. When the reset changed the route (without it the route would be higher:
+look-around, or normal where it is now fast), the reasons gain `reset`: printed, never failing, naming
+the look's work order and T. JSON's `countedFrom` is T, or null when there is no look.
 
 What each level does:
 
@@ -1772,8 +1773,14 @@ thresholds are under `door` in `runtime/decision-config.json`
 overrides any of them in `.team/decision-config.json`, and the door's text names the setting beside each
 reason. The route is recorded as an ops `door` event, and the work order's latest door event is its route.
 `bakehouse door --task <id>` records its own route each time it runs (with `--prediction` too); a replay
-(`--as-of`) and a run on paths alone record nothing. A write that fails changes neither the route nor the
-exit code: the door prints the `ops-event.sh` line that records it by hand. The PM records by hand only a
+(`--as-of`), a run on paths alone and a repository whose binding is not `"owned": true` record nothing. A
+work order keeps the route it started with: when the door gives a route lower than the work order's latest
+door event (fast < normal < look-around), it records that latest route again, with the note
+`kept <route>: the door now gives <lower>; a work order keeps the route it started with`, and prints the
+same after its first line (JSON: `kept`). So a PM's raise and a look-around stay when step 4.3 is run
+again, and the architect look that a look-around asked for does not lower that work order's route. A
+higher route (a rise at the prediction, new trouble) is recorded as it is. A write that fails changes
+neither the route nor the exit code: the door prints the `ops-event.sh` line that records it by hand. The PM records by hand only a
 raise (`raised from <route>: <why>`). A change engineer's dispatch with a `Work order <id>:` line is refused
 while the ops ledger holds no door event for that id (`dispatch:door`, [Gate refusals](#gate-refusals)), once the
 project has run the door for any work order.

@@ -22,7 +22,9 @@
 #               decision-answered | status-run | session-start | session-end | work-order-closed | door | note
 #               door: written by `bakehouse door --task <id>` itself (change job step 4.3, and step 6.2's
 #               --prediction run): task the work order, purpose door, outcome the route the work order takes
-#               (fast | normal | look-around), note the reasons in one line. By hand only for the PM's raise of
+#               (fast | normal | look-around), note the reasons in one line; never lower than the work order's
+#               latest door event (the door records that one again, the note starting "kept <route>: ...").
+#               By hand only for the PM's raise of
 #               it (the note then starting "raised from <route>: <why>"), or when the door says its write failed.
 #               When a work order has more than one, its latest door event is its route
 #               (sealed | revised | retired are written only by predict-gate.sh seal | revise | retire)
