@@ -42,7 +42,10 @@ Three entry points, all wired by the plugin's hooks:
       - the change engineer (`prediction_record` in the shipped table: change:engineer). PreToolUse
         marks a `role:change:engineer` dispatch, and a dispatch by the agent's plain name in a repo
         with a binding when its brief has a `Work order <id>:` line (without one it warns: close is
-        the hard gate). The marker is the prompt's own final line. At SubagentStop, only for the agent
+        the hard gate). A marked dispatch in a repo with a binding whose `Work order <id>:` line names
+        a work order with no `door` event in the project's ops ledger is refused (gate dispatch:door;
+        door_routes reads the ledger, and one that cannot be read lets it pass with a message). The
+        marker is the prompt's own final line. At SubagentStop, only for the agent
         type change:engineer resolves to: PreToolUse logs every role: dispatch of that agent type, with or
         without a binding, and every plain-name one in a repo with a binding, with
         whether it is a change job, to logs/prediction-dispatch.jsonl in the machine folder (sha256 of the prompt
