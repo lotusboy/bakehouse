@@ -146,6 +146,8 @@ model for that one dispatch, and only with the owner's yes.
   the finding, not only the ones the review named, and brief them all.
 - **The door comes first.** At the work order, before any code, `bakehouse door` gives the route (fast, normal
   or look-around) and a look-around brings the architect in then (commands/change.md, step 4.3).
+  `bakehouse door --task <id>` records the route itself; the engineer's dispatch is refused until it has.
+  An architect look resets the area's count: trouble counts from the latest look.
   The route is the care level: on fast and normal the go on the work order covers the engineer's and
   the reviewer's spend, fast also covers a matching prediction and gets one diff-scoped reviewer, and no
   route drops the review, the prediction and its seal, or the close checks.

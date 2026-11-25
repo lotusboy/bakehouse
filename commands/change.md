@@ -267,10 +267,13 @@ Find where this work order stands before doing anything else. Run `git fetch` fi
    `bakehouse door --task {id}` prints (it reads the item's own `ground:` line, and stops when there is none): fast, normal or look-around (bakehouse
    `docs/PROJECT-TEAM.md`, "The door"). The PM may raise the route (fast to normal, normal to
    look-around), saying why in one line; it never lowers it. A change to a contract, a ruling file or
-   a pinned output is at least normal. Record the route the work order takes (once here; again only when it rises, at step 6.2 or 8):
-   `ops-event.sh door {id} door - - - - - <route> "<its reasons, one line>"`; when the PM raised it,
-   the note starts `raised from <the door's route>: <why>`. A `door: warning:` line (the binding here differs
-   from main's) goes into the owner's message as it is.
+   a pinned output is at least normal. The door records its own route: `bakehouse door --task {id}`
+   appends one door event (the route and its reasons) to the ops ledger. When it prints `the route was not
+   recorded`, run the `ops-event.sh` line it gives. The PM records by hand only a raise (here, or at step
+   8): `ops-event.sh door {id} door - - - - - <route> "raised from <the door's route>: <why>"`. The
+   work order's latest door event is its route. The engineer's dispatch (step 6.1) is refused while the
+   work order has no door event. A `door: warning:` line (the binding here differs from main's) goes
+   into the owner's message as it is.
    - **look-around**: before the owner's go, give the `step-back` skill's helicopter view of the area
      in a few lines, and a Seesaw read: which layer owns the cause (the area, what feeds it, what reads
      it). Then dispatch one architect check of the area (RESTRUCTURE or REDESIGN, the mode named; about
@@ -279,7 +282,10 @@ Find where this work order stands before doing anything else. Run `git fetch` fi
      or redesign first (a refactor work order, and this one is held or becomes one of its stages). The
      step 4.2 check on an architecture decision then applies. When the reasons include `look-covered`,
      the area already had an architect look in the window: read that report and put its options to
-     the owner; dispatch a new check only when the report does not cover this change, saying why.
+     the owner; dispatch a new check only when the report does not cover this change, saying why. The
+     door counts trouble only from the latest architect look (`trouble counted from <time>`): this
+     look-around comes from trouble since that look. A `reset` reason on a normal or fast route says the
+     look's reset made it so.
    - **fast**: the owner's go here covers the engineer's and the reviewer's spend (steps 6.1 and 7) and
      the prediction (step 6.2). The review is the fast form (the [reviewer brief](#reviewer-brief)).
    - **normal**: the owner's go here covers the engineer's and the reviewer's spend (steps 6.1 and 7).
@@ -317,7 +323,10 @@ branch), `BASE` and the record folder. Commit by path, with the trailer. Fill th
    prediction passes this stop while its round has no measured file yet, and beside its measured pair
    only when that pair shows 0 moved keys. A dispatch by the agent's plain name is checked
    only when the brief keeps its `Work order {id}:` line; otherwise the hook warns. Either way,
-   step 9's close is the hard gate.
+   step 9's close is the hard gate. A change engineer's dispatch with a `Work order {id}:` line is
+   refused while the ops ledger holds no door event for `{id}` (gate `dispatch:door`): run
+   `bakehouse door --task {id}` (step 4.3), then dispatch again. A fix round's engineer finds the event
+   already there.
 
    **Seals (bakehouse `docs/PREDICT-GATE.md`, "Sealing").** Whoever commits a prediction or a
    baseline seals it at that commit: `predict-gate.sh seal {id} <round> <file>`, `<round>` being
@@ -344,11 +353,12 @@ branch), `BASE` and the record folder. Commit by path, with the trailer. Fill th
    On a work order whose recorded route is fast (step 4.3), first run
    `bakehouse door --task {id} --prediction <the prediction file>`. When its reasons include `raised-prediction`
    (it names the key and the pattern) or `fast-binding` (the hard limits here are not main's), the route rose at
-   the prediction: record it, `ops-event.sh door {id} door - - - - - normal "raised from fast: <key>"` (for
-   `fast-binding`, `"raised from fast: the binding's hard limits are not main's"`), and the work order goes on
+   the prediction. This run records itself, like step 4.3's: its route is the work order's route from then on,
+   and the PM records nothing by hand. The work order goes on
    as normal from there, so the prediction is asked as below, and that ask also states the normal
    reviewer's estimate and ceiling: the go there covers it. Any other result (normal or look-around for
-   another reason, from history that changed since step 4.3) leaves the recorded route as it is. When the route stays fast and every check
+   another reason, from history that changed since step 4.3) is recorded too, and is the route from then on: say
+   so to the owner. When the route stays fast and every check
    passes exactly, report the match and continue without a second ask; any difference is asked as below.
 
    Bring the prediction to the owner as one decision, before any site is switched, with each failed
