@@ -45,7 +45,8 @@ Three entry points, all wired by the plugin's hooks:
         the hard gate). A marked dispatch in a repo with a binding whose `Work order <id>:` line names
         a work order with no `door` event in the project's ops ledger is refused (gate dispatch:door),
         once the ledger holds a door event for any work order: a project that has never run the door is
-        not gated (door_routes reads the ledger, and one that cannot be read lets it pass with a message). The
+        not gated (door_routes reads the ledger; one that cannot be read lets it pass with a message, and a
+        line that is not JSON is skipped, the refusal naming its file). The
         marker is the prompt's own final line. At SubagentStop, only for the agent
         type change:engineer resolves to: PreToolUse logs every role: dispatch of that agent type, with or
         without a binding, and every plain-name one in a repo with a binding, with
@@ -222,14 +223,16 @@ def refusal_event(gate, reason, prompt, where, keep=False):
 
 
 def door_routes(cwd):
-    """(the work orders, lower case, with a door event in the ops ledger of cwd's project, None), or (what was read,
-    or None, why the ledger cannot be read). Read as `bakehouse status` reads it, in both records formats: the
-    ledger file, then each writer file on disk (format 2); read once, with no git (the hook's deadline)."""
+    """(the work orders, lower case, with a door event in the ops ledger of cwd's project, None, the first file
+    with a line that is not JSON or None), or (None, why the ledger cannot be read, None). A line that is not JSON
+    is skipped and the other lines are read. Read as `bakehouse status` reads it, in both records formats: the
+    ledger file, then each writer file on disk (format 2); the files read once, with no git (the hook's deadline;
+    finding the records worktree may use git)."""
     try:
         import ops_ledger
         rec = records_of(cwd)
         if rec is None:
-            return None, "the project's records worktree cannot be found"
+            return None, "the project's records worktree cannot be found", None
         legacy = rec / locator.LEDGERS["ops_ledger"]
         folder = locator.writer_folder(legacy)
         files = [legacy] + (sorted(f for f in folder.glob("*.jsonl") if locator.WRITER.fullmatch(f.stem))
@@ -241,17 +244,17 @@ def door_routes(cwd):
             try:
                 raw = f.read_bytes()
             except OSError as e:
-                return None, f"the ops ledger {f} cannot be read ({e.strerror or e})"
+                return None, f"the ops ledger {f} cannot be read ({e.strerror or e})", None
             for line in ops_ledger.lines_of(raw):
                 ev = ops_ledger.parse(line)
                 if ev is None:
-                    bad = bad or f"the ops ledger {f} has a line that is not a JSON object"
+                    bad = bad or f  # skipped: the other lines are read
                 elif ev.get("kind") == "door" and isinstance(ev.get("task"), str):
                     seen.add(ev["task"].lower())
-        return seen, bad
+        return seen, None, bad
     except Exception as e:  # noqa: BLE001 - fail open: the gate is for a forgotten step, not a broken ledger
         log(f"ERROR door routes: {e!r}")
-        return None, f"the ops ledger cannot be read ({e!r})"
+        return None, f"the ops ledger cannot be read ({e!r})", None
 
 
 def predict_gate():
@@ -776,16 +779,18 @@ def pre_tool_use(d):
     # Only in a project that uses the door: a ledger with no door event at all is a project that has never run it.
     wo = work_order(before, binding) if mark and binding else None  # no team here: no ledger, no gate
     if wo:
-        doors, why = door_routes(cwd)
-        if doors and wo.lower() not in doors and not why:
+        doors, why, bad = door_routes(cwd)
+        if doors and wo.lower() not in doors:
             reason = (f"bakehouse agent-roles: work order {wo} has no door route recorded (change.md step 4.3). "
                       f"Run bakehouse door --task {wo}; it records the route. Then dispatch again.")
+            if bad:  # the skipped line may have been its door event: the reason names the file
+                reason += f" (The ops ledger {bad} has a line that is not a JSON object; its other lines were read.)"
             log(f"DENY {reason}")
             refusal_event("dispatch:door", reason, before, cwd)
             return {"hookSpecificOutput": {"hookEventName": "PreToolUse",
                                            "permissionDecision": "deny",
                                            "permissionDecisionReason": reason}}
-        if why and (doors is None or wo.lower() not in doors):
+        if why:  # the ledger cannot be read (no records worktree, or a file that cannot be read)
             msg = (f"bakehouse agent-roles: the door check for work order {wo} was not made: {why}. This dispatch "
                    "passes; `bakehouse status` reports the ledger.")
             log(f"WARN {msg}")
