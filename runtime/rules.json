@@ -591,6 +591,33 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
+   "id": "bakehouse-change-74",
+   "file": "commands/change.md",
+   "sentences": [
+    "A change engineer's dispatch with a `Work order {id}:` line is refused while the ops ledger holds no door event for `{id}` (gate `dispatch:door`), once the ledger holds a door event for any work order (a project that has never run the door is not gated): run `bakehouse door --task {id}` (step 4.3), then dispatch again."
+   ],
+   "enforcer": "code",
+   "proof": "test_agent_roles_door.DispatchDoor.test_refused_with_no_door_event"
+  },
+  {
+   "id": "bakehouse-change-75",
+   "file": "commands/change.md",
+   "sentences": [
+    "It never records a route lower than the work order's latest door event: a second run (a resume that redoes this step) that gives a lower route prints `door: kept <route>: the door now gives <lower>; a work order keeps the route it started with` and records the kept route again, so a raise and a look-around stay."
+   ],
+   "enforcer": "code",
+   "proof": "test_door_record.DoorRecord.test_a_lower_route_keeps_the_latest_one"
+  },
+  {
+   "id": "bakehouse-change-76",
+   "file": "commands/change.md",
+   "sentences": [
+    "It never records lower than the work order's latest door event (a `door: kept` line, step 4.3)."
+   ],
+   "enforcer": "code",
+   "proof": "test_door_record.DoorRecord.test_a_lower_route_keeps_the_latest_one"
+  },
+  {
    "id": "bakehouse-change-32",
    "file": "commands/change.md",
    "sentences": [
