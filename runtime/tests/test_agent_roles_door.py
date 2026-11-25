@@ -85,6 +85,26 @@ class DispatchDoor(test_gate_events.TestRefusalsWriteOneEvent):
         self.assertIn("door", msg)
         self.assertIn(str(self.ledger), msg)
 
+    def bad_line(self):
+        with self.ledger.open("a") as out:
+            out.write("not json\n")
+
+    def test_a_bad_line_still_refuses_without_a_door_event(self):
+        self.door_event("T9")
+        self.bad_line()
+        out = self.answer("role:change:engineer", "Work order T7: x\n")
+        self.assertEqual(self.decision(out), "deny")
+        reason = out["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertTrue(reason.startswith(REASON), reason)
+        self.assertIn(str(self.ledger), reason)
+
+    def test_a_bad_line_passes_with_a_door_event_and_no_message(self):
+        self.door_event()
+        self.bad_line()
+        out = self.answer("role:change:engineer", "Work order T7: x\n")
+        self.assertEqual(self.decision(out), "allow")
+        self.assertNotIn("door", out.get("systemMessage", ""))
+
 
 def load_tests(loader, tests, pattern):
     """Only this file's own tests, not the ones inherited."""

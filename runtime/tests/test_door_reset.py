@@ -123,6 +123,32 @@ class DoorReset(test_door_area.DoorArea):
         self.assertEqual((out["route"], out["countedFrom"]), ("look-around", None))
         self.assertNotIn("since", json.dumps(out["reasons"]))
 
+    def test_normal_to_fast_by_the_reset_says_reset(self):
+        for n in (1, 2):
+            self.commit(f"A{n}: x", "src/a.py")
+            self.trouble(f"A{n}", days_ago=5)
+        self.assertEqual(self.route("src/a.py"), ("normal", ["fast-visits"]), "no look")
+        self.look()
+        self.assertEqual(self.route("src/a.py"), ("fast", ["fast-files", "fast-visits", "fast-limit", "reset"]))
+        self.assertIn(f"0 troubled work orders here since {iso(self.t)} [fastMaxVisits 1]", self.text("src/a.py"))
+
+    def test_the_visits_text_names_where_the_count_starts(self):
+        self.busy()
+        self.look()
+        self.assertIn(f"3 troubled work orders here since {iso(self.t)} (A3, A2, A1) [lookVisits 3]",
+                      self.text("src/a.py"))
+
+    def test_a_second_door_after_the_look_keeps_look_around(self):
+        self.busy_before()
+        first = self.door("--task", "A9", "src/a.py")
+        self.assertEqual((first["route"], first["kept"]), ("look-around", None))
+        self.look("A9")
+        again = self.door("--task", "A9", "src/a.py")
+        self.assertEqual((again["route"], again["kept"]), ("fast", "look-around"))
+        lines = (self.records() / "ops" / "events.jsonl").read_text().splitlines()
+        self.assertEqual([e["outcome"] for e in map(json.loads, lines) if e["kind"] == "door"],
+                         ["look-around", "look-around"])
+
 
 def load_tests(loader, tests, pattern):
     """Only this file's own tests, not the ones inherited."""
