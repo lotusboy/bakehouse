@@ -110,11 +110,13 @@ import os
 from pathlib import Path
 import re
 import shlex
+import signal
 import subprocess
 import sys
 from datetime import date, datetime
 
 import bakehouse_ground as ground
+import bakehouse_status
 import decision
 import gate_event
 import locator
@@ -124,6 +126,7 @@ SETTINGS = ("days", "lookVisits", "lookFindingOrders", "lookFixRound", "fastMaxF
 FIX = re.compile(r"findings-fix([0-9]+)\.md")
 HERE = Path(__file__).resolve().parent
 WRITE_S = 10  # the door event's write: a writer that hangs is cut, and the route stands
+RANK = {"fast": 0, "normal": 1, "look-around": 2}  # a work order keeps the highest: never recorded lower
 
 
 def settings(project):
@@ -401,28 +404,55 @@ def record(root, wo, way, note):
     else why not. Never raises: a write that fails changes neither the route nor the exit code."""
     env = {k: v for k, v in os.environ.items() if k not in ("OPS_REPO", "OPS_TS", "OPS_COMMIT")}  # dated now
     env["OPS_REPO"] = str(root)
-    try:
-        p = subprocess.run([str(HERE / "ops-event.sh"), "door", wo, "door", "-", "-", "-", "-", "-", way, note],
-                           capture_output=True, text=True, env=env, timeout=WRITE_S)
+    try:  # its own process group, as gate_event.py: a write cut at WRITE_S is killed whole
+        p = subprocess.Popen([str(HERE / "ops-event.sh"), "door", wo, "door", "-", "-", "-", "-", "-", way, note],
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env,
+                             start_new_session=True)
+        try:
+            _, err = p.communicate(timeout=WRITE_S)
+        except subprocess.TimeoutExpired:
+            os.killpg(p.pid, signal.SIGKILL)
+            p.communicate()
+            return f"ops-event.sh did not finish in {WRITE_S} s; cut"
     except (OSError, subprocess.SubprocessError) as e:
         return f"cannot run ops-event.sh: {e}"
     if p.returncode == 0:
         return None
-    lines = p.stderr.strip().splitlines()
+    lines = err.strip().splitlines()
     return lines[-1] if lines else f"ops-event.sh exit {p.returncode}"
 
 
-def said(r, days, uncounted=()) -> str:
+def latest_route(project, wo):
+    """The route of the work order's latest door event in the ops ledger (latest by ts, then by place in the
+    ledger), or None: no door event, or a ledger that cannot be read (the door then records its own route)."""
+    best = None
+    try:
+        for i, f in enumerate(project.read_files("ops_ledger")):
+            for n, e in enumerate(bakehouse_status.ops_rows(f)):
+                if not (isinstance(e, dict) and e.get("kind") == "door" and isinstance(e.get("task"), str)
+                        and e["task"].lower() == wo.lower() and e.get("outcome") in RANK):
+                    continue
+                t = decision.when(e.get("ts"))
+                key = (t.timestamp() if t is not None else float("-inf"), i, n)
+                if best is None or key > best[0]:
+                    best = (key, e["outcome"])
+    except (OSError, ValueError):
+        return None
+    return best[1] if best else None
+
+
+def said(r, days, uncounted=(), since=None) -> str:
     wos = f" ({ground.shown(r['workOrders'])})" if r["workOrders"] else ""
+    counted = f"since {since}" if since else f"in {days} days"  # with a look, trouble counts from it
     setting = f" [{r['setting']} {r['threshold']}]" if r["setting"] else ""
     n = r["figure"]
     text = {
-        "look-visits": f"{n} troubled work orders here in {days} days{wos}",
+        "look-visits": f"{n} troubled work orders here {counted}{wos}",
         "look-findings": f"serious review findings on these paths in {days} days found by {n} work orders{wos}",
         "look-fix-round": f"{', '.join(r['workOrders'])} reached fix round {n}",
         "look-altitude": f"an altitude trigger on an ask of {n} work order{'s' if n != 1 else ''} here{wos}",
         "fast-files": f"{n} file{'s' if n != 1 else ''} in the paths",
-        "fast-visits": f"{n} troubled work order{'s' if n != 1 else ''} here in {days} days{wos}",
+        "fast-visits": f"{n} troubled work order{'s' if n != 1 else ''} here {counted}{wos}",
         "look-covered": f"covered by an architect look in {days} days{wos}: trouble counted from {r.get('since')}",
         "reset": f"reset by the architect look of {', '.join(r['workOrders'])}: trouble counted from {r.get('since')}",
         "fast-limit": ("a hard-limit path, never fast: " + ", ".join(f"{f} (careLimits.paths {g})"
@@ -524,29 +554,36 @@ def main(argv, root) -> int:
     for r in reasons:
         if r["rule"] == "look-covered":
             r["since"] = since
-    if t is not None and way != "look-around" and route(cfg, here, *counted(None), *rest)[0] == "look-around":
-        # the reset made it normal or fast: one reason says so, never failing
+    if t is not None and route(cfg, here, *counted(None), *rest)[0] != way:
+        # the reset changed the route (look-around to normal or fast, or normal to fast): one reason says so
         reasons.append({"rule": "reset", "setting": None, "threshold": None, "figure": 1,
                         "workOrders": [next(iter(covered))], "since": since})
-    text = "; ".join(said(r, cfg["days"], uncounted) for r in reasons)
-    note = text[:gate_event.NOTE_CHARS]
-    # a work order's door records its route; a replay (--as-of) and a look at paths only (no work order) do not
-    to_record = bool(a.leave_out) and until is None
-    unrecorded = record(project.root, a.leave_out, way, note) if to_record and a.json else None
+    text = "; ".join(said(r, cfg["days"], uncounted, since) for r in reasons)
+    # a work order's door records its route; a replay (--as-of), a look at paths only (no work order) and a
+    # repository whose binding is not "owned": true (it keeps no ledger) do not
+    to_record = bool(a.leave_out) and until is None and binding.get("owned") is True
+    last = latest_route(project, a.leave_out) if to_record else None
+    kept = last if last is not None and RANK[last] > RANK[way] else None  # never recorded lower than it started
+    keeps = f"kept {kept}: the door now gives {way}; a work order keeps the route it started with" if kept else None
+    logged = kept or way
+    note = (f"{keeps}; {text}" if kept else text)[:gate_event.NOTE_CHARS]
+    unrecorded = record(project.root, a.leave_out, logged, note) if to_record and a.json else None
     out = {"format": 1, "team": True, "project": str(project.root), "route": way, "reasons": reasons,
            "settings": cfg, "asOf": a.as_of, "task": a.leave_out, "bindingDrift": drift,
-           "recorded": to_record and unrecorded is None, "countedFrom": since, "ground": s}
+           "recorded": to_record and unrecorded is None, "kept": kept, "countedFrom": since, "ground": s}
     sys.stdout.reconfigure(errors="surrogateescape")  # a file name that is not UTF-8
     print(json.dumps(out, indent=2) if a.json else f"door: {way}: " + text)
+    if keeps and not a.json:
+        print(f"door: {keeps}")
     if drift["keys"] and not a.json:
         print(f"door: warning: the binding here differs from main's ({drift['against']['clone']} "
               f"{drift['against']['branch']}) in: {', '.join(drift['keys'])}")
     if to_record and not a.json:
         sys.stdout.flush()  # printed first, then recorded
-        unrecorded = record(project.root, a.leave_out, way, note)
+        unrecorded = record(project.root, a.leave_out, logged, note)
     if unrecorded:
         print(f"bakehouse door: the route was not recorded ({unrecorded}); record it: ops-event.sh door "
-              f"{a.leave_out} door - - - - - {way} \"{note}\"", file=sys.stderr)
+              f"{a.leave_out} door - - - - - {logged} {shlex.quote(note)}", file=sys.stderr)
     if why:
         print(f"bakehouse door: {why}; open work orders are not known", file=sys.stderr)
     return 1 if why else 0
