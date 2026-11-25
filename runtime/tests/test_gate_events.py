@@ -1176,6 +1176,7 @@ def refusal_forms(runtime=RUNTIME):
 # Generated once from the code and checked against the census (result.md 1.2); edit it by hand, on purpose.
 SITE_GATES = [
     ("agent-roles.py", "on_pre_tool_use", "", "dispatch:binding-unreadable"),
+    ("agent-roles.py", "pre_tool_use", "", "dispatch:door"),  # 0.17.0: was absent, now the dispatch:door gate (owner's yes 13:42)
     ("agent-roles.py", "pre_tool_use", "", "dispatch:record-folder"),
     ("agent-roles.py", "pre_tool_use", "", "dispatch:role-table"),
     ("agent-roles.py", "pre_tool_use", "", "dispatch:role-unresolved"),
@@ -1565,7 +1566,7 @@ class TestGateIds(unittest.TestCase):
         table = set(re.findall(rf"^\| `({self.ID})` \|", section, re.MULTILINE))
         self.assertEqual(sorted(code - table), [], "in code, not in the docs table")
         self.assertEqual(sorted(table - code), [], "in the docs table, not in code")
-        self.assertEqual(len(code), 75)  # 51, plus V12b's new id, V12c's predict-gate:anchor and stop:seal, less decision:questions-ref (R0), plus dispatch:role-table (R0.1 S6), plus R1's 12 (unattended mode, assumed answers, spend:headroom), plus R1 fix1's 4 (unattended-on, unattended-config, assumed-agreed, assumed-blind), plus 0.7.2's assumed-category and categories-config
+        self.assertEqual(len(code), 76)  # 0.17.0: was 75, now 76 with dispatch:door (owner's yes 13:42). 51, plus V12b's new id, V12c's predict-gate:anchor and stop:seal, less decision:questions-ref (R0), plus dispatch:role-table (R0.1 S6), plus R1's 12 (unattended mode, assumed answers, spend:headroom), plus R1 fix1's 4 (unattended-on, unattended-config, assumed-agreed, assumed-blind), plus 0.7.2's assumed-category and categories-config
 
     def test_no_refusal_in_decision_or_spend_is_without_a_gate(self):
         """Every fail() outside resolve_project passes a gate id, so a refusal added without one fails here."""
