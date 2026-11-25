@@ -217,6 +217,39 @@ def refusal_event(gate, reason, prompt, where, keep=False):
         log(f"ERROR gate event {gate}: {e!r}")
 
 
+def door_routes(cwd):
+    """(the work orders, lower case, with a door event in the ops ledger of cwd's project, None), or (what was read,
+    or None, why the ledger cannot be read). Read as `bakehouse status` reads it, in both records formats: the
+    ledger file, then each writer file on disk (format 2); read once, with no git (the hook's deadline)."""
+    try:
+        import ops_ledger
+        rec = records_of(cwd)
+        if rec is None:
+            return None, "the project's records worktree cannot be found"
+        legacy = rec / locator.LEDGERS["ops_ledger"]
+        folder = locator.writer_folder(legacy)
+        files = [legacy] + (sorted(f for f in folder.glob("*.jsonl") if locator.WRITER.fullmatch(f.stem))
+                            if folder.is_dir() else [])
+        seen, bad = set(), None
+        for f in files:
+            if not os.path.lexists(f) and f == legacy:
+                continue  # format 2 may have no legacy file; format 1 none yet: an empty ledger
+            try:
+                raw = f.read_bytes()
+            except OSError as e:
+                return None, f"the ops ledger {f} cannot be read ({e.strerror or e})"
+            for line in ops_ledger.lines_of(raw):
+                ev = ops_ledger.parse(line)
+                if ev is None:
+                    bad = bad or f"the ops ledger {f} has a line that is not a JSON object"
+                elif ev.get("kind") == "door" and isinstance(ev.get("task"), str):
+                    seen.add(ev["task"].lower())
+        return seen, bad
+    except Exception as e:  # noqa: BLE001 - fail open: the gate is for a forgotten step, not a broken ledger
+        log(f"ERROR door routes: {e!r}")
+        return None, f"the ops ledger cannot be read ({e!r})"
+
+
 def predict_gate():
     import importlib.util
     spec = importlib.util.spec_from_file_location("predict_gate", Path(__file__).resolve().with_name("predict-gate.py"))
@@ -733,6 +766,25 @@ def pre_tool_use(d):
                                            "permissionDecision": "deny",
                                            "permissionDecisionReason": reason}}
         decided = dec[1] if dec else None
+
+    # A change job's engineer with a `Work order <id>:` line needs the door's route recorded first (change.md step
+    # 4.3): refused without a door event for that id. A later engineer on it (a fix round) finds the event there.
+    wo = work_order(before, binding) if mark and binding else None  # no team here: no ledger, no gate
+    if wo:
+        doors, why = door_routes(cwd)
+        if doors is not None and wo.lower() not in doors and not why:
+            reason = (f"bakehouse agent-roles: work order {wo} has no door route recorded (change.md step 4.3). "
+                      f"Run bakehouse door --task {wo}; it records the route. Then dispatch again.")
+            log(f"DENY {reason}")
+            refusal_event("dispatch:door", reason, before, cwd)
+            return {"hookSpecificOutput": {"hookEventName": "PreToolUse",
+                                           "permissionDecision": "deny",
+                                           "permissionDecisionReason": reason}}
+        if why and (doors is None or wo.lower() not in doors):
+            msg = (f"bakehouse agent-roles: the door check for work order {wo} was not made: {why}. This dispatch "
+                   "passes; `bakehouse status` reports the ledger.")
+            log(f"WARN {msg}")
+            warn = f"{warn} {msg}" if warn else msg
 
     # Without a `role:` dispatch, the SHIPPED table touches a plain agent name only in a repository
     # that has opted in with a binding: anywhere else a same-named agent may be the user's own
