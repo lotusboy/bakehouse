@@ -228,7 +228,7 @@ class Door(unittest.TestCase):
         self.trouble("A3")
         out = self.door("src/a.py")
         self.assertEqual(set(out), {"format", "team", "project", "route", "reasons", "settings", "asOf", "task",
-                                    "bindingDrift", "ground", "recorded", "countedFrom"})  # 0.17.0: was no recorded or countedFrom, now both (owner's yes 13:42, the door records its route and the reset rule). 0.16.1: was no bindingDrift, now bindingDrift (owner's yes, the door compares its binding with main's)
+                                    "bindingDrift", "ground", "recorded", "countedFrom", "kept"})  # 0.17.0: was no recorded, countedFrom or kept, now all three (owner's yes 13:42 and 15:00; kept: a work order keeps its route) (owner's yes 13:42, the door records its route and the reset rule). 0.16.1: was no bindingDrift, now bindingDrift (owner's yes, the door compares its binding with main's)
         self.assertEqual(set(out["settings"]), {"days", "lookVisits", "lookFindingOrders", "lookFixRound",
                                                 "fastMaxFiles", "fastMaxVisits"})
         for r in out["reasons"]:
