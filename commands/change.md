@@ -324,7 +324,8 @@ branch), `BASE` and the record folder. Commit by path, with the trailer. Fill th
    only when that pair shows 0 moved keys. A dispatch by the agent's plain name is checked
    only when the brief keeps its `Work order {id}:` line; otherwise the hook warns. Either way,
    step 9's close is the hard gate. A change engineer's dispatch with a `Work order {id}:` line is
-   refused while the ops ledger holds no door event for `{id}` (gate `dispatch:door`): run
+   refused while the ops ledger holds no door event for `{id}` (gate `dispatch:door`), once the ledger
+   holds a door event for any work order (a project that has never run the door is not gated): run
    `bakehouse door --task {id}` (step 4.3), then dispatch again. A fix round's engineer finds the event
    already there.
 

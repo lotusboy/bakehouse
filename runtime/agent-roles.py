@@ -43,8 +43,9 @@ Three entry points, all wired by the plugin's hooks:
         marks a `role:change:engineer` dispatch, and a dispatch by the agent's plain name in a repo
         with a binding when its brief has a `Work order <id>:` line (without one it warns: close is
         the hard gate). A marked dispatch in a repo with a binding whose `Work order <id>:` line names
-        a work order with no `door` event in the project's ops ledger is refused (gate dispatch:door;
-        door_routes reads the ledger, and one that cannot be read lets it pass with a message). The
+        a work order with no `door` event in the project's ops ledger is refused (gate dispatch:door),
+        once the ledger holds a door event for any work order: a project that has never run the door is
+        not gated (door_routes reads the ledger, and one that cannot be read lets it pass with a message). The
         marker is the prompt's own final line. At SubagentStop, only for the agent
         type change:engineer resolves to: PreToolUse logs every role: dispatch of that agent type, with or
         without a binding, and every plain-name one in a repo with a binding, with
@@ -772,10 +773,11 @@ def pre_tool_use(d):
 
     # A change job's engineer with a `Work order <id>:` line needs the door's route recorded first (change.md step
     # 4.3): refused without a door event for that id. A later engineer on it (a fix round) finds the event there.
+    # Only in a project that uses the door: a ledger with no door event at all is a project that has never run it.
     wo = work_order(before, binding) if mark and binding else None  # no team here: no ledger, no gate
     if wo:
         doors, why = door_routes(cwd)
-        if doors is not None and wo.lower() not in doors and not why:
+        if doors and wo.lower() not in doors and not why:
             reason = (f"bakehouse agent-roles: work order {wo} has no door route recorded (change.md step 4.3). "
                       f"Run bakehouse door --task {wo}; it records the route. Then dispatch again.")
             log(f"DENY {reason}")

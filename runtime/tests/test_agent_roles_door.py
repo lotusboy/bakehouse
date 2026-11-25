@@ -30,6 +30,7 @@ class DispatchDoor(test_gate_events.TestRefusalsWriteOneEvent):
         return (out.get("hookSpecificOutput") or {}).get("permissionDecision") or "none"
 
     def test_refused_with_no_door_event(self):
+        self.door_event("T9")  # the project uses the door
         out = self.answer("role:change:engineer", "Work order T7: x\n")
         self.assertEqual((self.decision(out), out["hookSpecificOutput"]["permissionDecisionReason"]), ("deny", REASON))
         (ev,) = self.refusals()
@@ -37,6 +38,7 @@ class DispatchDoor(test_gate_events.TestRefusalsWriteOneEvent):
                          ("dispatch:door", "T7", "agent dispatch refused", REASON))
 
     def test_refused_by_plain_name_with_the_line(self):
+        self.door_event("T9")
         out = self.answer("engineer", "Work order T7: x\n")
         self.assertEqual(self.decision(out), "deny")
         self.assertEqual([e["gate"] for e in self.refusals()], ["dispatch:door"])
@@ -49,6 +51,11 @@ class DispatchDoor(test_gate_events.TestRefusalsWriteOneEvent):
         for prompt in ("Work order T7: x\n", "Work order T7: fix round 1\n"):
             self.assertEqual(self.decision(self.answer("role:change:engineer", prompt)), "allow", prompt)
         self.assertEqual(len(self.refusals()), 1)
+
+    def test_a_project_that_has_never_run_the_door_is_not_gated(self):
+        out = self.answer("role:change:engineer", "Work order T7: x\n")
+        self.assertEqual(self.decision(out), "allow")
+        self.assertEqual(self.refusals(), [])
 
     def test_an_architect_and_a_reviewer_pass(self):
         for st in ("role:architect", "role:reviewer"):
