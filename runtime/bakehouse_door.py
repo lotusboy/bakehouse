@@ -1,7 +1,7 @@
 """`bakehouse door`: one look at an area's history before a work order starts, and the route it gives: fast, normal
 or look-around. Standard library only. Run through bin/bakehouse. It reads what `bakehouse ground` reads (by its own
-functions) and the decision ledger's asks (decision.sh's ledger, by the same locator); it writes nothing and uses no
-network.
+functions) and the decision ledger's asks (decision.sh's ledger, by the same locator); it uses no network. It writes
+one thing: with --task, the work order's door event (below).
 
   bakehouse door [--json] [--task <id>] [--as-of <ISO time>] [--prediction <moves file>] [--repo <folder>] [<path>...]
 
@@ -80,7 +80,14 @@ compared with main's (it is about the binding now, so --as-of does not change it
 The JSON object: format (1), team, project, route, reasons (each: rule, setting, threshold, figure, workOrders;
 fast-limit also limits, raised-prediction also key and pattern, fast-binding also against),
 settings, asOf (null when not given), task, bindingDrift ({"against": {"clone", "branch"} or null, "keys": [the
-differing top-level keys, sorted], "notMade": null or why the comparison was not made}), and ground (the summary `ground --json` gives for the same paths).
+differing top-level keys, sorted], "notMade": null or why the comparison was not made}), recorded, and ground (the summary `ground --json` gives for the same paths).
+
+The door event: with --task, and without --as-of, the door appends one ops event through runtime/ops-event.sh once
+it has printed: kind door, task the work order, purpose door, outcome the route, note the reasons in one line (the
+text after "door: <route>: "), cut to gate_event.NOTE_CHARS. With --prediction too, so the latest door event is the
+route. Paths alone (no work order) and a replay (--as-of) record nothing. A write that fails changes neither the
+route printed nor the exit code: one stderr line says why and gives the ops-event.sh line that records it by hand.
+JSON's "recorded" says whether it was written (false when nothing was to be recorded).
 
 Exit codes as `bakehouse ground`: 0; 1 the ops ledger is broken (the rest is printed) or git failed; 2 bad usage, a
 binding without tracker.id or code roots, or a door setting that is not a whole number; 3 no team here; 4 setup
@@ -101,11 +108,14 @@ from datetime import date, datetime
 
 import bakehouse_ground as ground
 import decision
+import gate_event
 import locator
 import spend
 
 SETTINGS = ("days", "lookVisits", "lookFindingOrders", "lookFixRound", "fastMaxFiles", "fastMaxVisits")
 FIX = re.compile(r"findings-fix([0-9]+)\.md")
+HERE = Path(__file__).resolve().parent
+WRITE_S = 10  # the door event's write: a writer that hangs is cut, and the route stands
 
 
 def settings(project):
@@ -377,6 +387,22 @@ def route(cfg, here, trouble, finders, rounds, alt, files, uncounted=(), covered
     return "normal", failed
 
 
+def record(root, wo, way, note):
+    """Append the work order's door event through the canonical writer (runtime/ops-event.sh): None when written,
+    else why not. Never raises: a write that fails changes neither the route nor the exit code."""
+    env = {k: v for k, v in os.environ.items() if k not in ("OPS_REPO", "OPS_TS", "OPS_COMMIT")}  # dated now
+    env["OPS_REPO"] = str(root)
+    try:
+        p = subprocess.run([str(HERE / "ops-event.sh"), "door", wo, "door", "-", "-", "-", "-", "-", way, note],
+                           capture_output=True, text=True, env=env, timeout=WRITE_S)
+    except (OSError, subprocess.SubprocessError) as e:
+        return f"cannot run ops-event.sh: {e}"
+    if p.returncode == 0:
+        return None
+    lines = p.stderr.strip().splitlines()
+    return lines[-1] if lines else f"ops-event.sh exit {p.returncode}"
+
+
 def said(r, days, uncounted=()) -> str:
     wos = f" ({ground.shown(r['workOrders'])})" if r["workOrders"] else ""
     setting = f" [{r['setting']} {r['threshold']}]" if r["setting"] else ""
@@ -475,14 +501,25 @@ def main(argv, root) -> int:
                          files, uncounted, covered,
                          limits, raised(keys, care["predictionKeys"]),
                          drift["against"] if "careLimits" in drift["keys"] else None)
+    text = "; ".join(said(r, cfg["days"], uncounted) for r in reasons)
+    note = text[:gate_event.NOTE_CHARS]
+    # a work order's door records its route; a replay (--as-of) and a look at paths only (no work order) do not
+    to_record = bool(a.leave_out) and until is None
+    unrecorded = record(project.root, a.leave_out, way, note) if to_record and a.json else None
     out = {"format": 1, "team": True, "project": str(project.root), "route": way, "reasons": reasons,
-           "settings": cfg, "asOf": a.as_of, "task": a.leave_out, "bindingDrift": drift, "ground": s}
+           "settings": cfg, "asOf": a.as_of, "task": a.leave_out, "bindingDrift": drift,
+           "recorded": to_record and unrecorded is None, "ground": s}
     sys.stdout.reconfigure(errors="surrogateescape")  # a file name that is not UTF-8
-    print(json.dumps(out, indent=2) if a.json else
-          f"door: {way}: " + "; ".join(said(r, cfg["days"], uncounted) for r in reasons))
+    print(json.dumps(out, indent=2) if a.json else f"door: {way}: " + text)
     if drift["keys"] and not a.json:
         print(f"door: warning: the binding here differs from main's ({drift['against']['clone']} "
               f"{drift['against']['branch']}) in: {', '.join(drift['keys'])}")
+    if to_record and not a.json:
+        sys.stdout.flush()  # printed first, then recorded
+        unrecorded = record(project.root, a.leave_out, way, note)
+    if unrecorded:
+        print(f"bakehouse door: the route was not recorded ({unrecorded}); record it: ops-event.sh door "
+              f"{a.leave_out} door - - - - - {way} \"{note}\"", file=sys.stderr)
     if why:
         print(f"bakehouse door: {why}; open work orders are not known", file=sys.stderr)
     return 1 if why else 0
