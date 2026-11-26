@@ -1593,8 +1593,8 @@ refusals can be counted per tool and per check. The event is ops-event.sh's, wit
 | `decision:inference` | decision.sh | the question uses an inference word without `guess:` |
 | `decision:recheck` | decision.sh | `--recheck` misused, or no fix round to review |
 | `decision:upstream` | decision.sh | a fix round with no `--upstream` |
-| `decision:fix-round` | decision.sh | a question about a fix round with no `--fix-round`, or `--fix-round` with no `--task` |
-| `decision:fix-round-number` | decision.sh | a round below 1, or a round number already used |
+| `decision:fix-round` | decision.sh | `--fix-round` with no `--task`. A question that says "fix round" with no `--fix-round` is not refused (0.17.2): it is recorded inside the work order's current round, with one note that `--fix-round N` is given only on the ask that opens round N |
+| `decision:fix-round-number` | decision.sh | a round below 1, or a round number already used (the message adds that a question inside a round needs no `--fix-round`) |
 | `decision:rechecked` | decision.sh | fix round 2 or later with no `--rechecked` |
 | `decision:stepped-back` | decision.sh | fix round 3 or later (or a third round asked) with no `--stepped-back` |
 | `decision:change` | decision.sh | `--change` (or `--fix-round`) without `--task`, `--layer`, `--owners` or `--area`; `--owners` below 1; `--architect-option` that is not one of the options; or `--layer`, `--owners`, `--area` or `--architect-option` without `--change` ("Decision triggers") |

@@ -281,11 +281,13 @@ them, and each tool's header comment is its full reference.
   a question that is not grounded (written in after a rushed heuristic was put to the owner as fact):
   `--read <file>` names a source the PM opened itself — raw document, product data or code, never an
   agent's report — with `--read-what` saying which rows or lines; a guess word (probably, should,
-  infer, pattern, works it out…) must be labelled `guess:` in the question; a fix round gives `--task`
-  and `--fix-round N`, and round 2 or later needs `--rechecked`, what the PM re-checked at the source
+  infer, pattern, works it out…) must be labelled `guess:` in the question; the ask that opens fix round N
+  gives `--task` and `--fix-round N`, and round 2 or later needs `--rechecked`, what the PM re-checked at the source
   first, because a second round means the design may be wrong; and a fix round gives `--upstream`,
   what feeds the failing step and what the PM saw when it looked there (Seesaw,
-  written into the tool after the PM patched a symptom twice). From fix round 3 of a task — or a
+  written into the tool after the PM patched a symptom twice). The tool never refuses a question
+  inside a fix round for having no `--fix-round`: it records the question inside the work order's
+  current round with one note, and it refuses a round number already used. From fix round 3 of a task — or a
   second fix round asked after two earlier ones — the tool refuses without `--stepped-back`, a
   one-line summary of the step-back done first (the `step-back` skill's helicopter view); `spend.sh record --kind architect` refuses a second architect run for the same
   task without it (written in after a change found its edge cases one review round at a time).

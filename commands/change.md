@@ -430,6 +430,7 @@ round N saves its filled brief first, as step 6.1 does, as `brief.engineer.fix<N
   reach 0 in code the work order did not change goes into a new work order, not this round.
   The round is asked with `--layer`, `--owners` and `--area` from the findings (`--fix-round`
   implies `--change`), and `--architect-option` naming the architect-check option when one is offered.
+  Only the ask that opens the round gives `--fix-round N`; a question inside the round gives none.
   When the tool prints a trigger line, the PM names the trigger to the owner, with the architect check
   among the options for the altitude trigger.
 - A fix that moves an output the approved prediction did not name is a new prediction, and goes to
