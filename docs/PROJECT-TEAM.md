@@ -1569,7 +1569,8 @@ refusals can be counted per tool and per check. The event is ops-event.sh's, wit
 - **Spend kinds.** `spend.sh record --kind` takes one closed list: the roles of
   `runtime/agent-roles.json` plus its `spend_kinds` (`agent`, `answering-agent`, `no-role`: an agent that
   ran in no role, such as an Explore search, an ad-hoc general-purpose agent or a fork). A first record must
-  name one; a correction keeps the kind of the row it corrects. `agent` names no role, so its entry says
+  name one; a correction keeps the kind of the row it corrects, and, with no `--task`, its task (0.17.1), so a
+  count by work order still finds the corrected total. `agent` names no role, so its entry says
   `"newRecords": false`: a new first record may not take it, while old rows, backfilled rows and
   corrections that keep it still carry it.
 

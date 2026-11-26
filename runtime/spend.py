@@ -333,6 +333,8 @@ def cmd_record(a):
     if a.kind is None:
         # a correction keeps the kind of the row it corrects; a backfilled row with none is "agent"
         a.kind = kept or "agent"
+    if a.correct and earlier and not (a.task or "").strip():
+        a.task = earlier[-1].get("task")  # and its task, so a by-task count still finds the corrected total
     if a.kind in OLD_ROWS_ONLY and a.kind != kept and not os.environ.get("SPEND_TS"):
         fail(f"--kind {a.kind} names no role, so a new record may not take it (it stays on old rows, backfilled "
              "rows and corrections that keep it): give the role the agent ran as, one of "

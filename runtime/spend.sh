@@ -18,7 +18,7 @@
 #   'agent' names no role: a new first record may not take it; old rows and backfills keep it.
 #   A first record states the tool's result, not only its cost: --kind, --why, --predicted,
 #   --predicted-tokens, --result and --outcome are required (--kind since v1.12.0; the rest since v1.11.0).
-#   A --correct row with no --kind keeps the kind of the row it corrects. --kind architect also needs
+#   A --correct row with no --kind keeps the kind of the row it corrects, and with no --task its task. --kind architect also needs
 #   --task, and a second architect run on one task needs --stepped-back.
 #   spend.sh status [--wave W] [--all] [--json]
 #   spend.sh report [--since 2026-10-10] [--json]
