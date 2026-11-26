@@ -398,11 +398,6 @@ def check_grounding(a, cfg):
                  "decision:recheck")
         if not asked:
             fail(f"--recheck: {a.task} has no fix round in the ledger to review", "decision:recheck")
-    if a.task and a.fix_round is None and not a.recheck and re.search(r"\bfix round\b", text):
-        fail(f"the question proposes a fix on {a.task}: give --fix-round N (rounds asked so far: "
-             f"{sorted(asked) or 'none'})", "decision:fix-round")
-    if re.search(r"\bfix round\b", text) and a.fix_round is None and not a.recheck:
-        fail("the question is about a fix round: give --task and --fix-round N", "decision:fix-round")
     if a.fix_round is not None:
         if not a.task:
             fail("--fix-round needs --task (the work order id)", "decision:fix-round")
@@ -426,8 +421,8 @@ def check_grounding(a, cfg):
                  " when you looked at it (Seesaw: check what it was given before fixing it)", "decision:upstream")
         # the round is counted from the ledger, not taken on trust: an earlier number cannot be reused
         if asked and a.fix_round <= max(asked):
-            fail(f"{a.task} already has fix round(s) {sorted(asked)}; this one is round {max(asked) + 1}",
-                 "decision:fix-round-number")
+            fail(f"{a.task} already has fix round(s) {sorted(asked)}; this one is round {max(asked) + 1}."
+                 " A question inside a round needs no --fix-round.", "decision:fix-round-number")
         if a.fix_round >= 2 and not meaningful(a.rechecked):
             fail(f"fix round {a.fix_round} of {a.task}: give --rechecked, what you re-checked at the source"
                  " before proposing another round (a second round means the design may be wrong)", "decision:rechecked")
@@ -437,7 +432,11 @@ def check_grounding(a, cfg):
                  " the whole problem, and why another round beats re-designing (owner, 2026-10-15)",
                  "decision:stepped-back")
     fired += check_change(a, events, plan)
-    if FIX_WORDS.search(text) and not changes(a) and not a.recheck:
+    if re.search(r"\bfix round\b", text) and a.fix_round is None and not a.recheck:
+        # a question inside a round is recorded there; only the ask that opens a round numbers it (0.17.2)
+        print("decision: note: the question says 'fix round': it is recorded inside the work order's current round;"
+              " --fix-round N is given only on the ask that opens round N", file=sys.stderr)
+    elif FIX_WORDS.search(text) and not changes(a) and not a.recheck:
         print("decision: note: the question mentions a fix; if it proposes one, give --task, --fix-round"
               " and --upstream", file=sys.stderr)
     elif CHANGE_WORDS.search(text) and a.task and not changes(a) and not a.recheck:
