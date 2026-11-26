@@ -226,6 +226,8 @@ class Ledger(Scratch):
     # 0.17.2: was test_the_words_fix_round_still_ask_for_the_flag (refused, decision:fix-round), now the two tests below
     FIX_ROUND_NOTE = ("decision: note: the question says 'fix round': it is recorded inside the work order's current"
                       " round; --fix-round N is given only on the ask that opens round N\n")
+    NO_ROUND_NOTE = ("decision: note: the question says 'fix round' and no fix round is open on its work order: if"
+                     " it opens one, give --task, --fix-round 1 and --upstream\n")  # review F1: the note reads the ledger
 
     def fix_round_question(self, *extra):
         return self.run_("ask", "--category", "process", "--option", "a", "--option", "b", "--recommendation", "a",
@@ -235,7 +237,8 @@ class Ledger(Scratch):
     def test_a_question_about_a_fix_round_on_a_task_is_recorded_with_a_note(self):
         p = self.fix_round_question("--task", "A1")
         self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertEqual(p.stderr.count(self.FIX_ROUND_NOTE), 1, p.stderr)
+        self.assertEqual(p.stderr.count(self.NO_ROUND_NOTE), 1, p.stderr)
+        self.assertNotIn(self.FIX_ROUND_NOTE, p.stderr)
         self.assertNotIn("mentions a fix", p.stderr)
         self.assertEqual(len(self.rows()), 1)
         self.assertEqual(self.rows()[-1]["task"], "A1")
@@ -244,7 +247,8 @@ class Ledger(Scratch):
     def test_a_question_about_a_fix_round_with_no_task_is_recorded_with_a_note(self):
         p = self.fix_round_question()
         self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertEqual(p.stderr.count(self.FIX_ROUND_NOTE), 1, p.stderr)
+        self.assertEqual(p.stderr.count(self.NO_ROUND_NOTE), 1, p.stderr)
+        self.assertNotIn(self.FIX_ROUND_NOTE, p.stderr)
         self.assertEqual(len(self.rows()), 1)
         self.assertIsNone(self.rows()[-1].get("fixRound"))
 
