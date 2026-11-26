@@ -432,10 +432,14 @@ def check_grounding(a, cfg):
                  " the whole problem, and why another round beats re-designing (owner, 2026-10-15)",
                  "decision:stepped-back")
     fired += check_change(a, events, plan)
-    if re.search(r"\bfix round\b", text) and a.fix_round is None and not a.recheck:
+    if re.search(r"\bfix round\b", text) and a.fix_round is None and not a.recheck and asked:
         # a question inside a round is recorded there; only the ask that opens a round numbers it (0.17.2)
         print("decision: note: the question says 'fix round': it is recorded inside the work order's current round;"
               " --fix-round N is given only on the ask that opens round N", file=sys.stderr)
+    elif re.search(r"\bfix round\b", text) and a.fix_round is None and not a.recheck:
+        # no round is open on its work order (or no --task): the question may be opening round 1 (0.17.2 review F1)
+        print("decision: note: the question says 'fix round' and no fix round is open on its work order: if it opens"
+              " one, give --task, --fix-round 1 and --upstream", file=sys.stderr)
     elif FIX_WORDS.search(text) and not changes(a) and not a.recheck:
         print("decision: note: the question mentions a fix; if it proposes one, give --task, --fix-round"
               " and --upstream", file=sys.stderr)

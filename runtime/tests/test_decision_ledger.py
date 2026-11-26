@@ -372,9 +372,10 @@ class Ledger(Scratch):
         self.assertIn("the question mentions a fix", p.stderr)
         p = ask("process", "Go on the B3 fix round?", *self.grounded, "--upstream",
                 "the extract step hands over merged cells", "--task", "B3")
-        # 0.17.2: was refused (decision:fix-round, "give --fix-round N"), now recorded inside B3's round with a note
+        # 0.17.2: was refused (decision:fix-round, "give --fix-round N"), now recorded with a note; B3 has no round
+        # open, so the note says how to open round 1 (review F1)
         self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertIn("it is recorded inside the work order's current round", p.stderr)
+        self.assertIn("no fix round is open on its work order", p.stderr)
         # ordinary questions are not refused
         for q in ("Should we ship the pricing change?", "Which naming pattern do we keep?",
                   "Is the fixed fee applied per policy?", "Bump the patch version?"):
