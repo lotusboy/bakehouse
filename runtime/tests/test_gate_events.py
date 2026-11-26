@@ -1265,18 +1265,7 @@ SITE_GATES = [
         "fix round {} of {}: give --rechecked, wh",
         "decision:rechecked",
     ),
-    (
-        "decision.py",
-        "check_grounding",
-        "the question is about a fix round: give ",
-        "decision:fix-round",
-    ),
-    (
-        "decision.py",
-        "check_grounding",
-        "the question proposes a fix on {}: give ",
-        "decision:fix-round",
-    ),
+    # 0.17.2: was two decision:fix-round sites ("the question is about a fix round", "the question proposes a fix on {}"), now none
     (
         "decision.py",
         "check_grounding",
@@ -1590,7 +1579,8 @@ class TestGateIds(unittest.TestCase):
                         bare.append(f"{name}:{call.lineno}")
             with self.subTest(file=name):
                 self.assertEqual(bare, [])
-                self.assertEqual(found, {"decision.py": 60, "spend.py": 20}[name])
+                # 0.17.2: was decision.py 60, now 58 (the two "fix round" text refusals are gone)
+                self.assertEqual(found, {"decision.py": 58, "spend.py": 20}[name])
 
     def test_each_refusal_site_carries_its_own_gate_id(self):
         """Each site, found by its function and message, names the gate it is documented with. A site that

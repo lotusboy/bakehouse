@@ -196,7 +196,8 @@ class Ledger(Scratch):
                              "--evidence", "e", *self.grounded, *extra, ok=False)
         up = ["--upstream", "the upstream writer drops the column order"]
         self.assertNotEqual(go("Go on the A1 fix round?", "--task", "A1", "--fix-round", "1", "--layer", "in", "--owners", "1", "--area", "reader").returncode, 0)
-        self.assertNotEqual(go("Go on the A1 fix round?", *up).returncode, 0)
+        # 0.17.2: was refused (the words "fix round" with no --task or --fix-round), now recorded with exit 0
+        self.assertEqual(go("Go on the A1 fix round?", *up).returncode, 0)
         self.assertNotEqual(go("Go on the A1 fix round?", "--fix-round", "1", "--layer", "in", "--owners", "1", "--area", "reader", *up).returncode, 0)
         self.assertEqual(go("Go on the A1 fix round?", "--task", "A1", "--fix-round", "1", "--layer", "in", "--owners", "1", "--area", "reader", *up).returncode, 0)
         p = go("Go on the second A1 fix round?", "--task", "A1", "--fix-round", "2", "--layer", "in", "--owners", "1", "--area", "reader", *up)
@@ -222,17 +223,55 @@ class Ledger(Scratch):
                   "--upstream", "the upstream writer drops the column order")
         self.assertEqual(self.rows()[-1]["upstream"], "the upstream writer drops the column order")
 
-    def test_the_words_fix_round_still_ask_for_the_flag(self):
-        base = ["ask", "--category", "process", "--option", "a", "--option", "b", "--recommendation", "a",
-                "--confidence", "0.5", "--evidence-kind", "measured", "--evidence", "e", *self.grounded,
-                "--upstream", "the upstream writer drops the column order"]
-        p = self.run_(*base, "--question", "Go on the A1 fix round?", ok=False)
+    # 0.17.2: was test_the_words_fix_round_still_ask_for_the_flag (refused, decision:fix-round), now the two tests below
+    FIX_ROUND_NOTE = ("decision: note: the question says 'fix round': it is recorded inside the work order's current"
+                      " round; --fix-round N is given only on the ask that opens round N\n")
+
+    def fix_round_question(self, *extra):
+        return self.run_("ask", "--category", "process", "--option", "a", "--option", "b", "--recommendation", "a",
+                         "--confidence", "0.5", "--evidence-kind", "measured", "--evidence", "e", *self.grounded,
+                         "--question", "Go on the A1 fix round?", *extra, ok=False)
+
+    def test_a_question_about_a_fix_round_on_a_task_is_recorded_with_a_note(self):
+        p = self.fix_round_question("--task", "A1")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(p.stderr.count(self.FIX_ROUND_NOTE), 1, p.stderr)
+        self.assertNotIn("mentions a fix", p.stderr)
+        self.assertEqual(len(self.rows()), 1)
+        self.assertEqual(self.rows()[-1]["task"], "A1")
+        self.assertIsNone(self.rows()[-1].get("fixRound"))
+
+    def test_a_question_about_a_fix_round_with_no_task_is_recorded_with_a_note(self):
+        p = self.fix_round_question()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(p.stderr.count(self.FIX_ROUND_NOTE), 1, p.stderr)
+        self.assertEqual(len(self.rows()), 1)
+        self.assertIsNone(self.rows()[-1].get("fixRound"))
+
+    def test_a_question_inside_round_1_opens_no_round_for_the_door(self):
+        import importlib
+        sys.path.insert(0, str(self.rt))
+        door = importlib.import_module("bakehouse_door")
+        opened = self.fix_round_question("--task", "A5", "--fix-round", "1", "--layer", "in", "--owners", "1",
+                                         "--area", "reader", "--upstream", "the upstream writer drops the column order")
+        self.assertEqual(opened.returncode, 0, opened.stderr)
+        p = self.fix_round_question("--task", "A5")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn(self.FIX_ROUND_NOTE, p.stderr)
+        self.assertEqual([r.get("fixRound") for r in self.rows()], [1, None])
+        self.assertEqual(door.fix_rounds([], self.rows()), {"a5": 1})
+
+    def test_opening_round_1_twice_is_still_refused_and_says_a_question_needs_no_flag(self):
+        def open1():
+            return self.fix_round_question("--task", "A6", "--fix-round", "1", "--layer", "in", "--owners", "1",
+                                           "--area", "reader", "--upstream", "the upstream writer drops the column order")
+        self.assertEqual(open1().returncode, 0)
+        p = open1()
         self.assertNotEqual(p.returncode, 0)
-        self.assertIn("the question is about a fix round: give --task and --fix-round N", p.stderr)
-        p = self.run_(*base, "--question", "Go on the A1 fix round?", "--task", "A1", ok=False)
-        self.assertNotEqual(p.returncode, 0)
-        self.assertIn("the question proposes a fix on A1: give --fix-round N", p.stderr)
-        self.assertFalse(self.decisions.exists())
+        self.assertIn("A6 already has fix round(s) [1]; this one is round 2", p.stderr)
+        self.assertIn("A question inside a round needs no --fix-round.", p.stderr)
+        self.assertEqual(self.refusals()[-1]["gate"], "decision:fix-round-number")
+        self.assertEqual(len(self.rows()), 1)
 
     def test_a_bare_fix_word_prints_a_note_and_writes_the_row(self):
         base = ["ask", "--category", "process", "--option", "a", "--option", "b", "--recommendation", "a",
@@ -329,9 +368,9 @@ class Ledger(Scratch):
         self.assertIn("the question mentions a fix", p.stderr)
         p = ask("process", "Go on the B3 fix round?", *self.grounded, "--upstream",
                 "the extract step hands over merged cells", "--task", "B3")
-        self.assertNotEqual(p.returncode, 0)
-        self.assertIn("the question proposes a fix on B3: give --fix-round N", p.stderr)
-        self.assertEqual(self.refusals()[-1]["gate"], "decision:fix-round")
+        # 0.17.2: was refused (decision:fix-round, "give --fix-round N"), now recorded inside B3's round with a note
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn("it is recorded inside the work order's current round", p.stderr)
         # ordinary questions are not refused
         for q in ("Should we ship the pricing change?", "Which naming pattern do we keep?",
                   "Is the fixed fee applied per policy?", "Bump the patch version?"):
