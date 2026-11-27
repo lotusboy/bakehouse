@@ -629,12 +629,16 @@ command, pass and when]. The gates that prove the need: [work order: gates].
   you derive by reasoning stay hand-written. A round that moves nothing writes
   "noMoves": true and lists no move; it passes only when its measured pair shows 0 moved keys. Commit it by its path, its subject starting
   with the work-order id, before your first code edit; a fix round's prediction too, before that
-  round's first code edit. Seal the baseline, then the prediction, at the commit that adds each:
-  `${CLAUDE_PLUGIN_ROOT}/runtime/predict-gate.sh seal {id} <round> <file>`, `<round>` being `first` or
-  the round label. Then STOP and report it. Switch no site
-  until the PM says go. Commit the round's first code through `predict-gate.sh seal-code {id} <round> --
+  round's first code edit. Seal the prediction at the commit that adds it, and the baseline at the
+  commit that adds it: `${CLAUDE_PLUGIN_ROOT}/runtime/predict-gate.sh seal {id} <round> <file>`,
+  `<round>` being `first` or the round label. Then STOP and report it. Switch no site
+  until the PM says go. With the binding's `mainFollows` set, the first round's baseline seals only when
+  the main clone's `<branch>` is merged into this branch; if the seal refuses for that reason, stop and
+  report it to the PM. In a clone with no records pointer, give each seal `--repo <the main clone>`; never
+  run `bakehouse setup` yourself (the PM does). If it still refuses with `--repo`, stop and report it to
+  the PM. Never set `OPS_TS` or `OPS_COMMIT` for a seal. Commit the round's first code through `predict-gate.sh seal-code {id} <round> --
   <git commit args>`, which commits the staged code and seals that commit; that commit is not amended or
-  rebased afterwards. Seal each measured file as you write it, after its baseline:
+  rebased afterwards. Seal each measured file as you write it, after its baseline is sealed:
   `predict-gate.sh seal {id} <round> <measured file> --report <measure report>`. Afterwards read it back exactly; stop on any unpredicted move. Never edit a
   test or an output to make a gate pass.
   The record folder holds, before close: the prediction, moves.baseline.json, moves.measured.json
