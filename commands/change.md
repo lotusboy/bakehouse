@@ -634,8 +634,8 @@ command, pass and when]. The gates that prove the need: [work order: gates].
   `<round>` being `first` or the round label. Then STOP and report it. Switch no site
   until the PM says go. With the binding's `mainFollows` set, the first round's baseline seals only when
   the main clone's `<branch>` is merged into this branch; if the seal refuses for that reason, stop and
-  report it to the PM. In a clone with no records pointer, give each seal `--repo <the main clone>`; never
-  run `bakehouse setup` yourself (the PM does). If it still refuses with `--repo`, stop and report it to
+  report it to the PM. In a clone, run `bakehouse setup --pointer` first, as this brief's clone line says;
+  without it, give each seal `--repo <the main clone>`. If it still refuses with `--repo`, stop and report it to
   the PM. Never set `OPS_TS` or `OPS_COMMIT` for a seal. Commit the round's first code through `predict-gate.sh seal-code {id} <round> --
   <git commit args>`, which commits the staged code and seals that commit; that commit is not amended or
   rebased afterwards. Seal each measured file as you write it, after its baseline is sealed:
