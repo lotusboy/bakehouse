@@ -1086,10 +1086,17 @@ def prediction_stop(d):
         what = (f"moves file(s) with no seal in the ops ledger: "
                 f"{', '.join(p.parent.name + '/' + p.name for p, _ in unsealed)}")
         # the "seal each one" list names only the files the gate would seal now (R0.3 D8)
-        sealable = [f"{p.parent.name}/{p.name}" for p, why in unsealed if not why]
+        sealable = [f"{p.parent.name}/{p.name}" for p, why in unsealed
+                    if not why and not p.name.startswith("moves.measured")]
         if sealable:
             what += (f". Seal each one as you write it (predict-gate.sh seal {wo or '<work order>'} <round> <file>): "
                      + ", ".join(sealable))
+        # a measured seal is refused without its measure report, so its command names --report (0.17.5 fix1)
+        measured = [f"{p.parent.name}/{p.name}" for p, why in unsealed
+                    if not why and p.name.startswith("moves.measured")]
+        if measured:
+            what += (f". Seal each measured file with its measure report (predict-gate.sh seal "
+                     f"{wo or '<work order>'} <round> <file> --report <measure report>): " + ", ".join(measured))
         refused = [f"{p.parent.name}/{p.name}: {why}" for p, why in unsealed if why]
         if refused:
             what += ". The gate refuses these seals as the files are now: " + "; ".join(refused)
