@@ -73,7 +73,9 @@ runtime/predict-gate.sh check --measured moves.measured.json
 `moves.measured<R>.json`, when it has its own, `moves.baseline<R>.json`, and, when it needs one,
 `moves.missed<R>.json`. `<R>` is `.` or `-` and
 a label, such as `.fix3` or `-fix2`. `check --measured moves.measured.fix3.json` finds
-`moves.prediction.fix3.json` by itself. The round's baseline is found in this order:
+`moves.prediction.fix3.json` by itself. A labelled round that is not a fix round (`.golive`) is
+reviewed under the next `fix<N>` names, and its `findings-fix<N>.md` says which labelled round it reviews
+([PROJECT-TEAM.md](./PROJECT-TEAM.md), "The round names"). The round's baseline is found in this order:
 
 1. `--baseline`, when given.
 2. The prediction's `baseline` field.

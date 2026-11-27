@@ -16,6 +16,8 @@ Usage:
             Each verdict is first appended to that log (`log` in the same declaration:
             mutations.log.jsonl, mutations-fix<N>.log.jsonl), which records-check reconciles with the
             file.
+--round     only `first` or `fix<N>`. A labelled prediction round (predict-gate's `.golive` files) is
+            reviewed as the next fix round; the refusal names it from the record folder.
 --by        who runs the batch (default reviewer). An engineer's rows go into the same names with
             `engineer-` in front (engineer-mutations.json, engineer-mutations-fix<N>.json, and their logs
             engineer-mutations*.log.jsonl), so an engineer's batch never takes the reviewer's file.
