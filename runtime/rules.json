@@ -1606,6 +1606,26 @@
    "proof": "prompt only: no tool, hook or review brief checks it"
   },
   {
+   "id": "engineer-07",
+   "file": "agents/engineer.md",
+   "sentences": [
+    "In a change job you must seal what you commit, as your brief says: the baseline and then the prediction at the commit that adds each (`predict-gate.sh seal`), each measured file as you write it, with `--report <measure report>`, and the round's first code, committed through `predict-gate.sh seal-code`."
+   ],
+   "enforcer": "code",
+   "proof": "test_team_roles.TestPredictionRecord.test_step2b_a_moves_file_with_no_seal_sends_the_engineer_back_once",
+   "note": "0.17.5: the prediction, baseline and measured seals: the stop hook sends the engineer back once for a moves file whose bytes no seal names"
+  },
+  {
+   "id": "engineer-08",
+   "file": "agents/engineer.md",
+   "sentences": [
+    "In a change job you must seal what you commit, as your brief says: the baseline and then the prediction at the commit that adds each (`predict-gate.sh seal`), each measured file as you write it, with `--report <measure report>`, and the round's first code, committed through `predict-gate.sh seal-code`."
+   ],
+   "enforcer": "code",
+   "proof": "test_chained_paired_close.Paired.test_5_a_round_with_no_code_seal_whose_span_matches_no_sealed_round_is_still_refused",
+   "note": "0.17.5: the first code's seal: close refuses a round whose code no seal-code commit covers"
+  },
+  {
    "id": "reviewer-01",
    "file": "agents/reviewer.md",
    "sentences": [

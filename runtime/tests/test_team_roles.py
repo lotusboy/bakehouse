@@ -411,6 +411,11 @@ class TestPredictionRecord(Fixture):
     def marked(self):
         return self.dispatch_brief("role:change:engineer")["hookSpecificOutput"]["updatedInput"]["prompt"]
 
+    def test_the_prediction_record_rule_says_the_prediction_is_sealed_when_committed(self):
+        # 0.17.5: the rule told the engineer to write the prediction, not to seal it
+        self.assertIn("Seal it at the commit that adds it: `predict-gate.sh seal T7 <round> <file>`",
+                      " ".join(self.marked().split()))
+
     def test_prediction_record_marks_only_the_change_engineer(self):
         self.assertIn("[bakehouse:prediction-record]", self.marked())
         self.assertIn("records/2026-01-02-T7-step1-review/ must hold the prediction as moves.prediction.json",

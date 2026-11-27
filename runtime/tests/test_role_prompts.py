@@ -128,5 +128,23 @@ class TestReviewerPrompt(unittest.TestCase):
         self.assertNotIn("when you performed none", text)
 
 
+class TestEngineerSeals(unittest.TestCase):
+    """0.17.5: an engineer committed its prediction and baseline and handed back without sealing either; the
+    seal rule was only in change.md step 6.1, which the PM reads. The engineer's own brief and prompt say it."""
+
+    def test_the_engineer_brief_template_names_the_seal_commands(self):
+        change = (RUNTIME.parent / "commands" / "change.md").read_text()
+        brief = " ".join(change[change.index("### Engineer brief"):change.index("### Reviewer brief")].split())
+        self.assertIn("predict-gate.sh seal {id} <round> <file>", brief)
+        self.assertIn("predict-gate.sh seal-code {id} <round> -- <git commit args>", brief)
+        self.assertIn("predict-gate.sh seal {id} <round> <measured file> --report <measure report>", brief)
+
+    def test_the_engineer_prompt_states_the_seal_rule(self):
+        text = " ".join((RUNTIME.parent / "agents" / "engineer.md").read_text().split())
+        self.assertIn("In a change job you must seal what you commit", text)
+        for word in ("`predict-gate.sh seal`", "`--report <measure report>`", "`predict-gate.sh seal-code`"):
+            self.assertIn(word, text)
+
+
 if __name__ == "__main__":
     unittest.main()

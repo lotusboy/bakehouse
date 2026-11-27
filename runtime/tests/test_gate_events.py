@@ -811,6 +811,56 @@ class TestRefusalsWriteOneEvent(SpendScratch):
         )
 
 
+class TestRecordsModeStopEvents(Scratch):
+    """0.17.5: in records mode the record folder sits in the records worktree, which has no binding of its
+    own. A stop's refusal event still goes to the project's ledger, as in tree mode (it was dropped:
+    "ops-event: <records worktree> has no team")."""
+
+    hook = TestRefusalsWriteOneEvent.hook
+    home = TestRefusalsWriteOneEvent.home
+    pre = TestRefusalsWriteOneEvent.pre
+    sent = TestRefusalsWriteOneEvent.sent
+    stop = TestRefusalsWriteOneEvent.stop
+    verdict = TestRefusalsWriteOneEvent.verdict
+
+    def setUp(self):
+        super().setUp()
+        self.binding.pop("reviews")  # records mode: run folders are runs/ in the records worktree
+        (self.work / ".team" / "binding.json").write_text(json.dumps(self.binding))
+        self.rec = self.records / "runs" / "2026-01-02-T7-step1-review"
+
+    def engineer(self):
+        return self.sent("role:change:engineer", f"Work order T7: x\nRecord folder: {self.rec}/\n")
+
+    def test_records_mode_stop_with_an_unsealed_prediction_writes_stop_seal_to_the_projects_ledger(self):
+        sent = self.engineer()
+        self.rec.mkdir(parents=True)
+        (self.rec / "moves.prediction.json").write_text(
+            json.dumps({"moves": [{"what": "tests:passed", "range": [10, 12]}]}))
+        self.assertEqual(self.verdict(self.hook(self.stop("engineer", sent, "e"))), "block")
+        self.assertEqual([(e["gate"], e["task"]) for e in self.refusals()], [("stop:seal", "T7")])
+
+    def test_records_mode_stop_with_no_prediction_writes_stop_prediction_to_the_projects_ledger(self):
+        sent = self.engineer()
+        self.rec.mkdir(parents=True)
+        self.assertEqual(self.verdict(self.hook(self.stop("engineer", sent, "e"))), "block")
+        self.assertEqual([(e["gate"], e["task"]) for e in self.refusals()], [("stop:prediction", "T7")])
+
+    def test_records_mode_stop_with_no_run_record_writes_stop_run_record_to_the_projects_ledger(self):
+        rv = self.records / "runs" / "rv"
+        sent = self.sent("role:reviewer", f"Review W1.\nRecord folder: {rv}/\n")
+        self.assertEqual(self.verdict(self.hook(self.stop("reviewer", sent, "r"))), "block")
+        self.assertEqual([e["gate"] for e in self.refusals()], ["stop:run-record"])
+
+    def test_records_mode_stop_with_incomplete_artefacts_writes_stop_record_artefacts_to_the_projects_ledger(self):
+        rv = self.records / "runs" / "rv"
+        sent = self.sent("role:reviewer", f"Review W1.\nRecord folder: {rv}/\n")
+        (rv / "review").mkdir(parents=True)
+        (rv / "review" / "findings.md").write_text("F1\n")
+        self.assertEqual(self.verdict(self.hook(self.stop("reviewer", sent, "a"))), "block")
+        self.assertEqual([e["gate"] for e in self.refusals()], ["stop:record-artefacts"])
+
+
 class TestSpendKinds(SpendScratch):
     def table(self):
         return json.loads((RUNTIME / "agent-roles.json").read_text())
