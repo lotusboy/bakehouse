@@ -834,6 +834,8 @@ def pre_tool_use(d):
             "\"noMoves\": true, and is accepted before its round is measured, and beside its measured pair "
             "when that pair moved 0 keys). "
             "A prose prediction may sit beside it. "
+            f"Seal it at the commit that adds it: `predict-gate.sh seal {wo or '<work order>'} <round> <file>`, "
+            "<round> being `first` or the round label. "
             f"The stop hook sends you back once if it is missing, empty or does not parse.\n{PREDICTION_MARKER}")
         notes.append(f"prediction-record rule added ({decided[3] if decided else 'no Record folder line'})")
 
@@ -1046,6 +1048,15 @@ def prediction_stop(d):
     else:
         folders, named = [], None
     good, bad = [], []
+
+    def event_at():
+        # where a refusal event goes: the record folder's project. In records mode the folder is in the records
+        # worktree, which has no binding: the project's code checkout instead (code_root, as the run-record
+        # check reads it), so the event reaches the project's ledger as in tree mode (0.17.5)
+        if mode == "records" and folders:
+            return code_root(cwd, (line[1] if kind == "repo" else rec).resolve())
+        return folders[0] if folders else cwd
+
     for f in folders:
         for p in sorted(f.iterdir()) if f.is_dir() else []:
             if p.is_file() and gate.PREDICTION_RE.match(p.name):
@@ -1086,7 +1097,7 @@ def prediction_stop(d):
             log(f"SEAL missing for {agent} — sent back: {what}")
             out = with_note({"decision": "block", "reason": f"bakehouse agent-roles: this change job has {what}, "
                                                             "then stop."}, note)
-            refusal_event("stop:seal", out["reason"], prompt, folders[0] if folders else cwd)
+            refusal_event("stop:seal", out["reason"], prompt, event_at())
             return out
         log(f"SEAL still missing for {agent} — let it stop, told the user")
         return with_note({"systemMessage": f"bakehouse agent-roles: {agent} stopped with {what}. The work order "
@@ -1104,7 +1115,7 @@ def prediction_stop(d):
                                    f"stop: {what}. Write moves.prediction.json (a fix round: "
                                    f"moves.prediction.<round>.json) in the record folder your brief names, in the "
                                    f"format `predict-gate.sh check` reads, then stop."}, note)
-        refusal_event("stop:prediction", out["reason"], prompt, folders[0] if folders else cwd)
+        refusal_event("stop:prediction", out["reason"], prompt, event_at())
         return out
     log(f"PREDICTION still missing or bad for {agent} — let it stop, told the user")
     return with_note({"systemMessage": f"bakehouse agent-roles: {agent} stopped without a machine prediction the "
@@ -1265,8 +1276,9 @@ def subagent_stop(d):
     if fresh and not bad:
         log(f"RUN-RECORD ok for {d.get('agent_type')}: {fresh[0].name}")
         return with_note(None, note)
-    # where the record is: the folder decided at dispatch, else the working directory
-    where = (line[1] / line[2]) if kind == "repo" and line[4] else cwd
+    # where the record is: the folder decided at dispatch, else the working directory; in records mode the
+    # project's code checkout, since the records worktree has no binding to find the ledger by (0.17.5)
+    where = code or ((line[1] / line[2]) if kind == "repo" and line[4] else cwd)
     if fresh or fresh is None:
         if not d.get("stop_hook_active"):
             log(f"RECORD-ARTEFACTS missing or bad for {d.get('agent_type')} — sent back: {'; '.join(bad)}")
