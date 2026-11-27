@@ -629,6 +629,8 @@ class TestPredictionRecord(Fixture):
         self.assertIn("(predict-gate.sh seal T7 <round> <file> --report <measure report>): "
                       "2026-01-02-T7-step1-review/moves.measured.json", out)
         self.assertNotIn("The gate refuses", out)
+        # 0.17.5 fix2 (review F8): the measured file is not also in the plain list, whose command lacks --report
+        self.assertNotIn("Seal each one as you write it", out)
 
     def test_prediction_record_second_stop_is_let_through_and_told(self):
         out = self.engineer_stop(self.marked(), stop_hook_active=True)

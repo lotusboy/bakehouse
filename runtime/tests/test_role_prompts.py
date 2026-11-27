@@ -147,8 +147,10 @@ class TestEngineerSeals(unittest.TestCase):
         self.assertIn("With the binding's `mainFollows` set, the first round's baseline seals only when the main "
                       "clone's `<branch>` is merged into this branch; if the seal refuses for that reason, stop and "
                       "report it to the PM.", brief)
-        self.assertIn("In a clone with no records pointer, give each seal `--repo <the main clone>`; never run "
-                      "`bakehouse setup` yourself (the PM does).", brief)
+        self.assertIn("In a clone, run `bakehouse setup --pointer` first, as this brief's clone line says; without "
+                      "it, give each seal `--repo <the main clone>`.", brief)
+        # 0.17.5 fix2 (review F7): the brief's clone line tells the engineer to run setup, so nothing may forbid it
+        self.assertNotIn("never run `bakehouse setup`", " ".join(brief.split()))
         self.assertIn("If it still refuses with `--repo`, stop and report it to the PM.", brief)
         self.assertIn("Never set `OPS_TS` or `OPS_COMMIT` for a seal.", brief)
 
