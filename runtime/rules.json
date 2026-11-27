@@ -1842,16 +1842,6 @@
    "note": "0.17.5 fix1 F2: the engineer brief template's copy of step 6.1's mainFollows rule"
   },
   {
-   "id": "bakehouse-change-78",
-   "file": "commands/change.md",
-   "sentences": [
-    "In a clone, run `bakehouse setup --pointer` first, as this brief's clone line says; without it, give each seal `--repo <the main clone>`."
-   ],
-   "enforcer": "prompt",
-   "proof": "prompt only: no tool, hook or review brief checks it",
-   "note": "0.17.5 fix1 F3: the seal's --repo is proven by test_seal.SealTest.test_refuses_when_no_project_is_found_and_takes_repo; that the engineer runs setup --pointer first, as the brief's clone line says, is prompt only (fix2, review F7)"
-  },
-  {
    "id": "bakehouse-change-79",
    "file": "commands/change.md",
    "sentences": [
