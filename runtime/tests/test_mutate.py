@@ -300,6 +300,36 @@ class TestRun(Fixture):
                 self.assertEqual(code, 2, out)
                 self.assertIn("neither `first` nor `fix<N>`", out)
 
+    def labelled_round(self):
+        code, out = self.run_(self.mutants(LIVE), round_="golive")
+        self.assertEqual(code, 2, out)
+        self.assertIn("neither `first` nor `fix<N>`", out)
+        self.assertIn("A labelled prediction round (for example `golive`) is reviewed as the next fix round", out)
+        return out
+
+    def test_a_labelled_round_is_told_the_folders_next_fix_round(self):
+        self.rec.mkdir()
+        (self.rec / "findings.md").write_text("first\n")
+        (self.rec / "findings-fix2.md").write_text("fix 2\n")
+        out = self.labelled_round()
+        self.assertIn("`--round fix3`", out)
+        self.assertEqual(sorted(p.name for p in self.rec.iterdir()), ["findings-fix2.md", "findings.md"])
+
+    def test_a_labelled_round_with_no_round_in_the_folder_is_told_first(self):
+        for state in ("missing", "empty"):
+            with self.subTest(state):
+                if state == "empty":
+                    self.rec.mkdir()
+                out = self.labelled_round()
+                self.assertIn("`--round first`", out)
+                self.assertNotIn("`--round fix", out)
+
+    def test_a_labelled_round_after_the_first_review_is_told_fix1(self):
+        self.rec.mkdir()
+        (self.rec / "findings.md").write_text("first\n")
+        out = self.labelled_round()
+        self.assertIn("`--round fix1`", out)
+
     def test_a_timeout_writes_no_row_and_exits_1(self):
         self.bind(timeout=3)
         hang = ("M9", "lib.py", "return a + b", "import time\n    time.sleep(30)", "add hangs")
