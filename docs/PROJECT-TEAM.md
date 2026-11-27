@@ -1062,8 +1062,9 @@ whatever its date.
 `findings.md` and `mutations.json`. The re-check of fix round N writes `findings-fix<N>.md` and
 `mutations-fix<N>.json`, beside the first review's files. The mutation runner's batch log for a round
 is declared beside them (`log`: `mutations.log.jsonl`, `mutations-fix<N>.log.jsonl`). These are the only names. A labelled
-prediction round (predict-gate's `.<label>` files, such as `moves.measured.golive.json`) is reviewed under the next
-`fix<N>` names, and its `findings-fix<N>.md` says which labelled round it reviews. The brief
+prediction round that is not a fix round (predict-gate's `.<label>` files, such as `moves.measured.golive.json`) is
+reviewed under the record folder's next free round names (the next `fix<N>`, or the first review's when none is
+taken), and its findings file says which labelled round it reviews. The brief
 templates (`/bakehouse:change`, `/bakehouse:refactor`) and the reviewer's prompt state them literally, and a
 runtime test fails if any of them names another. A findings-like file is a `.md` whose name holds
 `findings`, `recheck`, `re-check` or `review-` (case ignored) and that no other job's marks claim (so

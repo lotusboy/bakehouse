@@ -17,7 +17,8 @@ Usage:
             mutations.log.jsonl, mutations-fix<N>.log.jsonl), which records-check reconciles with the
             file.
 --round     only `first` or `fix<N>`. A labelled prediction round (predict-gate's `.golive` files) is
-            reviewed as the next fix round; the refusal names it from the record folder.
+            reviewed as the record folder's next free round (`first`, or the next `fix<N>`); the refusal
+            names it.
 --by        who runs the batch (default reviewer). An engineer's rows go into the same names with
             `engineer-` in front (engineer-mutations.json, engineer-mutations-fix<N>.json, and their logs
             engineer-mutations*.log.jsonl), so an engineer's batch never takes the reviewer's file.
@@ -217,17 +218,22 @@ def round_number(name: str, record=None) -> int:
     if not m:
         raise Refused(
             f"--round {json.dumps(name)} is neither `first` nor `fix<N>` (N from 1). A labelled prediction"
-            f" round (for example `golive`) is reviewed as the next fix round: here `--round {next_round(record)}`."
+            f" round (for example `golive`) is reviewed as the record folder's next free round"
+            + (f": here `--round {r}`." if (r := next_round(record)) else ".")
         )
     return int(m.group(1))
 
 
-def next_round(record) -> str:
+def next_round(record) -> str | None:
     """The record folder's next free round, as records-check.misnamed counts it: the highest declared
-    round in the folder plus 1; `first` when the folder is missing or holds no declared round."""
+    round in the folder plus 1; `first` when the folder is missing or holds no declared round; None when
+    the folder cannot be read."""
     job = records_check.load_contracts()["jobs"]["reviewer"]
     folder = Path(record).expanduser() if record else None
-    names = [p.name for p in folder.iterdir()] if folder and folder.is_dir() else []
+    try:
+        names = [p.name for p in folder.iterdir()] if folder and folder.is_dir() else []
+    except OSError:  # an unreadable folder: the refusal names no round rather than a wrong one
+        return None
     taken = [r for n in names if (r := records_check.declared(n, job)) is not None]
     return f"fix{max(taken) + 1}" if taken else "first"
 

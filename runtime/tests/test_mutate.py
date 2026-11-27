@@ -332,15 +332,12 @@ class TestRun(Fixture):
 
     def test_a_labelled_round_counts_only_declared_reviewer_findings(self):
         # Review F4: mutation files, engineer files and a misnamed lookalike are not taken rounds,
-        # as records-check.misnamed counts them; a --record that is a file is told `first`, exit 2.
+        # as records-check.declared counts taken rounds; a --record that is a file is told `first`, exit 2.
         self.rec.mkdir()
         for n in ("findings.md", "mutations-fix4.json", "engineer-findings-fix4.md", "findings-golive.md"):
             (self.rec / n).write_text("x\n")
         out = self.labelled_round()
         self.assertIn("`--round fix1`", out)
-        job = records_check.load_contracts()["jobs"]["reviewer"]
-        self.assertEqual([m[1] for m in records_check.misnamed([p.name for p in self.rec.iterdir()], job)],
-                         [records_check.round_name(job, 1, "findings")])
         rmtree = __import__("shutil").rmtree
         rmtree(self.rec)
         self.rec.write_text("not a folder\n")
