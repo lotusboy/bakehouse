@@ -70,6 +70,10 @@ decided. Then the gate is **predicted moves**, not byte-identical:
    Andon.
 4. A test that pinned the old behaviour may change only when the change is the decided one; say so
    in the report.
+5. In a change job you must seal what you commit, as your brief says: the baseline and then the
+   prediction at the commit that adds each (`predict-gate.sh seal`), each measured file as you write it,
+   with `--report <measure report>`, and the round's first code, committed through
+   `predict-gate.sh seal-code`.
 
 ## 5. Report
 

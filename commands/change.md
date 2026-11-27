@@ -629,8 +629,13 @@ command, pass and when]. The gates that prove the need: [work order: gates].
   you derive by reasoning stay hand-written. A round that moves nothing writes
   "noMoves": true and lists no move; it passes only when its measured pair shows 0 moved keys. Commit it by its path, its subject starting
   with the work-order id, before your first code edit; a fix round's prediction too, before that
-  round's first code edit. Then STOP and report it. Switch no site
-  until the PM says go. Afterwards read it back exactly; stop on any unpredicted move. Never edit a
+  round's first code edit. Seal the baseline, then the prediction, at the commit that adds each:
+  `${CLAUDE_PLUGIN_ROOT}/runtime/predict-gate.sh seal {id} <round> <file>`, `<round>` being `first` or
+  the round label. Then STOP and report it. Switch no site
+  until the PM says go. Commit the round's first code through `predict-gate.sh seal-code {id} <round> --
+  <git commit args>`, which commits the staged code and seals that commit; that commit is not amended or
+  rebased afterwards. Seal each measured file as you write it, after its baseline:
+  `predict-gate.sh seal {id} <round> <measured file> --report <measure report>`. Afterwards read it back exactly; stop on any unpredicted move. Never edit a
   test or an output to make a gate pass.
   The record folder holds, before close: the prediction, moves.baseline.json, moves.measured.json
   (one of each per round) and result.md. For each predicted move that did not happen (section 2 of
