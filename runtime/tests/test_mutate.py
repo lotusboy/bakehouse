@@ -304,7 +304,7 @@ class TestRun(Fixture):
         code, out = self.run_(self.mutants(LIVE), round_="golive")
         self.assertEqual(code, 2, out)
         self.assertIn("neither `first` nor `fix<N>`", out)
-        self.assertIn("A labelled prediction round (for example `golive`) is reviewed as the next fix round", out)
+        self.assertIn("A labelled prediction round (for example `golive`) is reviewed as the record folder's next free round", out)
         return out
 
     def test_a_labelled_round_is_told_the_folders_next_fix_round(self):
@@ -329,6 +329,23 @@ class TestRun(Fixture):
         (self.rec / "findings.md").write_text("first\n")
         out = self.labelled_round()
         self.assertIn("`--round fix1`", out)
+
+    def test_a_labelled_round_counts_only_declared_reviewer_findings(self):
+        # Review F4: mutation files, engineer files and a misnamed lookalike are not taken rounds,
+        # as records-check.misnamed counts them; a --record that is a file is told `first`, exit 2.
+        self.rec.mkdir()
+        for n in ("findings.md", "mutations-fix4.json", "engineer-findings-fix4.md", "findings-golive.md"):
+            (self.rec / n).write_text("x\n")
+        out = self.labelled_round()
+        self.assertIn("`--round fix1`", out)
+        job = records_check.load_contracts()["jobs"]["reviewer"]
+        self.assertEqual([m[1] for m in records_check.misnamed([p.name for p in self.rec.iterdir()], job)],
+                         [records_check.round_name(job, 1, "findings")])
+        rmtree = __import__("shutil").rmtree
+        rmtree(self.rec)
+        self.rec.write_text("not a folder\n")
+        out = self.labelled_round()
+        self.assertIn("`--round first`", out)
 
     def test_a_timeout_writes_no_row_and_exits_1(self):
         self.bind(timeout=3)
