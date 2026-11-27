@@ -208,13 +208,26 @@ def git(repo, *args, **kw):
     return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, check=False, **kw)
 
 
-def round_number(name: str) -> int:
+def round_number(name: str, record=None) -> int:
     if name == "first":
         return 0
     m = re.fullmatch(r"fix([1-9][0-9]*)", name or "")
     if not m:
-        raise Refused(f"--round {json.dumps(name)} is neither `first` nor `fix<N>` (N from 1)")
+        raise Refused(
+            f"--round {json.dumps(name)} is neither `first` nor `fix<N>` (N from 1). A labelled prediction"
+            f" round (for example `golive`) is reviewed as the next fix round: here `--round {next_round(record)}`."
+        )
     return int(m.group(1))
+
+
+def next_round(record) -> str:
+    """The record folder's next free round, as records-check.misnamed counts it: the highest declared
+    round in the folder plus 1; `first` when the folder is missing or holds no declared round."""
+    job = records_check.load_contracts()["jobs"]["reviewer"]
+    folder = Path(record).expanduser() if record else None
+    names = [p.name for p in folder.iterdir()] if folder and folder.is_dir() else []
+    taken = [r for n in names if (r := records_check.declared(n, job)) is not None]
+    return f"fix{max(taken) + 1}" if taken else "first"
 
 
 def load_mutants(path: Path) -> list:
@@ -413,7 +426,7 @@ def plan(a) -> dict:
         if head.returncode:
             raise Refused(f"mutation.links: {target} has no committed HEAD")
         data[at] = (t, head.stdout.strip())
-    n = round_number(a.round)
+    n = round_number(a.round, a.record)
     job = records_check.load_contracts()["jobs"]["reviewer"]
     by = "engineer-" if a.by == "engineer" else ""
     out = Path(a.record).expanduser().resolve() / (by + records_check.round_name(job, n, "mutations"))
