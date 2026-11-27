@@ -133,6 +133,24 @@ writeFileSync(process.argv[2], JSON.stringify(out, null, 2) + "\n");
 - The file formats, `check`, and the measure report a seal reads are in
   [`docs/PREDICT-GATE.md`](PREDICT-GATE.md) ("Run it", "Sealing").
 
+### A service that stores state
+
+A service that stores state has more outputs than its responses. One call can write rows, create or move
+files, or call another service. A change can move any of these without changing a response. So the measure
+step writes them as keys too.
+
+- Run the service against fakes at its own seams: an emulator or an in-memory fake for each store, and a
+  fake that records each call to an outside service. Fix the clock and the generated ids, so that two runs on
+  the same code write the same keys.
+- Run a fixed scenario: a fixed list of calls, in order.
+- After each call, write keys for the response, the rows written, the files created, moved or deleted, the
+  count of files in each folder, and the outside calls made, in order.
+- A count often shows a defect a response hides. Example: a service keeps one used file per call and never
+  deletes it. Its folder count key reads 3 after 3 calls. A fix is then a predicted move, 3 to 0.
+- Until the fakes exist, the measure step cannot see the service's behaviour. A change whose effect is
+  behaviour only then predicts no move, and the moves gate passes without testing that effect. Say so in that
+  work order's evidence, and say how the change was checked instead.
+
 ## 5. Write the binding
 
 The binding is the project's facts for the team. Write `.team/binding.json`:
@@ -173,6 +191,9 @@ The binding is the project's facts for the team. Write `.team/binding.json`:
   prediction moves a priced output or a request hash. Without the key there are no limits. The door reads the
   binding of the folder it runs in and compares it with main's; run it where main's binding is, or a warning says
   what differs.
+- `branches` sets the names of the branches a job opens. Pick forms that your CI builds on a pull request
+  and that your merge rules accept. The forms above are an example. If your pipeline builds pull requests only
+  from `feature/*` and `bugfix/*`, a `fix/` branch can never merge: use `"change": "bugfix/{id}-{name}"`.
 - Every field, and which ones are required: [The binding](PROJECT-TEAM.md#the-binding).
 
 ## 6. Write the tracker item
