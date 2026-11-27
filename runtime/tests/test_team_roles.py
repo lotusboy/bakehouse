@@ -617,6 +617,19 @@ class TestPredictionRecord(Fixture):
         self.assertIn("moves.prediction.json", out.split("Seal each one as you write it")[1])
         self.assertNotIn("The gate refuses", out)
 
+    def test_fix1_the_send_back_for_an_unsealed_measured_file_names_its_report(self):
+        # 0.17.5 fix1: a measured seal needs its measure report, so the send-back names --report for that file
+        self.folder.mkdir(parents=True, exist_ok=True)
+        files = {"moves.prediction.json": self.OKP, "moves.baseline.json": '{"tests:passed": 10}',
+                 "moves.measured.json": '{"tests:passed": 11}'}
+        for name, text in files.items():
+            (self.folder / name).write_text(text)
+        self.sealed_lines(("first", "prediction", "moves.prediction.json"), ("first", "baseline", "moves.baseline.json"))
+        out = json.loads(self.engineer_stop(self.marked(), seal=False))["reason"]
+        self.assertIn("(predict-gate.sh seal T7 <round> <file> --report <measure report>): "
+                      "2026-01-02-T7-step1-review/moves.measured.json", out)
+        self.assertNotIn("The gate refuses", out)
+
     def test_prediction_record_second_stop_is_let_through_and_told(self):
         out = self.engineer_stop(self.marked(), stop_hook_active=True)
         self.assertNotIn("block", out)

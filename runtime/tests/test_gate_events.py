@@ -840,6 +840,20 @@ class TestRecordsModeStopEvents(Scratch):
         self.assertEqual(self.verdict(self.hook(self.stop("engineer", sent, "e"))), "block")
         self.assertEqual([(e["gate"], e["task"]) for e in self.refusals()], [("stop:seal", "T7")])
 
+    def test_records_mode_stop_from_a_lane_clone_with_a_records_pointer_writes_stop_seal_to_the_projects_ledger(self):
+        # fix1 F6: a lane clone (not the main one) whose records pointer names the main clone's records worktree
+        lane = self.root / "work-lane1"
+        subprocess.run(["git", "clone", "-q", str(self.work), str(lane)], check=True, capture_output=True)
+        self.git("config", "bakehouse.records", str(self.records), repo=lane)
+        (lane / ".team").mkdir()
+        (lane / ".team" / "binding.json").write_text(json.dumps(self.binding))
+        sent = self.sent("role:change:engineer", f"Work order T7: x\nRecord folder: {self.rec}/\n", cwd=lane)
+        self.rec.mkdir(parents=True)
+        (self.rec / "moves.prediction.json").write_text(
+            json.dumps({"moves": [{"what": "tests:passed", "range": [10, 12]}]}))
+        self.assertEqual(self.verdict(self.hook(self.stop("engineer", sent, "e", cwd=str(lane)))), "block")
+        self.assertEqual([(e["gate"], e["task"]) for e in self.refusals()], [("stop:seal", "T7")])
+
     def test_records_mode_stop_with_no_prediction_writes_stop_prediction_to_the_projects_ledger(self):
         sent = self.engineer()
         self.rec.mkdir(parents=True)

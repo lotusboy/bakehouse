@@ -138,12 +138,32 @@ class TestEngineerSeals(unittest.TestCase):
         self.assertIn("predict-gate.sh seal {id} <round> <file>", brief)
         self.assertIn("predict-gate.sh seal-code {id} <round> -- <git commit args>", brief)
         self.assertIn("predict-gate.sh seal {id} <round> <measured file> --report <measure report>", brief)
+        # fix1 F1: step 6.1 orders no prediction seal against a baseline seal; each is sealed at its own commit
+        self.assertNotIn("baseline, then the prediction", brief)
+        self.assertIn("Seal the prediction at the commit that adds it, and the baseline at the commit that adds it",
+                      brief)
+        # fix1 F5, F2, F3
+        self.assertIn("after its baseline is sealed", brief)
+        self.assertIn("With the binding's `mainFollows` set, the first round's baseline seals only when the main "
+                      "clone's `<branch>` is merged into this branch; if the seal refuses for that reason, stop and "
+                      "report it to the PM.", brief)
+        self.assertIn("In a clone with no records pointer, give each seal `--repo <the main clone>`; never run "
+                      "`bakehouse setup` yourself (the PM does).", brief)
+        self.assertIn("If it still refuses with `--repo`, stop and report it to the PM.", brief)
+        self.assertIn("Never set `OPS_TS` or `OPS_COMMIT` for a seal.", brief)
 
     def test_the_engineer_prompt_states_the_seal_rule(self):
         text = " ".join((RUNTIME.parent / "agents" / "engineer.md").read_text().split())
         self.assertIn("In a change job you must seal what you commit", text)
         for word in ("`predict-gate.sh seal`", "`--report <measure report>`", "`predict-gate.sh seal-code`"):
             self.assertIn(word, text)
+        # fix1 F1, F2
+        self.assertNotIn("the baseline and then the prediction", text)
+        self.assertIn("the prediction at the commit that adds it and the baseline at the commit that adds it", text)
+        self.assertIn("the baseline before its measured file", text)
+        self.assertIn("With the binding's `mainFollows` set, the first round's baseline seals only when the main "
+                      "clone's `<branch>` is merged into this branch; if the seal refuses for that reason, stop and "
+                      "report it to the PM.", text)
 
 
 if __name__ == "__main__":

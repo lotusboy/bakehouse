@@ -1609,7 +1609,7 @@
    "id": "engineer-07",
    "file": "agents/engineer.md",
    "sentences": [
-    "In a change job you must seal what you commit, as your brief says: the baseline and then the prediction at the commit that adds each (`predict-gate.sh seal`), each measured file as you write it, with `--report <measure report>`, and the round's first code, committed through `predict-gate.sh seal-code`."
+    "In a change job you must seal what you commit, as your brief says: the prediction at the commit that adds it and the baseline at the commit that adds it (`predict-gate.sh seal`), the baseline before its measured file; each measured file as you write it, with `--report <measure report>`; and the round's first code, committed through `predict-gate.sh seal-code`."
    ],
    "enforcer": "code",
    "proof": "test_team_roles.TestPredictionRecord.test_step2b_a_moves_file_with_no_seal_sends_the_engineer_back_once",
@@ -1619,11 +1619,31 @@
    "id": "engineer-08",
    "file": "agents/engineer.md",
    "sentences": [
-    "In a change job you must seal what you commit, as your brief says: the baseline and then the prediction at the commit that adds each (`predict-gate.sh seal`), each measured file as you write it, with `--report <measure report>`, and the round's first code, committed through `predict-gate.sh seal-code`."
+    "In a change job you must seal what you commit, as your brief says: the prediction at the commit that adds it and the baseline at the commit that adds it (`predict-gate.sh seal`), the baseline before its measured file; each measured file as you write it, with `--report <measure report>`; and the round's first code, committed through `predict-gate.sh seal-code`."
    ],
    "enforcer": "code",
    "proof": "test_chained_paired_close.Paired.test_5_a_round_with_no_code_seal_whose_span_matches_no_sealed_round_is_still_refused",
    "note": "0.17.5: the first code's seal: close refuses a round whose code no seal-code commit covers"
+  },
+  {
+   "id": "engineer-09",
+   "file": "agents/engineer.md",
+   "sentences": [
+    "In a change job you must seal what you commit, as your brief says: the prediction at the commit that adds it and the baseline at the commit that adds it (`predict-gate.sh seal`), the baseline before its measured file; each measured file as you write it, with `--report <measure report>`; and the round's first code, committed through `predict-gate.sh seal-code`."
+   ],
+   "enforcer": "code",
+   "proof": "test_seal.SealTest.test_measured_seal_reads_a_named_report_and_refuses_when_there_is_none",
+   "note": "0.17.5 fix1 F4: the measured seal's report: a measured seal with no report is refused"
+  },
+  {
+   "id": "engineer-10",
+   "file": "agents/engineer.md",
+   "sentences": [
+    "With the binding's `mainFollows` set, the first round's baseline seals only when the main clone's `<branch>` is merged into this branch; if the seal refuses for that reason, stop and report it to the PM."
+   ],
+   "enforcer": "code",
+   "proof": "test_main_follows.MainFollows.test_1_an_unmerged_main_refuses_the_first_baseline_naming_the_merge",
+   "note": "0.17.5 fix1 F2: the seal refuses a first baseline while the main clone's mainFollows branch is not merged"
   },
   {
    "id": "reviewer-01",
@@ -1810,6 +1830,46 @@
    ],
    "enforcer": "code",
    "proof": "test_seal.SealTest.test_refuses_ops_ts_and_ops_commit_and_its_refusal_is_not_backdated"
+  },
+  {
+   "id": "bakehouse-change-77",
+   "file": "commands/change.md",
+   "sentences": [
+    "With the binding's `mainFollows` set, the first round's baseline seals only when the main clone's `<branch>` is merged into this branch; if the seal refuses for that reason, stop and report it to the PM."
+   ],
+   "enforcer": "code",
+   "proof": "test_main_follows.MainFollows.test_1_an_unmerged_main_refuses_the_first_baseline_naming_the_merge",
+   "note": "0.17.5 fix1 F2: the engineer brief template's copy of step 6.1's mainFollows rule"
+  },
+  {
+   "id": "bakehouse-change-78",
+   "file": "commands/change.md",
+   "sentences": [
+    "In a clone with no records pointer, give each seal `--repo <the main clone>`; never run `bakehouse setup` yourself (the PM does)."
+   ],
+   "enforcer": "prompt",
+   "proof": "prompt only: no tool, hook or review brief checks it",
+   "note": "0.17.5 fix1 F3: the seal's --repo is proven by test_seal.SealTest.test_refuses_when_no_project_is_found_and_takes_repo; that the engineer leaves setup to the PM is prompt only"
+  },
+  {
+   "id": "bakehouse-change-79",
+   "file": "commands/change.md",
+   "sentences": [
+    "If it still refuses with `--repo`, stop and report it to the PM."
+   ],
+   "enforcer": "prompt",
+   "proof": "prompt only: no tool, hook or review brief checks it",
+   "note": "0.17.5 fix1 F3"
+  },
+  {
+   "id": "bakehouse-change-80",
+   "file": "commands/change.md",
+   "sentences": [
+    "Never set `OPS_TS` or `OPS_COMMIT` for a seal."
+   ],
+   "enforcer": "code",
+   "proof": "test_seal.SealTest.test_refuses_ops_ts_and_ops_commit_and_its_refusal_is_not_backdated",
+   "note": "0.17.5 fix1 F3: the engineer brief template's copy of step 6.1's rule"
   },
   {
    "id": "bakehouse-change-64",
