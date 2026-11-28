@@ -446,8 +446,10 @@ round N saves its filled brief first, as step 6.1 does, as `brief.engineer.fix<N
   (`"baseline": "moves.measured.json"` in fix1, `"baseline": "moves.measured.fix1.json"` in fix2), and that
   measured file is sealed before this round's prediction is sealed. Close then takes this round's code base
   from that measurement's `head`, not from the measure report's `base`, which can hold the earlier rounds'
-  code (bakehouse `docs/PREDICT-GATE.md`, "A chained round"). A fix round with its own
-  `moves.baseline<R>.json` is measured against that file instead.
+  code (bakehouse `docs/PREDICT-GATE.md`, "A chained round"). That measured file is a live one, not one retired
+  to `history/`. A fix round with its own `moves.baseline<R>.json` leaves the `"baseline"` field out of its
+  prediction. It is then measured against that file, and close takes its code base from the measure report's
+  `base`.
 - The engineer re-runs every command gate after the fixes.
 - Each prose gate in the job's gate list is re-run on the fix commits by a reviewer: SendMessage to
   the same reviewer if it is still running, otherwise a fresh `role:change:reviewer` given only the
@@ -637,8 +639,10 @@ command, pass and when]. The gates that prove the need: [work order: gates].
   with the work-order id, before your first code edit; a fix round's prediction too, before that
   round's first code edit. A fix round's prediction names the round before's measured file as its `"baseline"`
   (`"baseline": "moves.measured.json"` in fix1, `"baseline": "moves.measured.fix1.json"` in fix2), and that
-  measured file is sealed before this round's prediction is sealed; a fix round with its own
-  `moves.baseline<R>.json` is measured against that file instead. Seal the prediction at the commit that adds it, and the baseline at the
+  measured file is sealed before this round's prediction is sealed. That measured file is a live one, not one
+  retired to `history/`. A fix round with its own `moves.baseline<R>.json` leaves the `"baseline"` field out of
+  its prediction; it is then measured against that file, and close takes its code base from the measure report's
+  `base`. Seal the prediction at the commit that adds it, and the baseline at the
   commit that adds it: `${CLAUDE_PLUGIN_ROOT}/runtime/predict-gate.sh seal {id} <round> <file>`,
   `<round>` being `first` or the round label. Then STOP and report it. Switch no site
   until the PM says go. With the binding's `mainFollows` set, the first round's baseline seals only when
