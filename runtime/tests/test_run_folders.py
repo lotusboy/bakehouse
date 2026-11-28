@@ -877,5 +877,81 @@ class R03ColleagueCommit(Project):
         self.assertIn("Result: CLOSED", out)
 
 
+# ---------- 0.17.6 BUG 2: a driver gate path in records mode ----------
+
+DRIVER = "drivers/attack.py"
+ROW = {"id": "M1", "mutation": "guard removed", "site": "src/app.py:1", "verdict": "killed"}
+
+
+class DriverGateStop(roles_tests.Fixture):
+    """In records mode the record folder, and the drivers inside it, sit in the records worktree: a mutation row's
+    gate path passes when it names a file there or in the code checkout. Only the gate check reads the second place."""
+
+    send = RoleHook.send
+
+    def setUp(self):
+        super().setUp()
+        self.bpath.write_text(json.dumps({"owned": True, "tracker": {"id": "^T[0-9]+$"}}))  # records mode
+        self.folder = self.records / "runs" / "2026-01-02-T7-step1-review"
+        (self.repo / "tests").mkdir()
+        (self.repo / "tests" / "test_a.py").write_text("t")
+        self.driver = f"runs/{self.folder.name}/{DRIVER}"
+        self.sent = self.send("role:reviewer", f"Review T7.\nRecord folder: {self.folder}/\n")
+        self.assertNotIn(self.sent, (None, "DENY"))
+
+    def reviewer_stop(self, rows):
+        t = self.repo / "agent.jsonl"
+        t.write_text(json.dumps({"type": "user", "message": {"role": "user", "content": self.sent}}) + "\n")
+        files = {"contract.md": "c", DRIVER: "def test_x():\n    pass\n", "review/findings.md": "F1",
+                 "review/mutations.json": json.dumps(rows)}
+        for name, text in files.items():
+            (self.folder / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.folder / name).write_text(text)
+        d = {"hook_event_name": "SubagentStop", "agent_type": "reviewer", "agent_transcript_path": str(t),
+             "cwd": str(self.repo)}
+        return subprocess.run(["python3", str(self.hook)], input=json.dumps(d), capture_output=True, text=True,
+                              env=self.env()).stdout
+
+    def test_a_driver_in_the_record_folder_passes_as_a_gate(self):
+        self.maxDiff = None
+        self.assertEqual(self.reviewer_stop([dict(ROW, gate=self.driver)]), "")
+        self.assertEqual(self.reviewer_stop([dict(ROW, gate=[self.driver, "tests/test_a.py"])]), "")
+
+    def test_a_gate_in_neither_place_is_refused(self):
+        for g in (f"runs/{self.folder.name}/drivers/missing.py", "tests/missing.py"):
+            with self.subTest(g=g):
+                self.assertIn("neither a gate id", self.reviewer_stop([dict(ROW, gate=g)]))
+
+    def test_a_test_added_target_only_in_the_records_worktree_is_refused(self):
+        row = dict(ROW, gate="tests/test_a.py", verdict="survived", disposition=f"test-added {self.driver}::test_x")
+        out = json.loads(self.reviewer_stop([row]))["reason"]
+        self.assertIn(f"M1's disposition names {json.dumps(self.driver)}, which is not a path in the repository", out)
+
+
+class DriverGateRecordsCheck(Project):
+    """records-check's own check of the same rows, in records mode: a driver gate path is read in the records
+    worktree at the record's commit."""
+
+    def check(self, gate):
+        self.unsealed_flow()
+        self.rcommit("W-1: review", {DRIVER: "x = 1\n", "review/findings.md": "F1\n",
+                                     "review/mutations.json": [dict(ROW, gate=gate)]})
+        rc, out = self.run_tool(["python3", str(RUNTIME / "records-check.py"), "--repo", str(self.repo),
+                                 "--register", str(self.t / "records.json"), "--as-of", "2026-11-10",
+                                 "--since", "2026-11-01"])
+        self.assertEqual(rc, 0, out)
+        reg = json.loads((self.t / "records.json").read_text())
+        return reg, " | ".join(w for f in reg["flags"] for w in f["what"])
+
+    def test_a_driver_in_the_record_folder_passes_as_a_gate(self):
+        reg, what = self.check(f"runs/{REC}/{DRIVER}")
+        self.assertNotIn("neither a gate id", what)
+        self.assertEqual(reg["mutations"]["rows"], 1)
+
+    def test_a_gate_in_neither_place_is_refused(self):
+        _, what = self.check(f"runs/{REC}/drivers/missing.py")
+        self.assertIn("neither a gate id", what)
+
+
 if __name__ == "__main__":
     unittest.main()

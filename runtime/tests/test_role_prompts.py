@@ -168,5 +168,25 @@ class TestEngineerSeals(unittest.TestCase):
                       "report it to the PM.", text)
 
 
+class TestFixRoundChain(unittest.TestCase):
+    """0.17.6: a fix round whose prediction names no `"baseline"` takes the measure report's `base` as its code
+    base, so close read the earlier rounds' code as its own. Step 8 and the engineer brief template name the chain
+    (docs/PREDICT-GATE.md, "A chained round")."""
+
+    CHAIN = ("a fix round's prediction names the round before's measured file as its `\"baseline\"` "
+             "(`\"baseline\": \"moves.measured.json\"` in fix1, `\"baseline\": \"moves.measured.fix1.json\"` in "
+             "fix2), and that measured file is sealed before this round's prediction is sealed")
+
+    def test_step_8_and_the_engineer_brief_name_the_chain(self):
+        change = (RUNTIME.parent / "commands" / "change.md").read_text()
+        step8 = " ".join(change[change.index("### 8. Fix round"):change.index("### 9.")].split())
+        brief = " ".join(change[change.index("### Engineer brief"):change.index("### Reviewer brief")].split())
+        for name, text in (("step 8", step8), ("engineer brief", brief)):
+            with self.subTest(name):
+                self.assertIn(self.CHAIN, text.replace("A fix round's", "a fix round's"))
+                # a fix round with its own baseline file keeps that option (PREDICT-GATE.md, "Rounds")
+                self.assertIn("its own `moves.baseline<R>.json`", text)
+
+
 if __name__ == "__main__":
     unittest.main()
