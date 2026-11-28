@@ -1159,7 +1159,8 @@ class DiskReader:
 def record_problems(rname, root, folder, started, binding, code=None):
     """[what is wrong] in the record folders this run wrote, against the role's job contract; [] when
     the role is not a job in the record contracts. code: the checkout the record's code paths (tests, gate files)
-    are read in, when it is not root (records mode). Fail open: an error is logged and passes."""
+    are read in, when it is not root (records mode); there a mutation row's gate path may also name a file in
+    root, a driver in the record folder. Fail open: an error is logged and passes."""
     try:
         rc = records_check()
         contracts = rc.load_contracts()
@@ -1186,11 +1187,14 @@ def record_problems(rname, root, folder, started, binding, code=None):
         gates = rc.gate_ids(binding, lambda x: (code / x).read_text(encoding="utf-8", errors="replace")
                             if (code / x).is_file() else None)
         read = DiskReader(code)
+        # records mode: a mutation row's gate may name a driver in the record folder, in the records worktree
+        # (runs/<run>/drivers/<file>); only the gate check reads there
+        also = (lambda n, rec=DiskReader(root): rec.exists) if code != root else None
         roots = rc.test_roots(binding, contracts)
         for f in sorted(made):
             files = {q.name: q for q in f.iterdir() if q.is_file()}
             out += [f"{f.relative_to(root)}: {what}"
-                    for _, _, what in rc.check_folder(files, job, read, gates, roots=roots, open_ok=True)]
+                    for _, _, what in rc.check_folder(files, job, read, gates, roots=roots, open_ok=True, also=also)]
             # a findings file this run wrote owes rows this run wrote, not an earlier round's file
             out += [f"{f.relative_to(root)}: {n} was not written during this run (owed by {m})"
                     for r in job["require"] if r.get("per") and r.get("active") is not False

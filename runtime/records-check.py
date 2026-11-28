@@ -472,13 +472,16 @@ def test_added_problem(target: str, exists, text_of, roots, changed=None) -> str
 
 
 def check_mutations(text: str, gates: set, exists, *, text_of=None, findings: str | None = None,
-                    test_roots=(), open_ok: bool = False, changed=None) -> tuple[list, list]:
+                    test_roots=(), open_ok: bool = False, changed=None, also=None) -> tuple[list, list]:
     """(rows that pass their own checks, [what is wrong]) for one mutations file. exists(path) says
     whether a repository path exists; text_of(path) is a file's text, or None. A row's disposition is
     checked only when it survived; a survivor with none is reported as "<id> survived and has no
     disposition". `open: <finding id>` must name a finding in `findings` (the findings file beside it);
     it is reported as still open unless open_ok (the stop check: a reviewer writes it before anyone
-    has decided). changed: test_added_problem's commit-order check, when given."""
+    has decided). changed: test_added_problem's commit-order check, when given. also(path): a second place a
+    gate path may name, for the gate check alone: the records worktree, where the record folder and its drivers
+    are, in records mode."""
+    gate_exists = (lambda p: exists(p) or also(p)) if also else exists
     try:
         data = json.loads(text)
     except ValueError as e:
@@ -503,7 +506,8 @@ def check_mutations(text: str, gates: set, exists, *, text_of=None, findings: st
             continue
         ids.add(at)
         g = r["gate"]
-        if not (all(_gate_ok(x, gates, exists) for x in g) if isinstance(g, list) else _gate_ok(g, gates, exists)):
+        if not (all(_gate_ok(x, gates, gate_exists) for x in g) if isinstance(g, list)
+                else _gate_ok(g, gates, gate_exists)):
             bad.append(f"{at}'s gate {json.dumps(g)} is neither a gate id from the binding's gate list nor a path "
                        "in the repository")
             continue
@@ -662,7 +666,7 @@ def reconcile(text: str, log_text: str | None, name: str, log: str) -> list:
 
 
 def mutations_file(n, files, rid, kind, read, gates, rows, record_at, roots, open_ok, findings=None,
-                   changed=None, job=None) -> list:
+                   changed=None, job=None, also=None) -> list:
     text = read.text(files[n])
     if not text.strip():
         return [(rid, kind, f"{n} is empty")]
@@ -670,7 +674,8 @@ def mutations_file(n, files, rid, kind, read, gates, rows, record_at, roots, ope
     got, bad = check_mutations(text, at_gates, at.exists, text_of=at.file_text,
                                findings=read.text(files[findings]) if findings else None,
                                test_roots=roots, open_ok=open_ok,
-                               changed=changed(findings, n) if changed and findings else None)
+                               changed=changed(findings, n) if changed and findings else None,
+                               also=also(n) if also else None)
     if rows is not None:
         rows[n] = got
     log = log_name(job, n)
@@ -680,7 +685,7 @@ def mutations_file(n, files, rid, kind, read, gates, rows, record_at, roots, ope
 
 
 def check_folder(files, job, read: Reader, gates: set = frozenset(), rows: dict | None = None,
-                 record_at=None, roots=(), open_ok: bool = False, changed=None, added=None) -> list:
+                 record_at=None, roots=(), open_ok: bool = False, changed=None, added=None, also=None) -> list:
     """[(artefact id, check kind, what is wrong)] for one record folder against one job's contract.
     A mutations check puts the rows it read into `rows`, by file name (an unreadable file holds []).
     record_at(file name) -> (Reader, gate ids) at the commit that last changed that file: a mutation
@@ -688,7 +693,9 @@ def check_folder(files, job, read: Reader, gates: set = frozenset(), rows: dict 
     `read` and `gates` are used. roots: the test roots; open_ok: an `open:` survivor is not reported.
     changed(findings name, mutations name) -> changed(path) or None: test-added's commit-order check.
     added(file name) -> the day its adding commit was made: a `per` file added before the job's
-    rounds.from owes nothing. Without it, every one owes its file (the stop check)."""
+    rounds.from owes nothing. Without it, every one owes its file (the stop check). also(file name) -> exists(path)
+    in the records worktree (records mode): a mutation row's gate path may name a file there too (a driver in the
+    record folder); every other path is read in the code alone."""
     out = []
     preds = sorted(n for n in files if pg.PREDICTION_RE.match(n))
     rounds = []
@@ -748,7 +755,7 @@ def check_folder(files, job, read: Reader, gates: set = frozenset(), rows: dict 
                     if rows is not None:
                         rows.setdefault(n, [])
                     out += mutations_file(n, files, rid, kind, read, gates, rows, record_at, roots, open_ok, m, changed,
-                                          job)
+                                          job, also)
                 elif not read.text(files[n]).strip():
                     out.append((rid, kind, f"{n} is empty"))
         else:
@@ -763,7 +770,7 @@ def check_folder(files, job, read: Reader, gates: set = frozenset(), rows: dict 
             elif kind == "mutations":
                 for n in hits:
                     out += mutations_file(n, files, rid, kind, read, gates, rows, record_at, roots, open_ok,
-                                          job=job)
+                                          job=job, also=also)
     return out
 
 
@@ -987,6 +994,11 @@ def build(binding: dict, ledger: Path | None, repo: Path, a, contracts: dict, pr
     tree, below = record_tree(rec, rec_ref, reviews)
     record_at, added, changed_at = history(rec, rec_ref, binding, reviews, code)
 
+    def in_records(path):
+        """exists(path) in the records worktree at the commit that last changed path (records mode): a gate path
+        that names a driver in the record folder, as runs/<run>/drivers/<file>."""
+        return Reader(rec, git(rec, "log", "-1", "--format=%H", rec_ref, "--", path).strip() or rec_ref).exists
+
     per_gate, read_files, read_rows, counted = {}, 0, 0, set()
     test_dirs = test_roots(binding, contracts)
     folder_ids = {f: {m.group().casefold() for m in re.finditer(rx.pattern, f, re.I)} for f in tree}
@@ -1023,7 +1035,9 @@ def build(binding: dict, ledger: Path | None, repo: Path, a, contracts: dict, pr
                 for rid, kind, what in check_folder(files, job, read, rows=rows, roots=test_dirs,
                                                     record_at=lambda n, w=where: record_at(f"{reviews}/{w}/{n}"),
                                                     changed=changed_at(where),
-                                                    added=lambda n, w=where: added(f"{reviews}/{w}/{n}")):
+                                                    added=lambda n, w=where: added(f"{reviews}/{w}/{n}"),
+                                                    also=(lambda n, w=where: in_records(f"{reviews}/{w}/{n}"))
+                                                    if code else None):
                     hit = found[f"{name}.{rid}"]
                     hit.update(kind="proof" if name == prover_id else kind, owner=job["owner"])
                     if where not in hit["folders"]:
