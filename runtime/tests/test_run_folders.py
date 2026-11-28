@@ -952,6 +952,29 @@ class DriverGateRecordsCheck(Project):
         _, what = self.check(f"runs/{REC}/drivers/missing.py")
         self.assertIn("neither a gate id", what)
 
+    def flags(self):
+        rc, out = self.run_tool(["python3", str(RUNTIME / "records-check.py"), "--repo", str(self.repo),
+                                 "--register", str(self.t / "records.json"), "--as-of", "2026-11-10",
+                                 "--since", "2026-11-01"])
+        self.assertEqual(rc, 0, out)
+        return " | ".join(w for f in json.loads((self.t / "records.json").read_text())["flags"] for w in f["what"])
+
+    def test_a_driver_removed_after_its_record_still_passes(self):
+        """Review F2: the driver is read at the commit that last changed the mutations file, not at the tip."""
+        self.unsealed_flow()
+        self.rcommit("W-1: review", {DRIVER: "x = 1\n", "review/findings.md": "F1\n",
+                                     "review/mutations.json": [dict(ROW, gate=f"runs/{REC}/{DRIVER}")]})
+        self.rcommit("W-1: tidy", {}, rm=[DRIVER])
+        self.assertNotIn("neither a gate id", self.flags())
+
+    def test_a_driver_committed_after_its_record_is_refused(self):
+        """Review F2: at the mutations file's commit the driver did not exist yet."""
+        self.unsealed_flow()
+        self.rcommit("W-1: review", {"review/findings.md": "F1\n",
+                                     "review/mutations.json": [dict(ROW, gate=f"runs/{REC}/{DRIVER}")]})
+        self.rcommit("W-1: driver", {DRIVER: "x = 1\n"})
+        self.assertIn("neither a gate id", self.flags())
+
 
 if __name__ == "__main__":
     unittest.main()
