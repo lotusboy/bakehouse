@@ -95,7 +95,9 @@ your findings file has no paired mutations file in this format:
 
 - One row per mutation performed, and at least 5 rows (section 3). Ids are unique in the file.
 - `gate`: the gate you ran, as a gate id from the binding's gate list or a path in the repository
-  (`path::test` is allowed). A list when you ran several together.
+  (`path::test` is allowed). A list when you ran several together. A driver you ran is a path too: in
+  records mode the record folder is in the records worktree, so write it from that root, as
+  `runs/<run>/drivers/<file>`; in tree mode, as `<reviews>/<run>/drivers/<file>` in the repository.
 - `verdict`: `killed` (the gate failed on the mutation) or `survived` (it passed).
 - A re-check of fix round 1 writes `findings-fix1.md` and its own `mutations-fix1.json` in the same
   run: each findings file owes its paired mutations file, written in the same run.

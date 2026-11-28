@@ -1078,7 +1078,7 @@ whose adding commit is before `rounds.from` is never flagged. The bound is the c
 |---|---|
 | `id` | text, unique in the file |
 | `mutation`, `site` | what was changed, and where; text, not empty |
-| `gate` | a gate id from the binding's gate list (every `gates.*` pointer, resolved in the repository), or a path in the repository (`path::test` allowed; the path is checked). A list when several ran together; the kill rate counts the list as one gate, joined with ` + ` |
+| `gate` | a gate id from the binding's gate list (every `gates.*` pointer, resolved in the repository), or a path in the repository (`path::test` allowed; the path is checked). In records mode a path may also name a file in the records worktree, written from its root as the record folder's own path shows it: a driver is `runs/<run>/drivers/<file>`. Only the gate reads there; a `test-added` path is in the code. A list when several ran together; the kill rate counts the list as one gate, joined with ` + ` |
 | `verdict` | `killed` (the gate failed on the mutation) or `survived` (it passed); any case |
 | `disposition` | a survivor only, one of three. `open: <finding id>`: written at review time, before anyone has decided; the id must occur in the findings file beside it. `test-added <path>`: a test file, under the test roots (`testRoots` in record-contracts.json, `tests/` and `test/`; a binding's `records.testRoots` replaces them), or `path::name` where the file defines each part (the last a `def test…` or a `class`, the parts before it classes). records-check also requires a non-merge commit that changed that test file, that the record's own commit reaches, and that has the commit which first added the paired findings file as an ancestor (or is it): a test-added test is written after the review that found the survivor, on a line that holds it (a test committed on a side branch before the review and merged after it does not count) (the stop check cannot see commits and checks the name only). `accepted: <reason>`: the reason states its reach as a count (`reach 0`, `reach: 3 of 35`). Absent or null on a killed row |
 
@@ -1440,6 +1440,9 @@ The waves, and no wave, always sum to the agents' totals. Only what the agent ad
 `record` prints a line when a wave loses tokens by it. So a ceiling, an estimate and a `--predicted-tokens`
 (all the agent's rounds in the wave) are always for this wave alone, never a running total, also when shown to
 the owner.
+
+A ceiling raise the owner approves is a new wave: close the wave (`spend.sh wave close <wave>`) and open one with
+the new ceiling (`spend.sh wave open <name> --ceiling <tokens>`), named for what it is (`wave-2-raise`, say).
 
 ### Decision triggers
 
